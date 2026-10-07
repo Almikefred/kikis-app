@@ -3,18 +3,18 @@
  *
  * Tests the building blocks of the timeout implementation:
  *   1. AbortSignal.timeout() causes fetch to reject with TimeoutError/AbortError
- *   2. RouteDockManifestTimeoutError has the correct code, retryable flag, and cause
+ *   2. KikisAppManifestTimeoutError has the correct code, retryable flag, and cause
  *   3. The error-detection pattern (err.name check) correctly identifies timeout errors
  *
- * The full integration (fetchManifest → RouteDockManifestTimeoutError on hang) is
+ * The full integration (fetchManifest → KikisAppManifestTimeoutError on hang) is
  * tested via `pnpm test` which resolves ajv through the pnpm virtual store.
  *
- * Run with: pnpm --filter @routedock/sdk test
+ * Run with: pnpm --filter @kikis-app/sdk test
  */
 
 import * as http from 'node:http'
 import assert from 'node:assert/strict'
-import { RouteDockManifestTimeoutError } from '../../errors.js'
+import { KikisAppManifestTimeoutError } from '../../errors.js'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -74,12 +74,12 @@ function isTimeoutError(err: unknown): boolean {
   }
 }
 
-// ── Test 2: RouteDockManifestTimeoutError has correct properties ──────────────
+// ── Test 2: KikisAppManifestTimeoutError has correct properties ──────────────
 
 {
   const cause = new DOMException('The operation timed out.', 'TimeoutError')
-  const err = new RouteDockManifestTimeoutError(
-    'Manifest fetch timed out after 5000ms from http://example.com/.well-known/routedock.json',
+  const err = new KikisAppManifestTimeoutError(
+    'Manifest fetch timed out after 5000ms from http://example.com/.well-known/kikis-app.json',
     { cause },
   )
 
@@ -87,9 +87,9 @@ function isTimeoutError(err: unknown): boolean {
   assert.strictEqual(err.retryable, true, 'timeout errors must be retryable')
   assert.ok(err.message.includes('5000ms'), 'message must include timeout value')
   assert.ok(err instanceof Error, 'must be an Error instance')
-  assert.strictEqual(err.name, 'RouteDockManifestTimeoutError')
+  assert.strictEqual(err.name, 'KikisAppManifestTimeoutError')
   assert.strictEqual(err.cause, cause, 'cause must be preserved')
-  console.log('✓ Test 2: RouteDockManifestTimeoutError has correct code, retryable, message, and cause')
+  console.log('✓ Test 2: KikisAppManifestTimeoutError has correct code, retryable, message, and cause')
 }
 
 // ── Test 3: isTimeoutError correctly classifies timeout errors ────────────────
@@ -109,31 +109,31 @@ function isTimeoutError(err: unknown): boolean {
   console.log('✓ Test 3: isTimeoutError() correctly classifies timeout vs non-timeout errors')
 }
 
-// ── Test 4: end-to-end — fetch → detect → wrap as RouteDockManifestTimeoutError
+// ── Test 4: end-to-end — fetch → detect → wrap as KikisAppManifestTimeoutError
 
 {
   const server = await startHangingServer()
   try {
     const TIMEOUT_MS = 150
-    const url = `${server.url}/.well-known/routedock.json`
-    let wrapped: RouteDockManifestTimeoutError | undefined
+    const url = `${server.url}/.well-known/kikis-app.json`
+    let wrapped: KikisAppManifestTimeoutError | undefined
 
     try {
       await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) })
     } catch (err) {
       if (isTimeoutError(err)) {
-        wrapped = new RouteDockManifestTimeoutError(
+        wrapped = new KikisAppManifestTimeoutError(
           `Manifest fetch timed out after ${TIMEOUT_MS}ms from ${url}`,
           { cause: err },
         )
       }
     }
 
-    assert.ok(wrapped instanceof RouteDockManifestTimeoutError, 'should wrap as RouteDockManifestTimeoutError')
+    assert.ok(wrapped instanceof KikisAppManifestTimeoutError, 'should wrap as KikisAppManifestTimeoutError')
     assert.strictEqual(wrapped.code, 'MANIFEST_TIMEOUT')
     assert.ok(wrapped.retryable)
     assert.ok(wrapped.cause instanceof Error)
-    console.log('✓ Test 4: fetch → timeout detection → RouteDockManifestTimeoutError wrapping works end-to-end')
+    console.log('✓ Test 4: fetch → timeout detection → KikisAppManifestTimeoutError wrapping works end-to-end')
   } finally {
     await server.close()
   }

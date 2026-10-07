@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useRouteDockContext } from './context.js'
+import { useKikisAppContext } from './context.js'
 
 export interface TxLogRow {
   id: string
@@ -19,14 +19,14 @@ export interface UseTxLogFilter {
 
 /**
  * Subscribes to Supabase Realtime on the `tx_log` table. Returns a live array
- * of rows ordered newest-first. Requires <RouteDockProvider supabase={...}>.
+ * of rows ordered newest-first. Requires <KikisAppProvider supabase={...}>.
  *
  * @example
  * const txLog = useTxLog({ channelId, limit: 50 })
  * return <ul>{txLog.map(r => <li key={r.id}>{r.tx_hash}</li>)}</ul>
  */
 export function useTxLog(filter?: UseTxLogFilter): TxLogRow[] {
-  const { supabase } = useRouteDockContext()
+  const { supabase } = useKikisAppContext()
   const [rows, setRows] = useState<TxLogRow[]>([])
 
   useEffect(() => {

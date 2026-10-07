@@ -3,7 +3,7 @@ import { describe, it } from 'node:test'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { SupabaseSessionStore } from '../SessionStore.js'
 import type { SessionState } from '../../types.js'
-import { RouteDockVoucherMonotonicityError, RouteDockNetworkError } from '../../errors.js'
+import { KikisAppVoucherMonotonicityError, KikisAppNetworkError } from '../../errors.js'
 
 function mockSupabase(opts: {
   queryError?: string
@@ -183,7 +183,7 @@ describe('SupabaseSessionStore', () => {
     assert.equal('cumulative_amount' in payload, false)
   })
 
-  it('setStatus() rejects with RouteDockNetworkError when update fails', async () => {
+  it('setStatus() rejects with KikisAppNetworkError when update fails', async () => {
     const store = new SupabaseSessionStore(
       mockSupabase({
         updateError: 'database unreachable',
@@ -192,7 +192,7 @@ describe('SupabaseSessionStore', () => {
 
     await assert.rejects(
       () => store.setStatus('channel_123', 'closing'),
-      RouteDockNetworkError,
+      KikisAppNetworkError,
     )
   })
 
@@ -215,7 +215,7 @@ describe('SupabaseSessionStore', () => {
     assert.equal('cumulative_amount' in payload, false)
   })
 
-  it('upsert() rejects with RouteDockVoucherMonotonicityError when cumulative_amount <= stored, without calling client upsert', async () => {
+  it('upsert() rejects with KikisAppVoucherMonotonicityError when cumulative_amount <= stored, without calling client upsert', async () => {
     let upsertCalled = false
     const store = new SupabaseSessionStore(
       mockSupabase({
@@ -233,7 +233,7 @@ describe('SupabaseSessionStore', () => {
           ...sampleState,
           cumulative_amount: '0.0050000',
         }),
-      RouteDockVoucherMonotonicityError,
+      KikisAppVoucherMonotonicityError,
     )
     assert.equal(upsertCalled, false)
 
@@ -244,7 +244,7 @@ describe('SupabaseSessionStore', () => {
           ...sampleState,
           cumulative_amount: '0.0040000',
         }),
-      RouteDockVoucherMonotonicityError,
+      KikisAppVoucherMonotonicityError,
     )
     assert.equal(upsertCalled, false)
   })

@@ -10,7 +10,7 @@ import { mock, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { Hono } from 'hono'
 import { Keypair } from '@stellar/stellar-sdk'
-import type { RouteDockManifest } from '../../types.js'
+import type { KikisAppManifest } from '../../types.js'
 
 const payeeKeypair = Keypair.random()
 const commitKeypair = Keypair.random()
@@ -75,10 +75,10 @@ mock.module('../mppCompatibility.js', {
   },
 })
 
-const { routedockHono } = await import('../hono.js')
+const { kikisAppHono } = await import('../hono.js')
 
-const manifest: RouteDockManifest = {
-  routedock: '1.0',
+const manifest: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Test Service',
   description: 'Unit test provider',
   modes: ['mpp-session'],
@@ -103,7 +103,7 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-describe('routedockHono — orphan recovery on failed channel close', () => {
+describe('kikisAppHono — orphan recovery on failed channel close', () => {
   it('leaves orphan state armed and fires onOrphaned when channelClose rejects', async () => {
     let resolveOrphaned!: () => void
     const orphaned = new Promise<void>((resolve) => {
@@ -114,7 +114,7 @@ describe('routedockHono — orphan recovery on failed channel close', () => {
     const app = new Hono()
     app.use(
       '*',
-      routedockHono({
+      kikisAppHono({
         asset: 'USDC',
         assetContract: ASSET_CONTRACT,
         payee: payeeKeypair.publicKey(),

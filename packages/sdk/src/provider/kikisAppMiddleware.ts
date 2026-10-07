@@ -2,13 +2,13 @@ import type { Request, Response, NextFunction, RequestHandler } from 'express'
 import { createX402Handler } from './x402Handler.js'
 import { createMppChargeHandler } from './MppChargeHandler.js'
 import { createMppSessionHandler } from './MppSessionHandler.js'
-import type { RouteDockManifest, PaymentMode } from '../types.js'
+import type { KikisAppManifest, PaymentMode } from '../types.js'
 import { signManifest } from '../manifest/sign.js'
 import type { SeenTxStore } from './SeenTxStore.js'
 import type { OrphanedSessionInfo } from './MppSessionHandler.js'
-import type { RouteDockLogger } from '../internal/logger.js'
+import type { KikisAppLogger } from '../internal/logger.js'
 
-export interface RouteDockMiddlewareOptions {
+export interface KikisAppMiddlewareOptions {
   modes: PaymentMode[]
   pricing: {
     x402?: string
@@ -26,8 +26,8 @@ export interface RouteDockMiddlewareOptions {
   facilitatorApiKey?: string
   /** Required for mpp-session mode — ed25519 public key (G...) for verifying commitments */
   commitmentPublicKey?: string
-  /** Full RouteDock manifest — served at /.well-known/routedock.json */
-  manifest: RouteDockManifest
+  /** Full KikisApp manifest — served at /.well-known/kikis-app.json */
+  manifest: KikisAppManifest
   /**
    * Called after each successful on-chain settlement.
    * `payer` is the Stellar G... public key of the agent that paid.
@@ -60,20 +60,20 @@ export interface RouteDockMiddlewareOptions {
    * Structured log sink for every adapter diagnostic (settlement errors,
    * callback failures, orphaned sessions). Defaults to a console-backed logger.
    */
-  logger?: RouteDockLogger
+  logger?: KikisAppLogger
 }
 
 /**
- * Express middleware factory for RouteDock provider endpoints.
+ * Express middleware factory for KikisApp provider endpoints.
  *
- * Automatically serves /.well-known/routedock.json and enforces payment
+ * Automatically serves /.well-known/kikis-app.json and enforces payment
  * verification for all three modes (x402, mpp-charge, mpp-session).
  *
  * @example
  * ```ts
- * import { routedock } from '@routedock/sdk/provider'
+ * import { kikis-app } from '@kikis-app/sdk/provider'
  *
- * app.use('/price', routedock({
+ * app.use('/price', kikis-app({
  *   modes: ['x402', 'mpp-charge'],
  *   pricing: { x402: '0.001', 'mpp-charge': '0.0008' },
  *   ...
@@ -83,7 +83,7 @@ export interface RouteDockMiddlewareOptions {
 /** MPP modes, in the priority order used to pick the default (non-x402) handler. */
 const MPP_MODES: readonly PaymentMode[] = ['mpp-session', 'mpp-charge']
 
-export function routedock(opts: RouteDockMiddlewareOptions): RequestHandler {
+export function kikis-app(opts: KikisAppMiddlewareOptions): RequestHandler {
   const startTime = Date.now()
   const signedManifest = signManifest(opts.manifest, opts.payeeSecretKey)
 
@@ -136,7 +136,7 @@ export function routedock(opts: RouteDockMiddlewareOptions): RequestHandler {
     const sessionPricing = opts.pricing['mpp-session']
     if (sessionPricing) {
       if (!opts.commitmentPublicKey) {
-        throw new Error('routedock: mpp-session mode requires commitmentPublicKey')
+        throw new Error('kikis-app: mpp-session mode requires commitmentPublicKey')
       }
       handlerMap.set(
         'mpp-session',
@@ -167,8 +167,8 @@ export function routedock(opts: RouteDockMiddlewareOptions): RequestHandler {
     (handlerMap.has('x402') ? 'x402' : undefined)
 
   return (req: Request, res: Response, next: NextFunction): void => {
-    // Serve signed manifest at /.well-known/routedock.json
-    if (req.path === '/.well-known/routedock.json') {
+    // Serve signed manifest at /.well-known/kikis-app.json
+    if (req.path === '/.well-known/kikis-app.json') {
       res.json(signedManifest)
       return
     }
@@ -177,7 +177,7 @@ export function routedock(opts: RouteDockMiddlewareOptions): RequestHandler {
     if (req.path === '/health') {
       res.json({
         status: 'ok',
-        routedock: opts.manifest.routedock,
+        kikis-app: opts.manifest.kikis-app,
         network: opts.network,
         payee: opts.payee,
         modesActive: opts.modes,

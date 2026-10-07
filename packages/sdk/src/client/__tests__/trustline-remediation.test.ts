@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { Asset, Horizon, Keypair, Networks, StrKey } from '@stellar/stellar-sdk'
-import { RouteDockClient } from '../RouteDockClient.js'
-import { RouteDockTrustlineError } from '../../errors.js'
+import { KikisAppClient } from '../KikisAppClient.js'
+import { KikisAppTrustlineError } from '../../errors.js'
 import { USDC_ISSUERS } from '../../internal/usdc.js'
-import type { RouteDockManifest } from '../../types.js'
+import type { KikisAppManifest } from '../../types.js'
 
 const TESTNET_USDC_CONTRACT = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA'
 const MAINNET_USDC_CONTRACT = 'CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75'
@@ -27,8 +27,8 @@ test('missing-trustline remediation uses the canonical testnet USDC issuer', asy
   }))
 
   const payer = Keypair.random()
-  const manifest: RouteDockManifest = {
-    routedock: '1.0',
+  const manifest: KikisAppManifest = {
+    kikis-app: '1.0',
     name: 'Trustline Test Provider',
     description: 'Checks the testnet USDC trustline remediation',
     modes: ['x402'],
@@ -46,12 +46,12 @@ test('missing-trustline remediation uses the canonical testnet USDC issuer', asy
     endpoints: { quote: { method: 'GET', path: '/quote' } },
     tags: ['test'],
   }
-  const client = new RouteDockClient({ wallet: payer, network: 'testnet' })
+  const client = new KikisAppClient({ wallet: payer, network: 'testnet' })
 
   await assert.rejects(
     client.preflight(manifest),
     (error: unknown) => {
-      assert.ok(error instanceof RouteDockTrustlineError)
+      assert.ok(error instanceof KikisAppTrustlineError)
       assert.equal(error.issuer, USDC_ISSUERS.testnet)
       assert.ok(
         error.remediation.includes(

@@ -83,7 +83,7 @@ export default async function LandingPage() {
           {/* CTA row */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 px-2">
             <code className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-subtle)] px-3 sm:px-4 py-2.5 text-xs sm:text-sm font-mono text-[var(--text-primary)] max-w-full overflow-x-auto">
-              npm install @routedock/routedock
+              npm install @kikis-app/kikis-app
             </code>
             <a
               href="/docs"
@@ -143,7 +143,7 @@ export default async function LandingPage() {
 
           <FadeInUp delay={0.18}>
             <p className="text-center mt-12 text-lg font-semibold text-[var(--text-primary)]">
-              RouteDock solves all three.
+              KikisApp solves all three.
             </p>
           </FadeInUp>
         </div>
@@ -160,7 +160,7 @@ export default async function LandingPage() {
               The right payment mode, selected automatically
             </h2>
             <p className="text-center text-[var(--text-muted)] mb-16 max-w-2xl mx-auto">
-              RouteDock reads the provider&apos;s manifest and picks the optimal mode for each
+              KikisApp reads the provider&apos;s manifest and picks the optimal mode for each
               access pattern. No configuration. No guessing.
             </p>
           </FadeInUp>
@@ -223,7 +223,7 @@ export default async function LandingPage() {
               {
                 step: '01',
                 icon: <GitBranch className="h-5 w-5" />,
-                title: 'Provider adds middleware + serves routedock.json',
+                title: 'Provider adds middleware + serves kikis-app.json',
                 detail:
                   'One middleware call for Hono on Cloudflare Workers, Express, or Fastify. Adapters sign and serve the manifest, and clients validate before paying. Providers declare their modes, pricing, and payee address once.',
               },
@@ -297,7 +297,7 @@ export default async function LandingPage() {
             {[
               {
                 q: 'Is the one-way-channel contract audited?',
-                a: 'No. It\'s stellar-experimental/one-way-channel. RouteDock wraps it with safe defaults and a durable server-side SessionStore that enforces the monotonic-amount invariant. Production use should await an independent audit.',
+                a: 'No. It\'s stellar-experimental/one-way-channel. KikisApp wraps it with safe defaults and a durable server-side SessionStore that enforces the monotonic-amount invariant. Production use should await an independent audit.',
               },
               {
                 q: 'Do I need XLM for gas?',
@@ -309,7 +309,7 @@ export default async function LandingPage() {
               },
               {
                 q: 'How does endpoint discovery work?',
-                a: 'Providers serve routedock.json at /.well-known/routedock.json. The SDK fetches and validates it before every pay() call (60s TTL cache). The Supabase registry indexes manifests with trigram search so agents can query by capability description.',
+                a: 'Providers serve kikis-app.json at /.well-known/kikis-app.json. The SDK fetches and validates it before every pay() call (60s TTL cache). The Supabase registry indexes manifests with trigram search so agents can query by capability description.',
               },
             ].map((item, i) => (
               <FadeInUp key={i} delay={i * 0.06}>

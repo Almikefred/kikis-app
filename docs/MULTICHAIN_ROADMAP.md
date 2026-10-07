@@ -2,14 +2,14 @@
 
 **Status:** Design sketch (not yet implemented) · **Area:** Ecosystem / Protocol
 
-RouteDock is a **chain-agnostic agent payment protocol with Stellar as its canonical home.**
-Today the SDK ships Stellar-only: the `routedock.json` manifest hardcodes
+KikisApp is a **chain-agnostic agent payment protocol with Stellar as its canonical home.**
+Today the SDK ships Stellar-only: the `kikis-app.json` manifest hardcodes
 `network: 'testnet' | 'mainnet'`, and every settlement path resolves to a Stellar
-transaction. But the protocols RouteDock unifies are not Stellar-bound. x402 — which
-RouteDock wraps for its pay-per-request mode — was [designed by Coinbase as a
+transaction. But the protocols KikisApp unifies are not Stellar-bound. x402 — which
+KikisApp wraps for its pay-per-request mode — was [designed by Coinbase as a
 chain-neutral HTTP payment standard][x402] and already settles on EVM chains today.
 
-This document sketches how RouteDock generalizes to additional chains without
+This document sketches how KikisApp generalizes to additional chains without
 breaking the single-call agent experience (`client.pay(url)`), keeping Stellar as the
 reference implementation and **EVM (via x402) as the first extension target.**
 
@@ -19,7 +19,7 @@ reference implementation and **EVM (via x402) as the first extension target.**
 
 ## Design principle: the agent never learns about chains
 
-The whole value of RouteDock is that an agent writes `client.pay(url)` and the SDK does
+The whole value of KikisApp is that an agent writes `client.pay(url)` and the SDK does
 the rest — mode selection, payment construction, settlement. Multi-chain support must
 preserve that. The agent does **not** choose a chain; the provider's manifest declares
 which chain(s) it settles on, and the SDK selects a compatible adapter from the wallet
@@ -42,7 +42,7 @@ existing Stellar clients (`x402Client`, `MppChargeClient`, `MppSessionClient`) b
 **Stellar reference adapter**; new chains implement the same interface.
 
 ```ts
-/** A chain on which RouteDock can settle. Open-ended on purpose. */
+/** A chain on which KikisApp can settle. Open-ended on purpose. */
 export type Chain = 'stellar' | 'evm'
 
 /**
@@ -62,7 +62,7 @@ export interface ChainAdapter {
    * e.g. the wallet's network/asset is compatible with the manifest. Used by the
    * router to disambiguate when multiple adapters are registered.
    */
-  canSettle(manifest: RouteDockManifest, wallet: ChainWallet): boolean
+  canSettle(manifest: KikisAppManifest, wallet: ChainWallet): boolean
 
   /**
    * Construct and submit a single payment for an x402 / mpp-charge call.
@@ -73,7 +73,7 @@ export interface ChainAdapter {
   /**
    * Open a streaming session (mpp-session). Optional — adapters that don't support
    * session channels (e.g. the initial EVM adapter) omit it, and the router will
-   * refuse `mpp-session` for that chain with RouteDockNoSupportedModeError.
+   * refuse `mpp-session` for that chain with KikisAppNoSupportedModeError.
    */
   openSession?(req: SessionRequest, wallet: ChainWallet): Promise<SessionHandle>
 }
@@ -97,7 +97,7 @@ existing manifest stays valid (no breaking change):
 
 ```jsonc
 {
-  "routedock": "1.0",
+  "kikis-app": "1.0",
   "chain": "evm",                 // NEW — optional, defaults to "stellar"
   "name": "EVM Price Feed",
   "modes": ["x402"],
@@ -115,7 +115,7 @@ Migration notes:
 
 - `network` widens from `'testnet' | 'mainnet'` to a chain-scoped network id. Stellar
   keeps `testnet | mainnet`; EVM uses chain ids / names (`base`, `base-sepolia`, …).
-  The JSON Schema (`packages/sdk/src/schemas/routedock.schema.json`) gains a
+  The JSON Schema (`packages/sdk/src/schemas/kikis-app.schema.json`) gains a
   conditional: validate `network`/`payee`/`asset_contract` formats per `chain`.
 - `asset_contract` and `payee` are validated by the adapter, not centrally — a Stellar
   `G…`/`C…` address and an EVM `0x…` address are both valid, just for different chains.
@@ -139,21 +139,21 @@ fetchManifest(url)
 ```
 
 If no registered adapter matches the manifest's chain, the SDK throws a clear error
-(`RouteDockNoSupportedChainError`) rather than failing deep in a settlement path.
+(`KikisAppNoSupportedChainError`) rather than failing deep in a settlement path.
 Adapters are registered on the client, so an agent only pays for the chains it opts into:
 
 ```ts
-import { RouteDockClient } from '@routedock/routedock'
-import { stellarAdapter } from '@routedock/routedock/chains/stellar'  // default, bundled
-import { evmAdapter } from '@routedock/routedock/chains/evm'          // opt-in
+import { KikisAppClient } from '@kikis-app/kikis-app'
+import { stellarAdapter } from '@kikis-app/kikis-app/chains/stellar'  // default, bundled
+import { evmAdapter } from '@kikis-app/kikis-app/chains/evm'          // opt-in
 
-const client = new RouteDockClient({
+const client = new KikisAppClient({
   adapters: [stellarAdapter({ wallet, network: 'testnet' }),
              evmAdapter({ signer, network: 'base-sepolia' })],
 })
 ```
 
-For backward compatibility, the existing `new RouteDockClient({ wallet, network })`
+For backward compatibility, the existing `new KikisAppClient({ wallet, network })`
 constructor keeps working — it's sugar for registering the Stellar adapter alone.
 
 ---
@@ -164,7 +164,7 @@ constructor keeps working — it's sugar for registering the Stellar adapter alo
 |---|---|---|
 | **0 — today** | Stellar-only, three modes | Shipped |
 | **1 — refactor (no new chains)** | Extract the Stellar clients behind `ChainAdapter`; add optional `chain` to manifest + schema (defaults to `stellar`); add `chain` to `PaymentResult` | No behavior change; Stellar is now a *reference adapter*, not the only path |
-| **2 — EVM via x402** | `evmAdapter` implementing `pay()` for the `x402` mode on Base (mainnet + sepolia) using the existing x402 facilitator flow; viem/ethers signer support | RouteDock pays EVM x402 providers through the same `client.pay(url)` |
+| **2 — EVM via x402** | `evmAdapter` implementing `pay()` for the `x402` mode on Base (mainnet + sepolia) using the existing x402 facilitator flow; viem/ethers signer support | KikisApp pays EVM x402 providers through the same `client.pay(url)` |
 | **3 — registry + discovery** | `chain` column + filter in the `providers` table; dashboard chain badges | Agents discover providers by capability *and* chain |
 | **4 — sessions on EVM (stretch)** | Evaluate an EVM equivalent of the one-way-channel for `mpp-session` (state channels / `mpp-session` analogue) | Streaming/pay-per-time beyond Stellar |
 
@@ -181,5 +181,5 @@ manifest omits `chain`. EVM is the proof that the abstraction holds.
 - **The result shape is already chain-neutral.** `PaymentResult.txHash` is a plain
   string; nothing in the agent-facing API assumes Stellar.
 - **x402 is the natural first target.** It's already multi-chain by design, and
-  RouteDock already speaks it — Phase 2 reuses the existing x402 client flow against an
+  KikisApp already speaks it — Phase 2 reuses the existing x402 client flow against an
   EVM facilitator rather than inventing a new mode.

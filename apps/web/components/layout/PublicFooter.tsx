@@ -2,8 +2,8 @@ import { explorerHome } from '@/lib/explorer'
 
 export function PublicFooter() {
   const links = [
-    { label: 'GitHub', href: 'https://github.com/winsznx/routedock' },
-    { label: 'npm', href: 'https://www.npmjs.com/package/@routedock/routedock' },
+    { label: 'GitHub', href: 'https://github.com/winsznx/kikis-app' },
+    { label: 'npm', href: 'https://www.npmjs.com/package/@kikis-app/kikis-app' },
     { label: 'Docs', href: '/docs' },
     {
       label: 'Stellar Explorer',
@@ -19,7 +19,7 @@ export function PublicFooter() {
         className="pointer-events-none absolute inset-x-0 bottom-0 text-center text-[30vw] font-bold leading-none text-white/[0.03] select-none"
         style={{ maskImage: 'linear-gradient(to top, transparent 0%, black 40%)' }}
       >
-        ROUTEDOCK
+        KIKIS_APP
       </p>
 
       <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-16">
@@ -52,7 +52,7 @@ export function PublicFooter() {
 
         <div className="mt-10 pt-6 border-t border-[var(--border-default)] flex flex-col sm:flex-row items-center justify-between gap-3">
           <p className="text-xs text-[var(--text-muted)]">
-            © 2026 RouteDock. MIT License.
+            © 2026 KikisApp. MIT License.
           </p>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border-default)] px-3 py-1 text-xs text-[var(--text-muted)]">
             Built on Stellar × x402 × MPP

@@ -3,7 +3,7 @@ import { Errors, type Method } from 'mppx'
 
 /**
  * The Stellar MPP SDK calls this field `feePayer`, but `envelopeSigner` is the
- * transaction source and contract authorizer. RouteDock only performs the
+ * transaction source and contract authorizer. KikisApp only performs the
  * recipient-authorized `close()` path, so the provider payee key is required.
  */
 export function channelAuthorizer(envelopeSigner: Keypair): { envelopeSigner: Keypair } {

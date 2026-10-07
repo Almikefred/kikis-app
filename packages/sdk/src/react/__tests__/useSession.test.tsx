@@ -6,8 +6,8 @@ import * as RTL from '@testing-library/react'
 const { renderHook, act, waitFor } = RTL
 import { Keypair } from '@stellar/stellar-sdk'
 import { createElement, type ReactNode } from 'react'
-import { RouteDockClient } from '../../client/RouteDockClient.js'
-import { RouteDockProvider } from '../context.js'
+import { KikisAppClient } from '../../client/KikisAppClient.js'
+import { KikisAppProvider } from '../context.js'
 import { useSession } from '../useSession.js'
 import type { SessionHandle, SessionCloseResult } from '../../types.js'
 
@@ -29,14 +29,14 @@ function mockSession(): SessionHandle {
   }
 }
 
-function wrapper(client: RouteDockClient) {
+function wrapper(client: KikisAppClient) {
   return ({ children }: { children: ReactNode }) =>
-    createElement(RouteDockProvider, { client, children })
+    createElement(KikisAppProvider, { client, children })
 }
 
 describe('useSession', () => {
   it('open → close transitions status and records vouchers', async () => {
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       wallet: Keypair.random().secret(),
       network: 'testnet',
       commitmentSecret: Keypair.random().secret(),

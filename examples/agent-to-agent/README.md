@@ -5,8 +5,8 @@ An **orchestrator agent** breaks a document into chunks, then pays a **specialis
 ## What this covers
 
 - Agent-to-agent payments where the payer is itself an autonomous agent
-- Building a specialist provider with `routedockHono` and a custom POST handler
-- `RouteDockClient` on the orchestrator side paying another agent's endpoint
+- Building a specialist provider with `kikisAppHono` and a custom POST handler
+- `KikisAppClient` on the orchestrator side paying another agent's endpoint
 - Aggregating paid results into a final output
 - Independent keypairs for orchestrator and specialist
 
@@ -65,24 +65,24 @@ pnpm start
 [orchestrator] specialist=http://localhost:3200/summarise
 [orchestrator] summarising 3 document chunks
 
-[RouteDock] Summariser Specialist → x402
+[KikisApp] Summariser Specialist → x402
 #01 input="Stellar is an open-source, decentralized payment protoc…"
      Summary: "Stellar is an open-source, decentralized payment…"
      txHash=abc123…  paid=0.0003000 USDC
 
-[RouteDock] Summariser Specialist → x402
-#02 input="RouteDock is a payment middleware layer for AI agents…"
-     Summary: "RouteDock is a payment middleware layer…"
+[KikisApp] Summariser Specialist → x402
+#02 input="KikisApp is a payment middleware layer for AI agents…"
+     Summary: "KikisApp is a payment middleware layer…"
      txHash=def456…  paid=0.0003000 USDC
 
-[RouteDock] Summariser Specialist → x402
+[KikisApp] Summariser Specialist → x402
 #03 input="The x402 protocol extends HTTP with a 402 Payment Req…"
      Summary: "The x402 protocol extends HTTP with…"
      txHash=ghi789…  paid=0.0003000 USDC
 
 --- Aggregated summaries ---
   1. Summary: "Stellar is an open-source, decentralized payment…"
-  2. Summary: "RouteDock is a payment middleware layer…"
+  2. Summary: "KikisApp is a payment middleware layer…"
   3. Summary: "The x402 protocol extends HTTP with…"
 
 [orchestrator] total paid to specialist: 0.0009 USDC
@@ -93,7 +93,7 @@ pnpm start
 
 ```
 Orchestrator Agent                 Specialist Sub-Agent
-  RouteDockClient ──── x402 ──────► routedockHono middleware
+  KikisAppClient ──── x402 ──────► kikisAppHono middleware
   (ORCHESTRATOR_SECRET)              ► POST /summarise handler
                                      (SPECIALIST_SECRET)
 ```

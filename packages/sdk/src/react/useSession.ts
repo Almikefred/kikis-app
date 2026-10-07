@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SessionHandle, SessionCloseResult } from '../types.js'
-import { useRouteDockContext } from './context.js'
+import { useKikisAppContext } from './context.js'
 
 export type SessionStatus = 'idle' | 'opening' | 'open' | 'closing' | 'closed' | 'error'
 
@@ -23,7 +23,7 @@ export interface UseSessionResult {
  * useEffect(() => { open() }, [])
  */
 export function useSession(url: string): UseSessionResult {
-  const { client } = useRouteDockContext()
+  const { client } = useKikisAppContext()
   const [session, setSession] = useState<SessionHandle | null>(null)
   const [status, setStatus] = useState<SessionStatus>('idle')
   const [vouchers, setVouchers] = useState(0)

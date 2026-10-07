@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { SeenTxStore, SettlementRecord } from '../provider/SeenTxStore.js'
-import { RouteDockNetworkError } from '../errors.js'
+import { KikisAppNetworkError } from '../errors.js'
 
 /**
  * Settlement idempotency backed by Postgres via Supabase.
@@ -30,13 +30,13 @@ import { RouteDockNetworkError } from '../errors.js'
  *
  * @example
  * ```ts
- * import { SupabaseSeenTxStore } from '@routedock/routedock/provider/hono'
+ * import { SupabaseSeenTxStore } from '@kikis-app/kikis-app/provider/hono'
  * import { createClient } from '@supabase/supabase-js'
  *
  * const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!)
  * const seenTxStore = new SupabaseSeenTxStore(supabase)
  *
- * routedockHono({ ..., seenTxStore })
+ * kikisAppHono({ ..., seenTxStore })
  * ```
  */
 export class SupabaseSeenTxStore implements SeenTxStore {
@@ -50,7 +50,7 @@ export class SupabaseSeenTxStore implements SeenTxStore {
       .maybeSingle()
 
     if (error) {
-      throw new RouteDockNetworkError(`SupabaseSeenTxStore.get failed: ${error.message}`)
+      throw new KikisAppNetworkError(`SupabaseSeenTxStore.get failed: ${error.message}`)
     }
     if (!data) return undefined
 
@@ -74,7 +74,7 @@ export class SupabaseSeenTxStore implements SeenTxStore {
     )
 
     if (error) {
-      throw new RouteDockNetworkError(`SupabaseSeenTxStore.set failed: ${error.message}`)
+      throw new KikisAppNetworkError(`SupabaseSeenTxStore.set failed: ${error.message}`)
     }
   }
 
@@ -90,7 +90,7 @@ export class SupabaseSeenTxStore implements SeenTxStore {
     })
 
     if (error) {
-      throw new RouteDockNetworkError(`SupabaseSeenTxStore.claimReplay failed: ${error.message}`)
+      throw new KikisAppNetworkError(`SupabaseSeenTxStore.claimReplay failed: ${error.message}`)
     }
     if (data == null) return Number.POSITIVE_INFINITY
     return data as number

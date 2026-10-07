@@ -2,7 +2,7 @@
  * Express mpp-session: voucher state (amount, signature, payer) must come
  * only from a credential mppx has actually verified (issue #388). Mirrors
  * hono-verified-voucher.test.ts — same mocking strategy, same assertions,
- * against the Express handler (MppSessionHandler.ts / routedockMiddleware.ts)
+ * against the Express handler (MppSessionHandler.ts / kikisAppMiddleware.ts)
  * instead of the Hono one.
  */
 
@@ -12,7 +12,7 @@ import { createServer } from 'node:http'
 import express from 'express'
 import type { Request, Response } from 'express'
 import { Keypair } from '@stellar/stellar-sdk'
-import type { RouteDockManifest } from '../../types.js'
+import type { KikisAppManifest } from '../../types.js'
 
 const payeeKeypair = Keypair.random()
 const commitKeypair = Keypair.random()
@@ -59,10 +59,10 @@ mock.module('../mppCompatibility.js', {
   },
 })
 
-const { routedock } = await import('../routedockMiddleware.js')
+const { kikis-app } = await import('../kikisAppMiddleware.js')
 
-const manifest: RouteDockManifest = {
-  routedock: '1.0',
+const manifest: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Express Verified Voucher Test',
   description: 'Unit test provider',
   modes: ['mpp-session'],
@@ -93,7 +93,7 @@ async function makeServer(handlers: {
   closeCalls = []
   const app = express()
   app.use(
-    routedock({
+    kikis-app({
       asset: 'USDC',
       assetContract: ASSET_CONTRACT,
       payee: payeeKeypair.publicKey(),
@@ -104,7 +104,7 @@ async function makeServer(handlers: {
       modes: ['mpp-session'],
       pricing: { 'mpp-session': { rate: '0.0001', channelFactory: CHANNEL_CONTRACT } },
       ...handlers,
-    } as Parameters<typeof routedock>[0]),
+    } as Parameters<typeof kikis-app>[0]),
   )
   app.get('/price', (_req: Request, res: Response) => {
     res.json({ price: '42' })
@@ -127,7 +127,7 @@ async function makeServer(handlers: {
   })
 }
 
-describe('routedock (Express) — voucher state only from verified credentials', () => {
+describe('kikis-app (Express) — voucher state only from verified credentials', () => {
   it('pairs each committed amount with its own signature (last onVoucher call reflects the latest pair)', async () => {
     const voucherCalls: Array<{ amount: string; signature: string }> = []
     const { commit, close } = await makeServer({

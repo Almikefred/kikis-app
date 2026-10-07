@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import Ajv from 'ajv'
 import addFormats from 'ajv-formats'
-import schema from '../../schemas/routedock.schema.json' with { type: 'json' }
+import schema from '../../schemas/kikis-app.schema.json' with { type: 'json' }
 
 const ajv = new Ajv()
 addFormats(ajv)
@@ -12,7 +12,7 @@ const NULTH_ACCOUNT = 'CAX5IDLC2XHGQSEA2YN3LPLZ7EXLMRXYX3HFJGKFXS6B7OQXBKWO44LT'
 
 function baseManifest(): Record<string, unknown> {
   return {
-    routedock: '1.0',
+    kikis-app: '1.0',
     name: 'Nulth Test Provider',
     description: 'Schema regression test for Nulth-enabled manifests',
     modes: ['x402'],
@@ -37,7 +37,7 @@ function baseManifest(): Record<string, unknown> {
   }
 }
 
-describe('routedock.schema — Nulth vault fields', () => {
+describe('kikis-app.schema — Nulth vault fields', () => {
   it('accepts a Nulth-enabled manifest', () => {
     const manifest = {
       ...baseManifest(),

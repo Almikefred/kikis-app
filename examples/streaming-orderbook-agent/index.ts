@@ -1,7 +1,7 @@
-import { RouteDockClient, type SessionHandle } from '@routedock/routedock'
+import { KikisAppClient, type SessionHandle } from '@kikis-app/kikis-app'
 
 const TARGET_UPDATES = 100
-const PROVIDER_B_URL = cleanBaseUrl(process.env['PROVIDER_B_URL'] ?? 'https://api-b.routedock.xyz')
+const PROVIDER_B_URL = cleanBaseUrl(process.env['PROVIDER_B_URL'] ?? 'https://api-b.kikis-app.xyz')
 const ORDERBOOK_URL = `${PROVIDER_B_URL}/stream/orderbook`
 const STELLAR_NETWORK = process.env['STELLAR_NETWORK'] === 'mainnet' ? 'mainnet' : 'testnet'
 const AGENT_SECRET = process.env['AGENT_SECRET'] ?? ''
@@ -112,9 +112,9 @@ async function main(): Promise<void> {
   requireSecret('AGENT_SECRET', AGENT_SECRET)
   requireSecret('COMMITMENT_SECRET', COMMITMENT_SECRET)
 
-  // RouteDock discovers Provider B's manifest, verifies it supports
+  // KikisApp discovers Provider B's manifest, verifies it supports
   // mpp-session, and returns a handle for voucher-backed streaming.
-  const client = new RouteDockClient({
+  const client = new KikisAppClient({
     wallet: AGENT_SECRET,
     network: STELLAR_NETWORK,
     commitmentSecret: COMMITMENT_SECRET,

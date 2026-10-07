@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, useEffect } from 'react'
 import type { PaymentResult } from '../types.js'
 import type { ModeSelectOptions } from '../client/ModeRouter.js'
-import { useRouteDockContext } from './context.js'
+import { useKikisAppContext } from './context.js'
 
 export interface UsePayResult {
   pay: () => Promise<PaymentResult | null>
@@ -18,7 +18,7 @@ export interface UsePayResult {
  * return <button onClick={pay} disabled={loading}>Pay</button>
  */
 export function usePay(url: string, options?: ModeSelectOptions): UsePayResult {
-  const { client } = useRouteDockContext()
+  const { client } = useKikisAppContext()
   const [result, setResult] = useState<PaymentResult | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<Error | null>(null)

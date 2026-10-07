@@ -1,5 +1,5 @@
 -- ============================================================
--- RouteDock — Initial Schema Migration
+-- KikisApp — Initial Schema Migration
 -- Section 8: Database Schema (Supabase)
 -- ============================================================
 

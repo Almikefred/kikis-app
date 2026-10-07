@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { resolvePayee } from '../../internal/payee.js'
-import type { RouteDockManifest } from '../../types.js'
+import type { KikisAppManifest } from '../../types.js'
 
 const TOP_LEVEL = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAATOP'
 const X402_PAYEE = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAX402'
 const CHARGE_PAYEE = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACHARGE'
 
-function makeManifest(pricing: RouteDockManifest['pricing']): RouteDockManifest {
+function makeManifest(pricing: KikisAppManifest['pricing']): KikisAppManifest {
   return {
-    routedock: '1.0',
+    kikis-app: '1.0',
     name: 'Test Service',
     description: 'Unit test provider',
     modes: ['x402', 'mpp-charge'],

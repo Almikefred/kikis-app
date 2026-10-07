@@ -1,5 +1,5 @@
 /**
- * USDC decimal-to-integer conversion shared by nulth-sdk and @routedock/routedock.
+ * USDC decimal-to-integer conversion shared by nulth-sdk and @kikis-app/kikis-app.
  *
  * 1 USDC = 10^7 stroops on Stellar. This is the single canonical converter;
  * callers in other packages re-export it rather than reimplementing the math.

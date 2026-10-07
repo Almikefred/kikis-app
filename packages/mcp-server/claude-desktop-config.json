@@ -1,10 +1,10 @@
 {
   "mcpServers": {
-    "routedock": {
+    "kikis-app": {
       "command": "node",
       "args": ["<REPLACE_WITH_ABSOLUTE_PATH_TO>/packages/mcp-server/dist/index.js"],
       "env": {
-        "ROUTEDOCK_ENV_FILE": "<REPLACE_WITH_ABSOLUTE_PATH_TO_YOUR_ENV_FILE>"
+        "KIKIS_APP_ENV_FILE": "<REPLACE_WITH_ABSOLUTE_PATH_TO_YOUR_ENV_FILE>"
       }
     }
   }

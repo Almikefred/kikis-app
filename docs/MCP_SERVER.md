@@ -1,13 +1,13 @@
-# RouteDock MCP Server
+# KikisApp MCP Server
 
 ## Overview
 
-The `@routedock/mcp-server` package implements a Model Context Protocol (MCP) server that exposes RouteDock's Stellar payment functionality as standardized tools for LLM agents. This addresses the core thesis that base payment infrastructure should be built for machines, not humans.
+The `@kikis-app/mcp-server` package implements a Model Context Protocol (MCP) server that exposes KikisApp's Stellar payment functionality as standardized tools for LLM agents. This addresses the core thesis that base payment infrastructure should be built for machines, not humans.
 
 ## Problem Solved
 
 Previously, every LLM agent wanting to make Stellar payments had to:
-- Implement the full RouteDock SDK
+- Implement the full KikisApp SDK
 - Understand x402, MPP charge, and MPP session protocols
 - Handle manifest discovery and validation
 - Manage wallet keys and signing
@@ -24,12 +24,12 @@ With the MCP server, agents simply connect to a local MCP server and use standar
        │ MCP Protocol
        ▼
 ┌──────────────────────┐
-│ @routedock/mcp-server│
+│ @kikis-app/mcp-server│
 └──────┬───────────────┘
        │
        ▼
 ┌──────────────────────┐
-│ @routedock/routedock │
+│ @kikis-app/kikis-app │
 │       SDK            │
 └──────┬───────────────┘
        │
@@ -43,7 +43,7 @@ With the MCP server, agents simply connect to a local MCP server and use standar
 
 ### 1. pay_for_data(url, max_amount, preferred_mode)
 
-Pay for a single data request from a RouteDock provider. Automatically selects the best payment mode based on the provider's manifest.
+Pay for a single data request from a KikisApp provider. Automatically selects the best payment mode based on the provider's manifest.
 
 **Use case:** One-off API calls, price feeds, single data queries
 
@@ -86,7 +86,7 @@ Check the Stellar wallet balance for the configured account.
 
 ### 6. list_providers(tags, network)
 
-List available RouteDock providers from the registry, filterable by capability tags (array overlap) and network.
+List available KikisApp providers from the registry, filterable by capability tags (array overlap) and network.
 
 **Use case:** Discover providers by capability, find services for specific needs
 
@@ -109,7 +109,7 @@ Add to `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "routedock": {
+    "kikis-app": {
       "command": "node",
       "args": ["/absolute/path/to/packages/mcp-server/dist/index.js"],
       "env": {
@@ -130,8 +130,8 @@ Once configured, ask Claude:
 
 > "Check my Stellar balance"
 > "List providers that offer price data"
-> "Pay for data from https://api-a.routedock.xyz/price with a max of 0.01 USDC"
-> "Open a session with https://api-b.routedock.xyz for streaming orderbook data"
+> "Pay for data from https://api-a.kikis-app.xyz/price with a max of 0.01 USDC"
+> "Open a session with https://api-b.kikis-app.xyz for streaming orderbook data"
 
 ## Implementation Details
 
@@ -165,18 +165,18 @@ All tools return structured error responses:
 - All secrets are stored locally in environment variables
 - MCP server runs locally on stdio (no network exposure)
 - Secrets are never transmitted to external services
-- Wallet operations use the existing RouteDock SDK security model
+- Wallet operations use the existing KikisApp SDK security model
 
 ## Testing with Live Providers
 
-The MCP server works with the live RouteDock testnet providers:
+The MCP server works with the live KikisApp testnet providers:
 
-- **Provider A**: https://api-a.routedock.xyz
+- **Provider A**: https://api-a.kikis-app.xyz
   - Modes: x402, mpp-charge
   - Endpoint: /price
   - Use case: Single price requests
 
-- **Provider B**: https://api-b.routedock.xyz
+- **Provider B**: https://api-b.kikis-app.xyz
   - Modes: mpp-session
   - Endpoint: /stream/orderbook
   - Use case: Streaming orderbook data
@@ -195,9 +195,9 @@ Potential additions to the MCP server:
 ### Before (SDK Implementation)
 
 ```typescript
-import { RouteDockClient } from '@routedock/routedock'
+import { KikisAppClient } from '@kikis-app/kikis-app'
 
-const client = new RouteDockClient({
+const client = new KikisAppClient({
   wallet: secretKey,
   network: 'testnet',
   commitmentSecret: commitmentKey
@@ -210,7 +210,7 @@ const result = await client.pay(url, { preferredMode: 'x402' })
 ### After (MCP Server)
 
 ```
-User: "Pay for data from https://api-a.routedock.xyz/price"
+User: "Pay for data from https://api-a.kikis-app.xyz/price"
 
 Claude: (calls pay_for_data tool automatically)
 Result: Payment successful, mode: x402, amount: 0.001 USDC
@@ -226,4 +226,4 @@ The MCP server dramatically lowers the barrier for LLM agents to use Stellar pay
 - **Discovery built-in**: Provider registry integration
 - **Mode selection automatic**: Best payment mode chosen automatically
 
-This aligns with the RouteDock thesis: payment infrastructure should be invisible to agents, letting them focus on their core logic while payments happen seamlessly in the background.
+This aligns with the KikisApp thesis: payment infrastructure should be invisible to agents, letting them focus on their core logic while payments happen seamlessly in the background.

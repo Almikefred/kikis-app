@@ -4,8 +4,8 @@ import { createServer } from 'node:http'
 import express from 'express'
 import type { Request, Response } from 'express'
 import { Keypair } from '@stellar/stellar-sdk'
-import { routedock, type RouteDockMiddlewareOptions } from '../routedockMiddleware.js'
-import type { RouteDockManifest } from '../../types.js'
+import { kikis-app, type KikisAppMiddlewareOptions } from '../kikisAppMiddleware.js'
+import type { KikisAppManifest } from '../../types.js'
 import { InMemorySeenTxStore, paymentIdempotencyKey } from '../SeenTxStore.js'
 import { usdcToStroops } from '../../internal/usdc.js'
 // Generate fresh keypairs — avoids hardcoding secrets while keeping tests self-contained
@@ -15,8 +15,8 @@ const commitKeypair = Keypair.random()
 const ASSET_CONTRACT = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA'
 const CHANNEL_CONTRACT = 'CCK4XOW3YKQUEZFONUTINKMSNW7SNMRQZURME5U3UP7E6WNGK7UHUCAH'
 
-const manifest: RouteDockManifest = {
-  routedock: '1.0',
+const manifest: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Express Test Service',
   description: 'Unit test provider for Express adapter',
   modes: ['x402', 'mpp-charge', 'mpp-session'],
@@ -51,11 +51,11 @@ const BASE_OPTS = {
 
 /** Spin up an Express server, return its base URL and a close function. */
 async function makeServer(
-  overrides: Partial<RouteDockMiddlewareOptions> = {},
+  overrides: Partial<KikisAppMiddlewareOptions> = {},
 ): Promise<{ url: string; close: () => Promise<void> }> {
   const app = express()
   app.use(
-    routedock({
+    kikis-app({
       ...BASE_OPTS,
       modes: ['x402', 'mpp-charge', 'mpp-session'],
       pricing: {
@@ -64,7 +64,7 @@ async function makeServer(
         'mpp-session': { rate: '0.0001', channelFactory: CHANNEL_CONTRACT },
       },
       ...overrides,
-    } as Parameters<typeof routedock>[0]),
+    } as Parameters<typeof kikis-app>[0]),
   )
   app.get('/price', (_req: Request, res: Response) => {
     res.json({ price: '42' })
@@ -83,11 +83,11 @@ async function makeServer(
   })
 }
 
-describe('routedock (Express) — manifest endpoint', () => {
-  it('serves a signed /.well-known/routedock.json', async () => {
+describe('kikis-app (Express) — manifest endpoint', () => {
+  it('serves a signed /.well-known/kikis-app.json', async () => {
     const { url, close } = await makeServer({ modes: [] as ('x402' | 'mpp-charge' | 'mpp-session')[], pricing: {} })
     try {
-      const res = await fetch(`${url}/.well-known/routedock.json`)
+      const res = await fetch(`${url}/.well-known/kikis-app.json`)
       assert.equal(res.status, 200)
       const body = await res.json() as { name: string; signature: string }
       assert.equal(body.name, manifest.name, 'manifest name should match')
@@ -110,11 +110,11 @@ describe('routedock (Express) — manifest endpoint', () => {
   })
 })
 
-describe('routedock (Express) — health endpoint', () => {
+describe('kikis-app (Express) — health endpoint', () => {
   it('returns ok with manifest metadata', async () => {
     const { url, close } = await makeServer()
     try {
-      const res = await fetch(`${url}/.well-known/routedock.json`)
+      const res = await fetch(`${url}/.well-known/kikis-app.json`)
       assert.equal(res.status, 200)
       const body = await res.json() as Record<string, unknown>
       assert.equal(body.name, manifest.name)
@@ -124,7 +124,7 @@ describe('routedock (Express) — health endpoint', () => {
   })
 })
 
-describe('routedock (Express) — x402 flow', () => {
+describe('kikis-app (Express) — x402 flow', () => {
   it('returns 402 with X-Payment-Requirements when no payment header', async () => {
     const { url, close } = await makeServer({ modes: ['x402'], pricing: { x402: '0.001' } })
     try {
@@ -173,7 +173,7 @@ describe('routedock (Express) — x402 flow', () => {
   })
 })
 
-describe('routedock (Express) — mpp-charge flow', () => {
+describe('kikis-app (Express) — mpp-charge flow', () => {
   it('returns 402 challenge when no authorization header', async () => {
     const { url, close } = await makeServer({ modes: ['mpp-charge'], pricing: { 'mpp-charge': '0.0008' } })
     try {
@@ -185,7 +185,7 @@ describe('routedock (Express) — mpp-charge flow', () => {
   })
 })
 
-describe('routedock (Express) — mpp-session flow', () => {
+describe('kikis-app (Express) — mpp-session flow', () => {
   it('returns 402 challenge when no authorization header', async () => {
     const { url, close } = await makeServer({
       modes: ['mpp-session'],
@@ -215,7 +215,7 @@ describe('routedock (Express) — mpp-session flow', () => {
   })
 })
 
-describe('routedock (Express) — mode routing', () => {
+describe('kikis-app (Express) — mode routing', () => {
   it('routes x402 requests by payment-signature header', async () => {
     const { url, close } = await makeServer({
       modes: ['x402', 'mpp-charge'],
@@ -248,7 +248,7 @@ describe('routedock (Express) — mode routing', () => {
   })
 })
 
-describe('routedock (Express) — settlement idempotency', () => {
+describe('kikis-app (Express) — settlement idempotency', () => {
   it('replays cached settlement on duplicate payment-signature header', async () => {
     const seenStore = new InMemorySeenTxStore()
     const settled: string[] = []
@@ -344,12 +344,12 @@ describe('routedock (Express) — settlement idempotency', () => {
     const seenStore = new InMemorySeenTxStore({ warn: false })
     const app = express()
     app.use(
-      routedock({
+      kikis-app({
         ...BASE_OPTS,
         modes: ['x402'],
         pricing: { x402: '0.001' },
         seenTxStore: seenStore,
-      } as Parameters<typeof routedock>[0]),
+      } as Parameters<typeof kikis-app>[0]),
     )
     app.get('/price', (_req: Request, res: Response) => {
       handlerRuns++
@@ -411,21 +411,21 @@ describe('routedock (Express) — settlement idempotency', () => {
     const app = express()
     app.use(
       '/cheap',
-      routedock({
+      kikis-app({
         ...BASE_OPTS,
         modes: ['x402'],
         pricing: { x402: '0.001' },
         seenTxStore: seenStore,
-      } as Parameters<typeof routedock>[0]),
+      } as Parameters<typeof kikis-app>[0]),
     )
     app.use(
       '/expensive',
-      routedock({
+      kikis-app({
         ...BASE_OPTS,
         modes: ['x402'],
         pricing: { x402: '5.00' },
         seenTxStore: seenStore,
-      } as Parameters<typeof routedock>[0]),
+      } as Parameters<typeof kikis-app>[0]),
     )
     app.get('/cheap', (_req: Request, res: Response) => {
       runs.cheap++
@@ -463,22 +463,22 @@ describe('routedock (Express) — settlement idempotency', () => {
   })
 })
 
-describe('routedock (Express) — constructor validation', () => {
+describe('kikis-app (Express) — constructor validation', () => {
   it('throws when mpp-session mode is enabled without commitmentPublicKey', () => {
     assert.throws(
       () =>
-        routedock({
+        kikis-app({
           ...BASE_OPTS,
           commitmentPublicKey: undefined,
           modes: ['mpp-session'],
           pricing: { 'mpp-session': { rate: '0.0001', channelFactory: CHANNEL_CONTRACT } },
-        } as unknown as Parameters<typeof routedock>[0]),
+        } as unknown as Parameters<typeof kikis-app>[0]),
       /commitmentPublicKey/,
     )
   })
 })
 
-describe('routedock (Express) — error propagation', () => {
+describe('kikis-app (Express) — error propagation', () => {
   it('catches handler errors and returns 500', async () => {
     const { url, close } = await makeServer({ modes: ['x402'], pricing: { x402: '0.001' } })
     try {
@@ -496,7 +496,7 @@ describe('routedock (Express) — error propagation', () => {
   })
 })
 
-describe('routedock (Express) — callback errors', () => {
+describe('kikis-app (Express) — callback errors', () => {
   it('onCallbackError is called when onSettled throws', async () => {
     const callbackErrors: Array<{ err: unknown; cbName: string }> = []
 
@@ -510,7 +510,7 @@ describe('routedock (Express) — callback errors', () => {
       // The x402 handler should not crash — callback errors are caught.
       // We cannot easily trigger a successful settlement here, but we can
       // verify the server is still healthy after the request.
-      const res = await fetch(`${url}/.well-known/routedock.json`)
+      const res = await fetch(`${url}/.well-known/kikis-app.json`)
       assert.equal(res.status, 200)
     } finally {
       await close()
@@ -518,13 +518,13 @@ describe('routedock (Express) — callback errors', () => {
   })
 })
 
-describe('routedock (Express) — multiple modes', () => {
+describe('kikis-app (Express) — multiple modes', () => {
   it('serves manifest with all configured modes', async () => {
     const { url, close } = await makeServer()
     try {
-      const res = await fetch(`${url}/.well-known/routedock.json`)
+      const res = await fetch(`${url}/.well-known/kikis-app.json`)
       assert.equal(res.status, 200)
-      const body = await res.json() as RouteDockManifest
+      const body = await res.json() as KikisAppManifest
       assert.ok(body.modes.includes('x402'))
       assert.ok(body.modes.includes('mpp-charge'))
       assert.ok(body.modes.includes('mpp-session'))
@@ -534,10 +534,10 @@ describe('routedock (Express) — multiple modes', () => {
   })
 })
 
-describe('routedock (Express) — per-mode payee override', () => {
+describe('kikis-app (Express) — per-mode payee override', () => {
   it('resolves per-mode payee override in manifest signature', async () => {
     const overridePayee = Keypair.random()
-    const manifestWithOverride: RouteDockManifest = {
+    const manifestWithOverride: KikisAppManifest = {
       ...manifest,
       pricing: {
         ...manifest.pricing,
@@ -555,9 +555,9 @@ describe('routedock (Express) — per-mode payee override', () => {
       pricing: { x402: '0.001' },
     })
     try {
-      const res = await fetch(`${url}/.well-known/routedock.json`)
+      const res = await fetch(`${url}/.well-known/kikis-app.json`)
       assert.equal(res.status, 200)
-      const body = await res.json() as RouteDockManifest
+      const body = await res.json() as KikisAppManifest
       assert.equal(body.pricing.x402?.payee, overridePayee.publicKey())
     } finally {
       await close()

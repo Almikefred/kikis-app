@@ -10,6 +10,6 @@ export interface Env {
   USDC_ASSET_CONTRACT?: string
   SUPABASE_URL?: string
   SUPABASE_SERVICE_KEY?: string
-  /** Public origin recorded on settlement, e.g. https://api-b.routedock.xyz */
+  /** Public origin recorded on settlement, e.g. https://api-b.kikis-app.xyz */
   PUBLIC_BASE_URL?: string
 }

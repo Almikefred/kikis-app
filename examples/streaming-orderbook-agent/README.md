@@ -29,7 +29,7 @@ This cookbook opens an MPP session against Provider B's `GET /stream/orderbook` 
    ```bash
    AGENT_SECRET=S...
    COMMITMENT_SECRET=S...
-   PROVIDER_B_URL=https://api-b.routedock.xyz
+   PROVIDER_B_URL=https://api-b.kikis-app.xyz
    STELLAR_NETWORK=testnet
    ```
 
@@ -43,7 +43,7 @@ pnpm start
 
 The script demonstrates the full client lifecycle:
 
-- `new RouteDockClient(...)`
+- `new KikisAppClient(...)`
 - `client.openSession(...)`
 - `for await (const update of session.stream())`
 - `session.close()` on completion or Ctrl+C

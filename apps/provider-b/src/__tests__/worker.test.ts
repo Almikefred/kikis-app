@@ -15,7 +15,7 @@ const mockEnv: Env = {
   STELLAR_PAYEE_ADDRESS: TEST_PAYEE_ADDRESS,
   COMMITMENT_PUBLIC_KEY: TEST_PAYEE_ADDRESS,
   CHANNEL_CONTRACT_ID: TEST_CHANNEL_CONTRACT,
-  PUBLIC_BASE_URL: 'https://api-b.routedock.xyz',
+  PUBLIC_BASE_URL: 'https://api-b.kikis-app.xyz',
   USDC_ASSET_CONTRACT: TESTNET_USDC_CONTRACT,
   CHANNEL_SESSION: {} as unknown as Env['CHANNEL_SESSION'],
 }
@@ -71,7 +71,7 @@ describe('provider-b worker payment path & Durable Object routes', () => {
       CHANNEL_SESSION: mockDOBinding as unknown as Env['CHANNEL_SESSION'],
     }
 
-    const req = new Request('http://localhost/.well-known/routedock.json')
+    const req = new Request('http://localhost/.well-known/kikis-app.json')
     const res = await worker.fetch(req, envWithDO)
 
     assert.equal(res.status, 200)
@@ -113,7 +113,7 @@ describe('provider-b worker payment path & Durable Object routes', () => {
     assert.equal(res1.status, 402)
 
     // Request 2: Sequential request to the same DO instance
-    const req2 = new Request('http://localhost/.well-known/routedock.json')
+    const req2 = new Request('http://localhost/.well-known/kikis-app.json')
     const res2 = await session.fetch(req2)
     assert.equal(res2.status, 200)
 
@@ -369,7 +369,7 @@ describe('provider-b startup config validation', () => {
     const healthText = await healthRes.text()
     assert.ok(!healthText.includes(TEST_PAYEE_SECRET))
 
-    const manifestRes = await worker.fetch(new Request('http://localhost/.well-known/routedock.json'), badEnv)
+    const manifestRes = await worker.fetch(new Request('http://localhost/.well-known/kikis-app.json'), badEnv)
     const manifestText = await manifestRes.text()
     assert.equal(manifestRes.status, 500)
     assert.ok(!manifestText.includes(TEST_PAYEE_SECRET))
@@ -377,7 +377,7 @@ describe('provider-b startup config validation', () => {
 
   it('with COMMITMENT_PUBLIC_KEY unset, two consecutive manifest requests each 500 without worker.fetch throwing', async () => {
     const badEnv = envWithDO({ ...mockEnv, COMMITMENT_PUBLIC_KEY: undefined } as unknown as Env)
-    const req = () => new Request('http://localhost/.well-known/routedock.json')
+    const req = () => new Request('http://localhost/.well-known/kikis-app.json')
 
     const res1 = await worker.fetch(req(), badEnv)
     assert.equal(res1.status, 500)
@@ -395,7 +395,7 @@ describe('provider-b startup config validation', () => {
       ...mockEnv,
       STELLAR_PAYEE_SECRET: 'SNOTAVALIDKEY',
     })
-    const req = new Request('http://localhost/.well-known/routedock.json')
+    const req = new Request('http://localhost/.well-known/kikis-app.json')
     const res = await session.fetch(req)
 
     assert.equal(res.status, 500)
@@ -409,7 +409,7 @@ describe('provider-b startup config validation', () => {
       STELLAR_NETWORK: 'testnet',
       USDC_ASSET_CONTRACT: undefined,
     } as unknown as Env)
-    const req = new Request('http://localhost/.well-known/routedock.json')
+    const req = new Request('http://localhost/.well-known/kikis-app.json')
     const res = await session.fetch(req)
 
     assert.equal(res.status, 200)
@@ -423,7 +423,7 @@ describe('provider-b startup config validation', () => {
       STELLAR_NETWORK: 'mainnet',
       USDC_ASSET_CONTRACT: undefined,
     } as unknown as Env)
-    const req = new Request('http://localhost/.well-known/routedock.json')
+    const req = new Request('http://localhost/.well-known/kikis-app.json')
     const res = await worker.fetch(req, badEnv)
 
     assert.equal(res.status, 500)

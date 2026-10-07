@@ -1,4 +1,4 @@
-import { resolveLogger, type RouteDockLogger } from '../internal/logger.js'
+import { resolveLogger, type KikisAppLogger } from '../internal/logger.js'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,7 +39,7 @@ export interface InMemorySpendStoreOptions {
   /** Log a startup warning about non-durability. Defaults to true. */
   warn?: boolean
   /** Log sink for the non-durability warning. Defaults to a console-backed logger. */
-  logger?: RouteDockLogger
+  logger?: KikisAppLogger
 }
 
 /**
@@ -54,9 +54,9 @@ export class InMemorySpendStore implements SpendStore {
     if (options.warn !== false) {
       resolveLogger(options.logger)(
         'warn',
-        '[RouteDock] Using in-memory SpendStore: the daily spend cap is NOT durable ' +
+        '[KikisApp] Using in-memory SpendStore: the daily spend cap is NOT durable ' +
           'and resets on every process restart. Inject a persistent SpendStore via ' +
-          'RouteDockClientConfig.spendStore for production safety.',
+          'KikisAppClientConfig.spendStore for production safety.',
       )
     }
   }

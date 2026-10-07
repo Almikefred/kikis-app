@@ -1,13 +1,13 @@
 import { Hono } from 'hono'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
-  routedockHono,
+  kikisAppHono,
   registerProvider,
   signManifest,
   SupabaseSeenTxStore,
   InMemorySeenTxStore,
   type SeenTxStore,
-} from '@routedock/routedock/provider/hono'
+} from '@kikis-app/kikis-app/provider/hono'
 import {
   buildManifest,
   HORIZON_URLS,
@@ -26,7 +26,7 @@ export interface Env {
   OPENZEPPELIN_API_KEY?: string
   SUPABASE_URL?: string
   SUPABASE_SERVICE_KEY?: string
-  /** Public origin used when recording settlements, e.g. https://api-a.routedock.xyz */
+  /** Public origin used when recording settlements, e.g. https://api-a.kikis-app.xyz */
   PUBLIC_BASE_URL?: string
 }
 
@@ -118,7 +118,7 @@ function createApp(env: Env, ctx: ExecutionContext): Hono {
     : new InMemorySeenTxStore()
 
   if (supabase) {
-    const baseUrl = env.PUBLIC_BASE_URL ?? 'https://api-a.routedock.xyz'
+    const baseUrl = env.PUBLIC_BASE_URL ?? 'https://api-a.kikis-app.xyz'
     const signed = signManifest(manifest, env.STELLAR_PAYEE_SECRET)
     ctx.waitUntil(
       registerProvider({ supabase, manifest: signed, baseUrl, verified: true }).catch((err) => {
@@ -127,19 +127,19 @@ function createApp(env: Env, ctx: ExecutionContext): Hono {
     )
   }
 
-  const providerUrl = `${env.PUBLIC_BASE_URL ?? 'https://api-a.routedock.xyz'}/price`
+  const providerUrl = `${env.PUBLIC_BASE_URL ?? 'https://api-a.kikis-app.xyz'}/price`
 
   const app = new Hono()
 
-  // Mounted at '*', not '/price', so routedockHono's own
-  // /.well-known/routedock.json branch serves the SIGNED manifest. Scoping it
+  // Mounted at '*', not '/price', so kikisAppHono's own
+  // /.well-known/kikis-app.json branch serves the SIGNED manifest. Scoping it
   // to /price leaves the well-known route unsigned, and mandatory signature
   // verification (PR #86) then makes every client.pay() throw
-  // RouteDockSignatureError before any payment — issue #134. /health is
+  // KikisAppSignatureError before any payment — issue #134. /health is
   // answered in fetch() below, before this middleware can demand payment.
   app.use(
     '*',
-    routedockHono({
+    kikisAppHono({
       modes: ['x402', 'mpp-charge'],
       pricing: { x402: X402_PRICE, 'mpp-charge': MPP_CHARGE_PRICE },
       asset: 'USDC',

@@ -10,13 +10,13 @@ import {
   encodePaymentResponseHeader,
 } from '@x402/core/http'
 import type { Network as X402Network } from '@x402/core/types'
-import type { RouteDockManifest } from '../types.js'
-import { RouteDockManifestError } from '../errors.js'
+import type { KikisAppManifest } from '../types.js'
+import { KikisAppManifestError } from '../errors.js'
 import { resolvePayee } from '../internal/payee.js'
 import { usdcToUnits } from '../internal/usdc.js'
 import { extractPayerAddress } from './payer.js'
 import { resolveAssetContract } from '../internal/assetUtils.js'
-import { resolveLogger, type RouteDockLogger } from '../internal/logger.js'
+import { resolveLogger, type KikisAppLogger } from '../internal/logger.js'
 import {
   InMemorySeenTxStore,
   paymentIdempotencyKey,
@@ -40,7 +40,7 @@ export interface X402HandlerOptions {
   amount: string
   assetContract?: string
   facilitatorApiKey?: string
-  manifest: RouteDockManifest
+  manifest: KikisAppManifest
   onSettled?: (txHash: string, amount: string, mode: string, payer: string | null) => Promise<void>
   onCallbackError?: (err: unknown, cb: string) => void
   /**
@@ -49,7 +49,7 @@ export interface X402HandlerOptions {
    */
   seenTxStore?: SeenTxStore
   /** Log sink for internal error paths. Defaults to a console-backed logger. */
-  logger?: RouteDockLogger
+  logger?: KikisAppLogger
 }
 
 export function createX402Handler(opts: X402HandlerOptions): RequestHandler {
@@ -269,7 +269,7 @@ export function createX402Handler(opts: X402HandlerOptions): RequestHandler {
 
       next()
     } catch (err) {
-      if (err instanceof RouteDockManifestError) {
+      if (err instanceof KikisAppManifestError) {
         next(err)
         return
       }

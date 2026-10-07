@@ -18,7 +18,7 @@ const config: Config = {
     },
     extend: {
       colors: {
-        // ── RouteDock semantic surface aliases ─────────────────────────
+        // ── KikisApp semantic surface aliases ─────────────────────────
         // These also serve as shadcn token mappings since component classes
         // like bg-background, bg-card, bg-primary all resolve through here.
         background: 'var(--bg-base)',

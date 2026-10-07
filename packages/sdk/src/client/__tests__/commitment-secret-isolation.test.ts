@@ -1,9 +1,9 @@
 /**
  * Security tests for the commitment-secret WeakMap isolation pattern used in
- * RouteDockClient.
+ * KikisAppClient.
  *
  * These tests verify the isolation mechanism directly — same pattern as used in
- * RouteDockClient but without importing the production class (which requires
+ * KikisAppClient but without importing the production class (which requires
  * @stellar/stellar-sdk that is only resolved through pnpm's virtual store when
  * running via `pnpm test`).
  *
@@ -13,15 +13,15 @@
  *   - dispose() removes the WeakMap entry
  *   - Double dispose() is safe (idempotent)
  *
- * Run with: pnpm --filter @routedock/sdk test
+ * Run with: pnpm --filter @kikis-app/sdk test
  */
 
 import assert from 'node:assert/strict'
 
 const TEST_SECRET = 'SCZANGBA5YHTNYVS23C4QBEQOOXLPEZITJKIYVXZAIF5WOONUCQ4EZR'
 
-// ── Minimal replica of RouteDockClient's secret-storage pattern ───────────────
-// This is the exact same WeakMap pattern used in RouteDockClient. Testing it
+// ── Minimal replica of KikisAppClient's secret-storage pattern ───────────────
+// This is the exact same WeakMap pattern used in KikisAppClient. Testing it
 // here (without the full stellar-sdk dep chain) verifies the mechanism works.
 
 const _secrets = new WeakMap<TestClient, string>()

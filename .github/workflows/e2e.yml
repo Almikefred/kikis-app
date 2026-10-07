@@ -53,19 +53,19 @@ jobs:
         run: pnpm install
 
       - name: Build nulth-sdk (workspace dependency)
-        run: pnpm --filter @routedock/nulth-sdk build
+        run: pnpm --filter @kikis-app/nulth-sdk build
 
       - name: Build SDK
-        run: pnpm --filter @routedock/routedock build
+        run: pnpm --filter @kikis-app/kikis-app build
 
       - name: Start Providers
         env:
           NODE_ENV: test
         run: |
           set -euo pipefail
-          STELLAR_PAYEE_ADDRESS=$(pnpm --filter @routedock/routedock exec node --input-type=module -e \
+          STELLAR_PAYEE_ADDRESS=$(pnpm --filter @kikis-app/kikis-app exec node --input-type=module -e \
             "import { Keypair } from '@stellar/stellar-sdk'; console.log(Keypair.fromSecret(process.env.E2E_PAYEE_SECRET).publicKey())")
-          COMMITMENT_PUBLIC_KEY=$(COMMITMENT_SECRET="$COMMITMENT_SECRET" pnpm --filter @routedock/routedock exec node --input-type=module -e \
+          COMMITMENT_PUBLIC_KEY=$(COMMITMENT_SECRET="$COMMITMENT_SECRET" pnpm --filter @kikis-app/kikis-app exec node --input-type=module -e \
             "import { Keypair } from '@stellar/stellar-sdk'; console.log(Keypair.fromSecret(process.env.COMMITMENT_SECRET).publicKey())")
           export STELLAR_PAYEE_SECRET="$E2E_PAYEE_SECRET"
           export STELLAR_PAYEE_ADDRESS
@@ -93,9 +93,9 @@ jobs:
             sleep 2
           done
 
-          curl --fail --silent http://localhost:8801/.well-known/routedock.json \
+          curl --fail --silent http://localhost:8801/.well-known/kikis-app.json \
             | jq -e '.signature | type == "string" and length > 0' >/dev/null
-          curl --fail --silent http://localhost:8802/.well-known/routedock.json \
+          curl --fail --silent http://localhost:8802/.well-known/kikis-app.json \
             | jq -e '.signature | type == "string" and length > 0' >/dev/null
           pnpm --filter agent test:e2e
 

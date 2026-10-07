@@ -2,14 +2,14 @@
  * agent-to-agent — orchestrator paying a specialist sub-agent
  *
  * An orchestrator agent breaks a task into subtasks and pays a specialist
- * sub-agent for each result using RouteDock's x402 mode.
+ * sub-agent for each result using KikisApp's x402 mode.
  *
  * This example runs both agents in a single process for simplicity.
  * In production, each agent is a separate service with its own keypair.
  *
  * Flow:
  *   1. Specialist sub-agent starts an Express-compatible Hono server.
- *   2. Orchestrator fetches the specialist's RouteDock manifest.
+ *   2. Orchestrator fetches the specialist's KikisApp manifest.
  *   3. Orchestrator calls specialist.pay() for each subtask.
  *   4. Specialist verifies x402 payment before returning results.
  *   5. Orchestrator aggregates results and prints the final answer.
@@ -18,9 +18,9 @@
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { Keypair } from '@stellar/stellar-sdk'
-import { routedockHono } from '@routedock/routedock/provider/hono'
-import { RouteDockClient } from '@routedock/routedock'
-import type { RouteDockManifest } from '@routedock/routedock'
+import { kikisAppHono } from '@kikis-app/kikis-app/provider/hono'
+import { KikisAppClient } from '@kikis-app/kikis-app'
+import type { KikisAppManifest } from '@kikis-app/kikis-app'
 
 // ---------------------------------------------------------------------------
 // Config
@@ -53,8 +53,8 @@ if (!USDC_CONTRACT) {
 function buildSpecialistServer(specialistSecret: string): Hono {
     const specialistKp = Keypair.fromSecret(specialistSecret)
 
-    const manifest: RouteDockManifest = {
-        routedock: '1.0',
+    const manifest: KikisAppManifest = {
+        kikis-app: '1.0',
         name: 'Summariser Specialist',
         description: 'Accepts a text snippet and returns a one-sentence summary — paid per request',
         modes: ['x402'],
@@ -75,7 +75,7 @@ function buildSpecialistServer(specialistSecret: string): Hono {
 
     const app = new Hono()
 
-    app.use(routedockHono({
+    app.use(kikisAppHono({
             modes: ['x402'],
             pricing: { x402: manifest.pricing.x402!.amount },
             asset: manifest.asset,
@@ -110,7 +110,7 @@ function buildSpecialistServer(specialistSecret: string): Hono {
 // to summarise each one.
 const DOCUMENT_CHUNKS = [
     'Stellar is an open-source, decentralized payment protocol that enables fast, low-cost cross-border transactions using its native asset XLM.',
-    'RouteDock is a payment middleware layer for AI agents, enabling micropayments between services using x402 and MPP channel protocols.',
+    'KikisApp is a payment middleware layer for AI agents, enabling micropayments between services using x402 and MPP channel protocols.',
     'The x402 protocol extends HTTP with a 402 Payment Required flow: a client receives payment requirements, signs a payload, and retries the request with the payment header attached.',
 ]
 
@@ -137,7 +137,7 @@ async function main(): Promise<void> {
 
     const specialistUrl = `${SPECIALIST_URL}/summarise`
 
-    const orchestrator = new RouteDockClient({
+    const orchestrator = new KikisAppClient({
         wallet: ORCHESTRATOR_SECRET,
         network: STELLAR_NETWORK,
         spendCap: { daily: '0.05', asset: 'USDC' },

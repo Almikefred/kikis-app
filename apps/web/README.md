@@ -1,4 +1,4 @@
-RouteDock's dashboard — a Next.js app that reads session, voucher and settlement data from Supabase.
+KikisApp's dashboard — a Next.js app that reads session, voucher and settlement data from Supabase.
 
 ## Getting Started
 
@@ -6,7 +6,7 @@ Needs Node 22 or newer.
 
 ```bash
 pnpm install                                   # from the repo root
-pnpm --filter @routedock/nulth-sdk build       # lib/dashboardMetrics.ts imports it
+pnpm --filter @kikis-app/nulth-sdk build       # lib/dashboardMetrics.ts imports it
 cp apps/web/.env.example apps/web/.env.local
 pnpm --filter web dev
 ```
@@ -26,4 +26,4 @@ pnpm preview   # build + run the Worker locally
 pnpm deploy    # build + deploy to Cloudflare
 ```
 
-`deploy` needs `CLOUDFLARE_API_TOKEN` in the environment. See `MIGRATION.md` at the repo root for why this moved off Vercel and what changed.
+`deploy` needs `CLOUDFLARE_API_TOKEN` in the environment.

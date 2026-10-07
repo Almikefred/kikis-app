@@ -1,8 +1,8 @@
-# RouteDock
+# KikisApp
 
 **Unified payment execution layer for autonomous agents on Stellar**
 
-[![npm](https://img.shields.io/npm/v/@routedock/routedock)](https://www.npmjs.com/package/@routedock/routedock) [![CI](https://github.com/winsznx/routedock/actions/workflows/ci.yml/badge.svg)](https://github.com/winsznx/routedock/actions/workflows/ci.yml) ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg) ![Network: Stellar](https://img.shields.io/badge/network-Stellar%20testnet%20%2B%20mainnet-brightgreen)
+[![npm](https://img.shields.io/npm/v/@kikis-app/kikis-app)](https://www.npmjs.com/package/@kikis-app/kikis-app) [![CI](https://github.com/winsznx/kikis-app/actions/workflows/ci.yml/badge.svg)](https://github.com/winsznx/kikis-app/actions/workflows/ci.yml) ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg) ![Network: Stellar](https://img.shields.io/badge/network-Stellar%20testnet%20%2B%20mainnet-brightgreen)
 
 ---
 
@@ -13,14 +13,14 @@ Three payment protocols exist on Stellar for agent-to-service transactions: x402
 ## The Solution
 
 ```ts
-import { RouteDockClient } from '@routedock/routedock'
+import { KikisAppClient } from '@kikis-app/kikis-app'
 
-const client = new RouteDockClient({ wallet, network: 'testnet' })
+const client = new KikisAppClient({ wallet, network: 'testnet' })
 const result = await client.pay('https://provider.example.com/price')
 // result.mode → 'x402' | 'mpp-charge' | 'mpp-session' | 'mpp-session-ws' (selected automatically)
 ```
 
-One SDK. One function call. The mode is selected from the provider's `routedock.json` manifest. The agent writes nothing else.
+One SDK. One function call. The mode is selected from the provider's `kikis-app.json` manifest. The agent writes nothing else.
 
 ---
 
@@ -67,7 +67,7 @@ graph LR
 
 ### Security Notice
 
-The one-way-channel Soroban contract (`stellar-experimental/one-way-channel`) has **NOT been audited**. RouteDock wraps it with safe defaults (17280-ledger refund window, durable session store with monotonic invariant, DB-level trigger enforcement). Production mainnet use should await a formal audit.
+The one-way-channel Soroban contract (`stellar-experimental/one-way-channel`) has **NOT been audited**. KikisApp wraps it with safe defaults (17280-ledger refund window, durable session store with monotonic invariant, DB-level trigger enforcement). Production mainnet use should await a formal audit.
 
 **Audit Status:**
 - Shortlisted auditors: [OtterSec](https://ottersec.com/), [Hacken](https://hacken.io/), [Trail of Bits](https://trailofbits.com/)
@@ -115,17 +115,17 @@ Contracts deployed on testnet:
 ## Install
 
 ```bash
-npm install @routedock/routedock
+npm install @kikis-app/kikis-app
 ```
 
 ## Quickstart
 
 ```bash
-git clone https://github.com/winsznx/routedock && cd routedock
+git clone https://github.com/winsznx/kikis-app && cd kikis-app
 pnpm install
 
-pnpm --filter @routedock/nulth-sdk build
-pnpm --filter @routedock/routedock build
+pnpm --filter @kikis-app/nulth-sdk build
+pnpm --filter @kikis-app/kikis-app build
 
 cp apps/provider-a/.dev.vars.example apps/provider-a/.dev.vars
 # fill in a throwaway testnet key
@@ -156,8 +156,8 @@ From a fresh clone, build the SDKs before starting any example:
 
 ```bash
 pnpm install
-pnpm --filter @routedock/nulth-sdk build
-pnpm --filter @routedock/routedock build
+pnpm --filter @kikis-app/nulth-sdk build
+pnpm --filter @kikis-app/kikis-app build
 
 cd examples/<name>
 cp .env.example .env
@@ -189,7 +189,7 @@ If a server crashes mid-session, the agent can reclaim deposited funds using the
 - **`session.settleWithLatestVoucher()`** — server-side counter-mechanism to settle the cumulative amount before the refund window expires, using the highest signed voucher
 - **`session.getDisputeStatus()`** — returns the channel state: `'open'`, `'in-refund-window'`, `'refundable'`, or `'settled'`
 
-Raises: `RouteDockDisputeError`, `RouteDockChannelStateError`, `RouteDockRefundWindowError`
+Raises: `KikisAppDisputeError`, `KikisAppChannelStateError`, `KikisAppRefundWindowError`
 
 ### Mode Selection
 
@@ -220,13 +220,13 @@ await session.close()
 
 ---
 
-## Discovery: `routedock.json`
+## Discovery: `kikis-app.json`
 
-Every provider serves `/.well-known/routedock.json`. The SDK fetches and validates it (JSON Schema, AJV) before every call. Agents never hardcode payment logic.
+Every provider serves `/.well-known/kikis-app.json`. The SDK fetches and validates it (JSON Schema, AJV) before every call. Agents never hardcode payment logic.
 
 ```json
 {
-  "routedock": "1.0",
+  "kikis-app": "1.0",
   "name": "Stellar DEX Price Feed",
   "modes": ["x402", "mpp-charge"],
   "network": "testnet",
@@ -267,9 +267,9 @@ The Supabase `providers` table indexes manifests with `pg_trgm` trigram search �
 ### Express
 
 ```ts
-import { routedock } from '@routedock/routedock/provider'
+import { kikis-app } from '@kikis-app/kikis-app/provider'
 
-app.use('/price', routedock({
+app.use('/price', kikis-app({
   modes: ['x402', 'mpp-charge'],
   pricing: { x402: '0.001', 'mpp-charge': '0.0008' },
   asset: 'USDC',
@@ -286,11 +286,11 @@ app.use('/price', routedock({
 
 ```ts
 import { Hono } from 'hono'
-import { routedockHono } from '@routedock/sdk/provider/hono'
+import { kikisAppHono } from '@kikis-app/sdk/provider/hono'
 
 const app = new Hono()
 
-app.use('/price', routedockHono({
+app.use('/price', kikisAppHono({
   modes: ['x402', 'mpp-charge'],
   pricing: { x402: '0.001', 'mpp-charge': '0.0008' },
   asset: 'USDC',
@@ -305,7 +305,7 @@ app.use('/price', routedockHono({
 export default app
 ```
 
-One middleware. Handles x402, MPP charge, and MPP session. Serves `routedock.json`. Verifies payments. Settles on-chain.
+One middleware. Handles x402, MPP charge, and MPP session. Serves `kikis-app.json`. Verifies payments. Settles on-chain.
 
 This example uses in-memory defaults for settlement idempotency and session
 state, which aren't safe once requests can land on different isolates or
@@ -316,17 +316,17 @@ route a serverless provider needs.
 
 ### Testing your settlement callbacks
 
-Provider authors wiring `onSettled` (e.g. a Supabase write) shouldn't have to mock the whole middleware chain or sign real payments to test that callback. `@routedock/routedock/testing` is the `msw`-equivalent for RouteDock providers: a mock middleware that drives your callbacks with synthetic data.
+Provider authors wiring `onSettled` (e.g. a Supabase write) shouldn't have to mock the whole middleware chain or sign real payments to test that callback. `@kikis-app/kikis-app/testing` is the `msw`-equivalent for KikisApp providers: a mock middleware that drives your callbacks with synthetic data.
 
 ```ts
 import express from 'express'
 import request from 'supertest'
-import { createMockRoutedockMiddleware } from '@routedock/routedock/testing'
+import { createMockKikisAppMiddleware } from '@kikis-app/kikis-app/testing'
 
 const onSettled = vi.fn() // your real Supabase-writing callback under test
 
 const app = express()
-app.use('/price', createMockRoutedockMiddleware({ mode: 'x402', payment: 'auto-pass', onSettled }))
+app.use('/price', createMockKikisAppMiddleware({ mode: 'x402', payment: 'auto-pass', onSettled }))
 app.get('/price', (_req, res) => res.json({ price: '42' }))
 
 await request(app).get('/price').expect(200)
@@ -349,9 +349,9 @@ expect(onSettled).toHaveBeenCalledWith(
 ## Monorepo Structure
 
 ```
-routedock/
-├── packages/sdk/            # @routedock/routedock — npm
-├── packages/mcp-server/     # @routedock/mcp-server — MCP server for LLM agents
+kikis-app/
+├── packages/sdk/            # @kikis-app/kikis-app — npm
+├── packages/mcp-server/     # @kikis-app/mcp-server — MCP server for LLM agents
 ├── apps/web/                # Next.js 16 dashboard + landing — Cloudflare Workers
 ├── apps/provider-a/         # Cloudflare Worker price endpoint (x402 + MPP charge)
 ├── apps/provider-b/         # Cloudflare Worker orderbook endpoint (MPP session)
@@ -374,8 +374,8 @@ routedock/
 | Contract account policy enforcement | `__check_auth` daily cap rejects overspend at the Soroban level |
 | Dashboard Realtime | Supabase `postgres_changes` subscriptions on `sessions` and `tx_log` |
 | Discovery registry | `providers` table with `pg_trgm` trigram indexes for fuzzy capability search |
-| npm package | [`@routedock/routedock@0.1.0`](https://www.npmjs.com/package/@routedock/routedock) |
-| MCP server | [`@routedock/mcp-server`](packages/mcp-server) — LLM agent integration via Model Context Protocol |
+| npm package | [`@kikis-app/kikis-app@0.1.0`](https://www.npmjs.com/package/@kikis-app/kikis-app) |
+| MCP server | [`@kikis-app/mcp-server`](packages/mcp-server) — LLM agent integration via Model Context Protocol |
 | Network support | `STELLAR_NETWORK=testnet|mainnet` — single env var switches all code paths |
 
 ---
@@ -384,24 +384,19 @@ routedock/
 
 | Service | URL | Status |
 |---|---|---|
-| npm package | [`@routedock/routedock`](https://www.npmjs.com/package/@routedock/routedock) | published |
+| npm package | [`@kikis-app/kikis-app`](https://www.npmjs.com/package/@kikis-app/kikis-app) | published |
 | Agent vault | `CAX5IDLC2XHGQSEA2YN3LPLZ7EXLMRXYX3HFJGKFXS6B7OQXBKWO44LT` | live (testnet) |
 | Channel contract | `CCK4XOW3YKQUEZFONUTINKMSNW7SNMRQZURME5U3UP7E6WNGK7UHUCAH` | live (testnet) |
-| Dashboard | [routedock.xyz](https://www.routedock.xyz) | live |
-| Provider A (price endpoint) | [api-a.routedock.xyz](https://api-a.routedock.xyz) | live |
-| Provider B (orderbook endpoint) | [api-b.routedock.xyz](https://api-b.routedock.xyz) | live |
+| Dashboard | [kikis-app.xyz](https://www.kikis-app.xyz) | live |
+| Provider A (price endpoint) | [api-a.kikis-app.xyz](https://api-a.kikis-app.xyz) | live |
+| Provider B (orderbook endpoint) | [api-b.kikis-app.xyz](https://api-b.kikis-app.xyz) | live |
 
 ---
 
-## Full Technical Brief
-
-For a detailed walkthrough of the architecture, protocol conformance, security model, and design decisions, see the [Submission Brief](https://github.com/winsznx/routedock/blob/main/docs/SUBMISSION_ONEPAGER.md).
-
----
 
 ## What's next
 
-RouteDock is a **chain-agnostic agent payment protocol with Stellar as its canonical home.** The protocols it unifies aren't Stellar-bound — x402, which RouteDock wraps, was designed multi-chain and already settles on EVM.
+KikisApp is a **chain-agnostic agent payment protocol with Stellar as its canonical home.** The protocols it unifies aren't Stellar-bound — x402, which KikisApp wraps, was designed multi-chain and already settles on EVM.
 
 The [**Multi-Chain Roadmap**](docs/MULTICHAIN_ROADMAP.md) sketches a `ChainAdapter` interface with the existing Stellar clients as the reference implementation and **EVM (via x402) as the first extension target** — keeping the single-call agent experience (`client.pay(url)`) identical across chains. The plan is additive: the manifest's `chain` field is optional and defaults to `stellar`, so every existing provider and agent keeps working.
 

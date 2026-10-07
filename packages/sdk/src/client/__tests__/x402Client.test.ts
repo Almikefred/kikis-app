@@ -6,16 +6,16 @@ import { x402HTTPClient } from '@x402/core/client'
 import { encodePaymentRequiredHeader } from '@x402/core/http'
 import type { PaymentPayload, PaymentRequirements } from '@x402/core/types'
 import { X402Client } from '../x402Client.js'
-import type { RouteDockManifest } from '../../types.js'
+import type { KikisAppManifest } from '../../types.js'
 import {
-  RouteDockFacilitatorError,
-  RouteDockManifestError,
-  RouteDockPolicyRejectError,
+  KikisAppFacilitatorError,
+  KikisAppManifestError,
+  KikisAppPolicyRejectError,
 } from '../../errors.js'
 
 const keypair = Keypair.random()
-const manifest: RouteDockManifest = {
-  routedock: '1.0',
+const manifest: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Test Service',
   description: 'Test',
   modes: ['x402'],
@@ -89,7 +89,7 @@ const TREASURY = Keypair.random()
 /** A SAC contract other than the one the manifest prices. */
 const OTHER_ASSET = 'CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75'
 
-function manifestWithPayeeOverride(): RouteDockManifest {
+function manifestWithPayeeOverride(): KikisAppManifest {
   return {
     ...manifest,
     pricing: {
@@ -138,7 +138,7 @@ test('X402Client - non-402 500 error throws httpStatusToError without crashing o
         await client.pay('https://api.test/error-endpoint', manifest)
       },
       (err: any) => {
-        assert.ok(err instanceof RouteDockFacilitatorError)
+        assert.ok(err instanceof KikisAppFacilitatorError)
         assert.equal(err.status, 500)
         return true
       },
@@ -148,7 +148,7 @@ test('X402Client - non-402 500 error throws httpStatusToError without crashing o
   }
 })
 
-test('X402Client - malformed X-Payment-Requirements (not base64) rejects with RouteDockManifestError', async () => {
+test('X402Client - malformed X-Payment-Requirements (not base64) rejects with KikisAppManifestError', async () => {
   const client = new X402Client(keypair.secret(), 'testnet')
   const originalFetch = globalThis.fetch
 
@@ -165,7 +165,7 @@ test('X402Client - malformed X-Payment-Requirements (not base64) rejects with Ro
         await client.pay('https://api.test/malformed-header-1', manifest)
       },
       (err: any) => {
-        assert.ok(err instanceof RouteDockManifestError, 'should be RouteDockManifestError')
+        assert.ok(err instanceof KikisAppManifestError, 'should be KikisAppManifestError')
         assert.equal(err.message, '402 X-Payment-Requirements header is malformed')
         assert.equal(err.code, 'MANIFEST')
         assert.equal(err.retryable, false)
@@ -179,7 +179,7 @@ test('X402Client - malformed X-Payment-Requirements (not base64) rejects with Ro
   }
 })
 
-test('X402Client - malformed X-Payment-Requirements (base64 of non-JSON) rejects with RouteDockManifestError', async () => {
+test('X402Client - malformed X-Payment-Requirements (base64 of non-JSON) rejects with KikisAppManifestError', async () => {
   const client = new X402Client(keypair.secret(), 'testnet')
   const originalFetch = globalThis.fetch
 
@@ -196,7 +196,7 @@ test('X402Client - malformed X-Payment-Requirements (base64 of non-JSON) rejects
         await client.pay('https://api.test/malformed-header-2', manifest)
       },
       (err: any) => {
-        assert.ok(err instanceof RouteDockManifestError, 'should be RouteDockManifestError')
+        assert.ok(err instanceof KikisAppManifestError, 'should be KikisAppManifestError')
         assert.equal(err.message, '402 X-Payment-Requirements header is malformed')
         assert.equal(err.code, 'MANIFEST')
         assert.equal(err.retryable, false)
@@ -209,7 +209,7 @@ test('X402Client - malformed X-Payment-Requirements (base64 of non-JSON) rejects
   }
 })
 
-test('X402Client - missing X-Payment-Requirements header still rejects with RouteDockManifestError', async () => {
+test('X402Client - missing X-Payment-Requirements header still rejects with KikisAppManifestError', async () => {
   const client = new X402Client(keypair.secret(), 'testnet')
   const originalFetch = globalThis.fetch
 
@@ -223,7 +223,7 @@ test('X402Client - missing X-Payment-Requirements header still rejects with Rout
         await client.pay('https://api.test/missing-header', manifest)
       },
       (err: any) => {
-        assert.ok(err instanceof RouteDockManifestError, 'should be RouteDockManifestError')
+        assert.ok(err instanceof KikisAppManifestError, 'should be KikisAppManifestError')
         assert.ok(err.message.includes('missing'), 'message should describe the missing header')
         return true
       },
@@ -256,7 +256,7 @@ test('X402Client - paid request always 500: signs once, resends identical header
     await assert.rejects(
       () => client.pay('https://api.test/paid', manifest),
       (err: unknown) => {
-        assert.ok(err instanceof RouteDockFacilitatorError)
+        assert.ok(err instanceof KikisAppFacilitatorError)
         assert.equal(err.status, 500)
         return true
       },
@@ -354,7 +354,7 @@ test('X402Client - paid retry returning 402 rejects without a second signature',
     await assert.rejects(
       () => client.pay('https://api.test/paid', manifest),
       (err: unknown) => {
-        assert.ok(err instanceof RouteDockManifestError)
+        assert.ok(err instanceof KikisAppManifestError)
         return true
       },
     )
@@ -382,7 +382,7 @@ test('X402Client - rejects an inflated challenge before signing', async () => {
     await assert.rejects(
       () => client.pay('https://api.test/paid', manifest),
       (err: unknown) => {
-        assert.ok(err instanceof RouteDockPolicyRejectError)
+        assert.ok(err instanceof KikisAppPolicyRejectError)
         assert.equal(err.reason, 'challenge_amount_exceeds_manifest')
         return true
       },
@@ -411,7 +411,7 @@ test('X402Client - rejects a payee mismatch before signing', async () => {
     await assert.rejects(
       () => client.pay('https://api.test/paid', manifest),
       (err: unknown) => {
-        assert.ok(err instanceof RouteDockPolicyRejectError)
+        assert.ok(err instanceof KikisAppPolicyRejectError)
         assert.equal(err.reason, 'challenge_payee_mismatch')
         return true
       },
@@ -440,7 +440,7 @@ test('X402Client - rejects an asset mismatch before signing when the payee is ov
     await assert.rejects(
       () => client.pay('https://api.test/paid', manifestWithPayeeOverride()),
       (err: unknown) => {
-        assert.ok(err instanceof RouteDockPolicyRejectError)
+        assert.ok(err instanceof KikisAppPolicyRejectError)
         assert.equal(err.reason, 'challenge_asset_mismatch')
         return true
       },
@@ -469,7 +469,7 @@ test('X402Client - rejects a network mismatch before signing when the payee is o
     await assert.rejects(
       () => client.pay('https://api.test/paid', manifestWithPayeeOverride()),
       (err: unknown) => {
-        assert.ok(err instanceof RouteDockPolicyRejectError)
+        assert.ok(err instanceof KikisAppPolicyRejectError)
         assert.equal(err.reason, 'challenge_network_mismatch')
         return true
       },
@@ -498,7 +498,7 @@ test('X402Client - rejects the top-level payee when pricing.x402.payee overrides
     await assert.rejects(
       () => client.pay('https://api.test/paid', manifestWithPayeeOverride()),
       (err: unknown) => {
-        assert.ok(err instanceof RouteDockPolicyRejectError)
+        assert.ok(err instanceof KikisAppPolicyRejectError)
         assert.equal(err.reason, 'challenge_payee_mismatch')
         return true
       },

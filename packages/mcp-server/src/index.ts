@@ -7,8 +7,8 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
-import { RouteDockClient, FileSpendStore } from '@routedock/routedock'
-import type { SessionHandle } from '@routedock/routedock'
+import { KikisAppClient, FileSpendStore } from '@kikis-app/kikis-app'
+import type { SessionHandle } from '@kikis-app/kikis-app'
 import { createClient } from '@supabase/supabase-js'
 import { TOOLS } from './tools.js'
 import {
@@ -27,7 +27,7 @@ import {
   type ListProvidersArgs,
 } from './handlers.js'
 // Load environment variables (supports .env files for external secret management)
-const envPath = process.env.ROUTEDOCK_ENV_FILE
+const envPath = process.env.KIKIS_APP_ENV_FILE
 if (envPath) {
   loadDotenv({ path: envPath })
 } else {
@@ -35,7 +35,7 @@ if (envPath) {
 }
 
 // Environment variables
-const STELLAR_SECRET = process.env.STELLAR_SECRET || process.env.ROUTEDOCK_WALLET_SECRET
+const STELLAR_SECRET = process.env.STELLAR_SECRET || process.env.KIKIS_APP_WALLET_SECRET
 const STELLAR_NETWORK = (process.env.STELLAR_NETWORK || 'testnet') as 'testnet' | 'mainnet'
 const COMMITMENT_SECRET = process.env.COMMITMENT_SECRET
 const SUPABASE_URL = process.env.SUPABASE_URL
@@ -46,24 +46,24 @@ if (process.env.SUPABASE_SERVICE_KEY) {
 }
 
 if (!STELLAR_SECRET) {
-  console.error('Error: STELLAR_SECRET or ROUTEDOCK_WALLET_SECRET environment variable is required')
+  console.error('Error: STELLAR_SECRET or KIKIS_APP_WALLET_SECRET environment variable is required')
   process.exit(1)
 }
 
-const ROUTEDOCK_DAILY_CAP = process.env.ROUTEDOCK_DAILY_CAP
-if (!ROUTEDOCK_DAILY_CAP) {
-  console.error('Error: ROUTEDOCK_DAILY_CAP environment variable is required to prevent unbounded spending')
+const KIKIS_APP_DAILY_CAP = process.env.KIKIS_APP_DAILY_CAP
+if (!KIKIS_APP_DAILY_CAP) {
+  console.error('Error: KIKIS_APP_DAILY_CAP environment variable is required to prevent unbounded spending')
   process.exit(1)
 }
 
-const spendStorePath = process.env.ROUTEDOCK_SPEND_STORE_PATH || path.join(os.homedir(), '.routedock', 'spend.json')
+const spendStorePath = process.env.KIKIS_APP_SPEND_STORE_PATH || path.join(os.homedir(), '.kikis-app', 'spend.json')
 
-// Initialize RouteDock client
-const client = new RouteDockClient({
+// Initialize KikisApp client
+const client = new KikisAppClient({
   wallet: STELLAR_SECRET,
   network: STELLAR_NETWORK,
   commitmentSecret: COMMITMENT_SECRET,
-  spendCap: { daily: ROUTEDOCK_DAILY_CAP, asset: 'USDC' },
+  spendCap: { daily: KIKIS_APP_DAILY_CAP, asset: 'USDC' },
   spendStore: new FileSpendStore(spendStorePath),
 })
 
@@ -95,7 +95,7 @@ const deps: HandlerDeps = {
 // Create MCP server
 const server = new Server(
   {
-    name: '@routedock/mcp-server',
+    name: '@kikis-app/mcp-server',
     version: '0.1.0',
   },
   {
@@ -157,7 +157,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 async function main() {
   const transport = new StdioServerTransport()
   await server.connect(transport)
-  console.error('@routedock/mcp-server running on stdio')
+  console.error('@kikis-app/mcp-server running on stdio')
 }
 
 main().catch((error) => {

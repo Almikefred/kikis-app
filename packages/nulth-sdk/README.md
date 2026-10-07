@@ -1,4 +1,4 @@
-# @routedock/nulth-sdk — Stub / Proof-of-Concept
+# @kikis-app/nulth-sdk — Stub / Proof-of-Concept
 
 **Status: STUB — not ready for production.**
 
@@ -13,5 +13,5 @@ SHA-512 digest as a placeholder. No real zero-knowledge proof is generated.
 - The `mock` backend is deliberately not a cryptographic proof and must never be
   used for custody or policy enforcement.
 
-See [Issue #143](https://github.com/winsznx/routedock/issues/143) for context.
+See [Issue #143](https://github.com/winsznx/kikis-app/issues/143) for context.
 

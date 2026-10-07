@@ -1,11 +1,11 @@
 /**
- * USDC conversion — canonical implementation lives in @routedock/nulth-sdk and is
+ * USDC conversion — canonical implementation lives in @kikis-app/nulth-sdk and is
  * re-exported here so SDK consumers (client, provider) share one converter.
  *
- * @routedock/routedock already depends on @routedock/nulth-sdk, so re-exporting
+ * @kikis-app/kikis-app already depends on @kikis-app/nulth-sdk, so re-exporting
  * (rather than defining a parallel helper) keeps a single source of truth.
  */
-import { usdcToStroops, stroopsToUsdc, USDC_DECIMALS } from '@routedock/nulth-sdk'
+import { usdcToStroops, stroopsToUsdc, USDC_DECIMALS } from '@kikis-app/nulth-sdk'
 export { usdcToStroops, stroopsToUsdc, USDC_DECIMALS }
 
 /** Canonical Circle USDC issuers keyed by Stellar network. */

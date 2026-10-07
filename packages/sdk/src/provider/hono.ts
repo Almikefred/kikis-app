@@ -13,12 +13,12 @@ import type { Network as X402Network } from '@x402/core/types'
 import { stellar as mppCharge } from '@stellar/mpp/charge/server'
 import { stellar as mppChannel, close as channelClose, Store } from '@stellar/mpp/channel/server'
 import { Mppx } from 'mppx/server'
-import type { RouteDockManifest, PaymentMode } from '../types.js'
+import type { KikisAppManifest, PaymentMode } from '../types.js'
 import { signManifest } from '../manifest/sign.js'
 import { resolvePayee } from '../internal/payee.js'
 import { usdcToUnits } from '../internal/usdc.js'
 import { extractPayerAddress } from './payer.js'
-import { resolveLogger, type RouteDockLogger } from '../internal/logger.js'
+import { resolveLogger, type KikisAppLogger } from '../internal/logger.js'
 import {
   channelAuthorizer,
   onVerifiedCredential,
@@ -35,7 +35,7 @@ import {
   type SeenTxStore,
 } from './SeenTxStore.js'
 import { resolveAssetContract } from '../internal/assetUtils.js'
-import { RouteDockManifestError } from '../errors.js'
+import { KikisAppManifestError } from '../errors.js'
 import { readSettleResult } from './settleResult.js'
 
 type Network = 'testnet' | 'mainnet'
@@ -47,7 +47,7 @@ const CAIP2: Record<Network, X402Network> = {
 
 const OZ_FACILITATOR_URL = 'https://channels.openzeppelin.com/x402'
 
-export interface RouteDockHonoOptions {
+export interface KikisAppHonoOptions {
   modes: PaymentMode[]
   pricing: {
     x402?: string
@@ -63,7 +63,7 @@ export interface RouteDockHonoOptions {
   payeeSecretKey: string
   facilitatorApiKey?: string
   commitmentPublicKey?: string
-  manifest: RouteDockManifest
+  manifest: KikisAppManifest
   onSettled?: (txHash: string, amount: string, mode: string, payer: string | null) => Promise<void>
   onSessionOpen?: (channelId: string, payer: string | null) => Promise<void>
   onVoucher?: (channelId: string, voucherIndex: number, cumulativeAmount: string, signature: string) => Promise<void>
@@ -87,10 +87,10 @@ export interface RouteDockHonoOptions {
    */
   sessionStore?: Store.Store
   /** Log sink for internal error paths. Defaults to a console-backed logger. */
-  logger?: RouteDockLogger
+  logger?: KikisAppLogger
 }
 
-function createX402HonoHandler(opts: RouteDockHonoOptions): MiddlewareHandler {
+function createX402HonoHandler(opts: KikisAppHonoOptions): MiddlewareHandler {
   const caip2 = CAIP2[opts.network]
   const payeeKeypair = Keypair.fromSecret(opts.payeeSecretKey)
   const signer = createEd25519Signer(opts.payeeSecretKey, caip2)
@@ -278,7 +278,7 @@ function createX402HonoHandler(opts: RouteDockHonoOptions): MiddlewareHandler {
 
       await next()
     } catch (err) {
-      if (err instanceof RouteDockManifestError) {
+      if (err instanceof KikisAppManifestError) {
         throw err
       }
       logger('error', '[x402] Settlement error', { error: err })
@@ -287,7 +287,7 @@ function createX402HonoHandler(opts: RouteDockHonoOptions): MiddlewareHandler {
   }
 }
 
-function createMppChargeHonoHandler(opts: RouteDockHonoOptions): MiddlewareHandler {
+function createMppChargeHonoHandler(opts: KikisAppHonoOptions): MiddlewareHandler {
   const networkId = CAIP2[opts.network] as 'stellar:testnet' | 'stellar:pubnet'
   const chargePrice = opts.pricing['mpp-charge']!
   const recipient = resolvePayee(opts.manifest, 'mpp-charge')
@@ -451,10 +451,10 @@ function createMppChargeHonoHandler(opts: RouteDockHonoOptions): MiddlewareHandl
  * credential has been verified, so the app's WebSocket upgrade route can
  * refuse to upgrade unauthenticated handshakes.
  */
-export const MPP_SESSION_WS_VERIFIED = 'routedock.mppSessionWs.verified'
+export const MPP_SESSION_WS_VERIFIED = 'kikis-app.mppSessionWs.verified'
 
 /**
- * True when the routedockHono mpp-session-ws middleware verified the
+ * True when the kikisAppHono mpp-session-ws middleware verified the
  * handshake request's Payment credential (see {@link MPP_SESSION_WS_VERIFIED}).
  * WebSocket upgrade routes should refuse to upgrade when this is false.
  */
@@ -495,14 +495,14 @@ interface VerifiedVoucherRecord {
 }
 
 function createMppSessionHandlerState(
-  opts: RouteDockHonoOptions,
+  opts: KikisAppHonoOptions,
   sessionPricing: { rate: string; channelFactory: string },
   reportMode: 'mpp-session' | 'mpp-session-ws',
 ): MppSessionHandlerState {
   const networkId = CAIP2[opts.network] as 'stellar:testnet' | 'stellar:pubnet'
   const payeeKeypair = Keypair.fromSecret(opts.payeeSecretKey)
   const logger = resolveLogger(opts.logger)
-  const voucherRecordKey = `routedock:session:voucher:${sessionPricing.channelFactory}`
+  const voucherRecordKey = `kikis-app:session:voucher:${sessionPricing.channelFactory}`
 
   const innerStore = opts.sessionStore ?? Store.memory()
   // The last voucher mppx actually verified — amount, its signature, and the
@@ -750,7 +750,7 @@ function createMppSessionHandlerState(
 }
 
 function createMppSessionHonoHandler(
-  opts: RouteDockHonoOptions,
+  opts: KikisAppHonoOptions,
   config: { mode: 'mpp-session' | 'mpp-session-ws' },
   state: MppSessionHandlerState,
 ): MiddlewareHandler {
@@ -809,29 +809,29 @@ function isWebSocketUpgradeRequest(c: {
 }
 
 /**
- * Hono middleware factory for RouteDock provider endpoints.
+ * Hono middleware factory for KikisApp provider endpoints.
  *
  * **Workers-safe entry point.** This module uses only Web-standard APIs
  * (`atob`/`TextDecoder` via {@link base64ToUtf8}, {@link hexToBytes}, and the
  * request `AbortSignal`) and runs on Cloudflare Workers, Bun, Deno Deploy, and
- * any Hono deployment target. The Express `routedock()` middleware
- * (`@routedock/routedock/provider`) is Node.js-only — it relies on Node's
+ * any Hono deployment target. The Express `kikis-app()` middleware
+ * (`@kikis-app/kikis-app/provider`) is Node.js-only — it relies on Node's
  * `Buffer` and `req.on('close')`.
  *
- * Exposes the same configuration surface as the Express `routedock()` middleware.
+ * Exposes the same configuration surface as the Express `kikis-app()` middleware.
  *
  * @example
  * ```ts
- * import { routedockHono } from '@routedock/sdk/provider/hono'
+ * import { kikisAppHono } from '@kikis-app/sdk/provider/hono'
  *
- * app.use('/price', routedockHono({
+ * app.use('/price', kikisAppHono({
  *   modes: ['x402', 'mpp-charge'],
  *   pricing: { x402: '0.001', 'mpp-charge': '0.0008' },
  *   ...
  * }))
  * ```
  */
-export function routedockHono(opts: RouteDockHonoOptions): MiddlewareHandler {
+export function kikisAppHono(opts: KikisAppHonoOptions): MiddlewareHandler {
   const handlers: MiddlewareHandler[] = []
   const signedManifest = signManifest(opts.manifest, opts.payeeSecretKey)
 
@@ -852,7 +852,7 @@ export function routedockHono(opts: RouteDockHonoOptions): MiddlewareHandler {
   const primarySessionMode = sessionModes[0]
   if (primarySessionMode) {
     if (!opts.commitmentPublicKey) {
-      throw new Error('routedockHono: mpp-session/mpp-session-ws mode requires commitmentPublicKey')
+      throw new Error('kikisAppHono: mpp-session/mpp-session-ws mode requires commitmentPublicKey')
     }
     const sessionPricing = opts.pricing[primarySessionMode]!
     const sharedState = createMppSessionHandlerState(opts, sessionPricing, primarySessionMode)
@@ -864,7 +864,7 @@ export function routedockHono(opts: RouteDockHonoOptions): MiddlewareHandler {
   }
 
   return async (c, next) => {
-    if (c.req.path === '/.well-known/routedock.json') {
+    if (c.req.path === '/.well-known/kikis-app.json') {
       return c.json(signedManifest)
     }
 

@@ -1,6 +1,6 @@
 # Mainnet Deployment Guide
 
-This guide documents the production mainnet rollout for RouteDock. It assumes you already run the project on testnet and want to move to Stellar mainnet by switching `STELLAR_NETWORK=mainnet` with production-grade controls.
+This guide documents the production mainnet rollout for KikisApp. It assumes you already run the project on testnet and want to move to Stellar mainnet by switching `STELLAR_NETWORK=mainnet` with production-grade controls.
 
 ---
 
@@ -73,7 +73,7 @@ stellar keys address ledger-mainnet --hd-path "44'/148'/0'" --network mainnet
 
 ## 3) USDC trustline & asset contract (mainnet)
 
-RouteDock mainnet flow expects USDC trustline to Circle's official Stellar issuer. If the payer account lacks a trustline, `client.pay()` now throws `RouteDockTrustlineError` preflight — before any transaction is submitted — with the exact remediation command.
+KikisApp mainnet flow expects USDC trustline to Circle's official Stellar issuer. If the payer account lacks a trustline, `client.pay()` now throws `KikisAppTrustlineError` preflight — before any transaction is submitted — with the exact remediation command.
 
 - **Issuer:** `GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN`
 
@@ -99,7 +99,7 @@ Starting in SDK v0.1.3+, each `client.pay()` call runs a trustline preflight che
 1. Queries Horizon for the payer account's balances.
 2. Checks for a balance entry matching the manifest's `asset` code (e.g. `USDC`).
 3. **Trustline found** → caches the result for 5 minutes (keyed by `network:pubkey:asset`) so subsequent payments to the same asset cost zero RPC calls.
-4. **No trustline** → throws `RouteDockTrustlineError` with the exact `stellar tx new change-trust` CLI command for remediation.
+4. **No trustline** → throws `KikisAppTrustlineError` with the exact `stellar tx new change-trust` CLI command for remediation.
 
 The check is non-blocking in degraded scenarios: if Horizon is unreachable, the SDK logs a warning and continues without blocking the payment.
 
@@ -193,7 +193,7 @@ Record output as `CHANNEL_CONTRACT_ID` and set in provider + agent environments.
 
 ## 6) OpenZeppelin facilitator setup (x402)
 
-RouteDock mainnet x402 uses OpenZeppelin Channels facilitator at:
+KikisApp mainnet x402 uses OpenZeppelin Channels facilitator at:
 
 - `https://channels.openzeppelin.com/x402`
 
@@ -220,7 +220,7 @@ Both `provider-a` and `provider-b` run as **Cloudflare Workers**.
 
 > ⚠️ **CUTOVER ORDERING CONSTRAINT (#265):**
 > Do not redeploy providers to mainnet individually before the SDK package publishes to npm. Follow the strict ordering from tracking issue **#265**:
-> 1. Publish `@routedock/routedock@0.2.0` to npm (which includes `signature_version: '2'`).
+> 1. Publish `@kikis-app/kikis-app@0.2.0` to npm (which includes `signature_version: '2'`).
 > 2. Configure production secrets via `wrangler secret put` on both Workers.
 > 3. Redeploy **both** providers simultaneously (`pnpm --filter provider-a deploy` & `pnpm --filter provider-b deploy`).
 > 4. Verify both serve `signature_version: '2'` and are reachable before sending agent traffic.
@@ -230,7 +230,7 @@ Both `provider-a` and `provider-b` run as **Cloudflare Workers**.
 Public variables in `apps/provider-a/wrangler.jsonc` (committed):
 ```jsonc
 {
-  "name": "routedock-provider-a",
+  "name": "kikis-app-provider-a",
   "vars": {
     "STELLAR_NETWORK": "mainnet",
     "USDC_ASSET_CONTRACT": "<MAINNET_USDC_SAC_CONTRACT_ID>",
@@ -259,7 +259,7 @@ wrangler deploy
 Public variables in `apps/provider-b/wrangler.jsonc` (committed):
 ```jsonc
 {
-  "name": "routedock-provider-b",
+  "name": "kikis-app-provider-b",
   "vars": {
     "STELLAR_NETWORK": "mainnet",
     "USDC_ASSET_CONTRACT": "<MAINNET_USDC_SAC_CONTRACT_ID>",
@@ -294,8 +294,8 @@ STELLAR_NETWORK=mainnet
 AGENT_SECRET=<S...>
 AGENT_VAULT_CONTRACT_ID=<MAINNET_AGENT_VAULT_CONTRACT_ID>
 USDC_ASSET_CONTRACT=<MAINNET_USDC_SAC_CONTRACT_ID>
-PROVIDER_A_URL=https://api-a.routedock.xyz
-PROVIDER_B_URL=https://api-b.routedock.xyz
+PROVIDER_A_URL=https://api-a.kikis-app.xyz
+PROVIDER_B_URL=https://api-b.kikis-app.xyz
 SUPABASE_URL=https://<your-project>.supabase.co
 SUPABASE_ANON_KEY=<your-anon-key>
 ```
@@ -303,10 +303,10 @@ SUPABASE_ANON_KEY=<your-anon-key>
 ### Smoke-check Manifests and Health Endpoints
 
 ```bash
-curl -s https://api-a.routedock.xyz/.well-known/routedock.json | jq '.network,.pricing.x402.facilitator'
-curl -s https://api-b.routedock.xyz/.well-known/routedock.json | jq '.network,.pricing["mpp-session"].channel_contract'
-curl -s https://api-a.routedock.xyz/health
-curl -s https://api-b.routedock.xyz/health
+curl -s https://api-a.kikis-app.xyz/.well-known/kikis-app.json | jq '.network,.pricing.x402.facilitator'
+curl -s https://api-b.kikis-app.xyz/.well-known/kikis-app.json | jq '.network,.pricing["mpp-session"].channel_contract'
+curl -s https://api-a.kikis-app.xyz/health
+curl -s https://api-b.kikis-app.xyz/health
 ```
 
 ---

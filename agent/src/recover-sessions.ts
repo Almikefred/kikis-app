@@ -1,5 +1,5 @@
 /**
- * RouteDock Session Recovery CLI
+ * KikisApp Session Recovery CLI
  *
  * Manual recovery tool for abandoned MPP sessions.
  * Scans Supabase for sessions marked as "closing" and attempts to broadcast
@@ -16,7 +16,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js'
-import { reconcileAbandonedSessions } from '@routedock/routedock/provider'
+import { reconcileAbandonedSessions } from '@kikis-app/kikis-app/provider'
 
 const SUPABASE_URL = process.env['SUPABASE_URL'] ?? ''
 const SUPABASE_SERVICE_KEY = process.env['SUPABASE_SERVICE_KEY'] ?? ''
@@ -42,7 +42,7 @@ async function main(): Promise<void> {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-  console.log('[SessionRecovery] RouteDock Session Recovery Tool')
+  console.log('[SessionRecovery] KikisApp Session Recovery Tool')
   console.log(`[SessionRecovery] Network: ${STELLAR_NETWORK}`)
   console.log(`[SessionRecovery] Supabase: ${SUPABASE_URL}`)
   console.log()

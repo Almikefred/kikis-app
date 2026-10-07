@@ -1,6 +1,6 @@
 # Security policy
 
-RouteDock handles Stellar payments and the one-way-channel contract has not
+KikisApp handles Stellar payments and the one-way-channel contract has not
 been audited. Please do not disclose vulnerabilities in public issues.
 
 ## Private disclosure

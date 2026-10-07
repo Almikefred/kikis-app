@@ -1,11 +1,11 @@
 {
-  "name": "@routedock/mcp-server",
+  "name": "@kikis-app/mcp-server",
   "version": "0.2.1",
-  "description": "MCP server for RouteDock Stellar payments - exposes payment tools to LLM agents",
+  "description": "MCP server for KikisApp Stellar payments - exposes payment tools to LLM agents",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/winsznx/routedock.git",
+    "url": "https://github.com/winsznx/kikis-app.git",
     "directory": "packages/mcp-server"
   },
   "type": "module",
@@ -16,7 +16,7 @@
     "README.md"
   ],
   "bin": {
-    "routedock-mcp-server": "dist/index.js"
+    "kikis-app-mcp-server": "dist/index.js"
   },
   "scripts": {
     "build": "tsup",
@@ -27,7 +27,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
-    "@routedock/routedock": "workspace:^",
+    "@kikis-app/kikis-app": "workspace:^",
     "@stellar/stellar-sdk": "^14.6.1",
     "@supabase/supabase-js": "^2.47.0",
     "dotenv": "^17.4.2"

@@ -10,9 +10,9 @@ export {
   resolveLogger,
 } from './internal/logger.js'
 export type {
-  RouteDockLogger,
-  RouteDockLogLevel,
-  RouteDockLogFields,
+  KikisAppLogger,
+  KikisAppLogLevel,
+  KikisAppLogFields,
 } from './internal/logger.js'
 export { usdcToStroops, usdcToUnits, USDC_DECIMALS } from './internal/usdc.js'
 export {
@@ -22,7 +22,7 @@ export {
   isAssetEligible,
   resolveAssetContract,
 } from './internal/assetUtils.js'
-export * from './client/RouteDockClient.js'
+export * from './client/KikisAppClient.js'
 export * from './client/ModeRouter.js'
 export * from './client/x402Client.js'
 export * from './client/MppChargeClient.js'
@@ -30,7 +30,7 @@ export * from './client/NulthVault.js'
 export * from './store/SessionStore.js'
 export * from './store/SpendStore.js'
 export * from './store/SupabaseSeenTxStore.js'
-export * from './provider/routedockMiddleware.js'
+export * from './provider/kikisAppMiddleware.js'
 export * from './provider/registerProvider.js'
 export * from './provider/SessionReconciler.js'
 export * from './registry/index.js'

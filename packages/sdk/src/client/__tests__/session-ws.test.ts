@@ -8,22 +8,22 @@
  * / socket lifecycle to exercise the client's orchestration: open channel →
  * negotiate voucher → upgrade HTTP connection to WebSocket → frame streaming.
  *
- * Run with: pnpm --filter @routedock/routedock test
+ * Run with: pnpm --filter @kikis-app/kikis-app test
  */
 
 import assert from 'node:assert/strict'
 import { beforeEach, describe, it, mock } from 'node:test'
 import { Keypair } from '@stellar/stellar-sdk'
 import { Challenge } from 'mppx'
-import type { RouteDockManifest } from '../../types.js'
+import type { KikisAppManifest } from '../../types.js'
 import type { WebSocketFactory } from '../MppSessionClient.js'
 import {
-  RouteDockManifestError,
-  RouteDockChannelStateError,
-  RouteDockNetworkError,
-  RouteDockFacilitatorError,
-  RouteDockPolicyRejectError,
-  RouteDockSignatureError,
+  KikisAppManifestError,
+  KikisAppChannelStateError,
+  KikisAppNetworkError,
+  KikisAppFacilitatorError,
+  KikisAppPolicyRejectError,
+  KikisAppSignatureError,
 } from '../../errors.js'
 
 const CHANNEL_CONTRACT = 'CCK4XOW3YKQUEZFONUTINKMSNW7SNMRQZURME5U3UP7E6WNGK7UHUCAH'
@@ -125,9 +125,9 @@ const { MppSessionClient } = await import('../MppSessionClient.js')
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-function buildManifest(): RouteDockManifest {
+function buildManifest(): KikisAppManifest {
   return {
-    routedock: '1.0',
+    kikis-app: '1.0',
     name: 'WS Session Test Provider',
     description: 'Provider exercised by mpp-session-ws unit tests',
     modes: ['mpp-session', 'mpp-session-ws'],
@@ -305,7 +305,7 @@ describe('mpp-session-ws — failure paths', () => {
     wsScript = { frames: ['{"a":1}'], closeCode: 1000 }
     const { factory, calls } = makeFakeWsFactory()
     const onSpend = async () => {
-      throw new RouteDockPolicyRejectError('local_daily_cap_exceeded')
+      throw new KikisAppPolicyRejectError('local_daily_cap_exceeded')
     }
 
     const handle = await openWsHandle(factory, onSpend)
@@ -315,7 +315,7 @@ describe('mpp-session-ws — failure paths', () => {
           // consume
         }
       },
-      (err: unknown) => err instanceof RouteDockPolicyRejectError && err.reason === 'local_daily_cap_exceeded',
+      (err: unknown) => err instanceof KikisAppPolicyRejectError && err.reason === 'local_daily_cap_exceeded',
     )
     assert.equal(rawFetchCalls, 0)
     assert.equal(createCredentialCalls, 0)
@@ -335,7 +335,7 @@ describe('mpp-session-ws — failure paths', () => {
         }
       },
       (err: unknown) =>
-        err instanceof RouteDockChannelStateError &&
+        err instanceof KikisAppChannelStateError &&
         /expected HTTP 402/.test((err as Error).message),
     )
     assert.equal(handle.stats().vouchersIssued, 0)
@@ -356,7 +356,7 @@ describe('mpp-session-ws — failure paths', () => {
         }
       },
       (err: unknown) =>
-        err instanceof RouteDockChannelStateError &&
+        err instanceof KikisAppChannelStateError &&
         /cumulative/i.test((err as Error).message),
     )
     assert.equal(wsCredentialContexts.length, 0)
@@ -420,12 +420,12 @@ describe('mpp-session-ws — failure paths', () => {
         }
       },
       (err: unknown) =>
-        err instanceof RouteDockFacilitatorError && (err as RouteDockFacilitatorError).status === 503,
+        err instanceof KikisAppFacilitatorError && (err as KikisAppFacilitatorError).status === 503,
     )
     assert.equal(handle.stats().vouchersIssued, 0)
   })
 
-  it('wraps a probe network failure as RouteDockNetworkError', async () => {
+  it('wraps a probe network failure as KikisAppNetworkError', async () => {
     mppxScript = { probeRejects: true }
     wsScript = {}
     const { factory } = makeFakeWsFactory()
@@ -437,7 +437,7 @@ describe('mpp-session-ws — failure paths', () => {
           // consume
         }
       },
-      (err: unknown) => err instanceof RouteDockNetworkError,
+      (err: unknown) => err instanceof KikisAppNetworkError,
     )
   })
 
@@ -454,7 +454,7 @@ describe('mpp-session-ws — failure paths', () => {
         }
       },
       (err: unknown) =>
-        err instanceof RouteDockChannelStateError &&
+        err instanceof KikisAppChannelStateError &&
         /upgrade failed/.test((err as Error).message),
     )
   })
@@ -472,12 +472,12 @@ describe('mpp-session-ws — failure paths', () => {
         }
       },
       (err: unknown) =>
-        err instanceof RouteDockChannelStateError &&
+        err instanceof KikisAppChannelStateError &&
         /abnormally/.test((err as Error).message),
     )
   })
 
-  it('wraps createCredential failure as RouteDockSignatureError', async () => {
+  it('wraps createCredential failure as KikisAppSignatureError', async () => {
     mppxScript = {}
     wsScript = {}
     const { factory } = makeFakeWsFactory()
@@ -495,7 +495,7 @@ describe('mpp-session-ws — failure paths', () => {
           }
         },
         (err: unknown) => {
-          assert.ok(err instanceof RouteDockSignatureError)
+          assert.ok(err instanceof KikisAppSignatureError)
           assert.equal(err.retryable, false)
           assert.equal(err.code, 'SIGNATURE')
           assert.equal(err.cause, customErr)
@@ -520,7 +520,7 @@ describe('mpp-session-ws — session options', () => {
           mode: 'mpp-session-ws',
         }),
       (err: unknown) =>
-        err instanceof RouteDockManifestError &&
+        err instanceof KikisAppManifestError &&
         /pricing\.mpp-session-ws missing/.test((err as Error).message),
     )
   })

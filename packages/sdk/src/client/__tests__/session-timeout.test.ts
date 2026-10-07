@@ -13,7 +13,7 @@ import { Keypair } from '@stellar/stellar-sdk'
 import { MppSessionClient } from '../MppSessionClient.js'
 import { DEFAULT_MAX_SESSION_DURATION_MS } from '../../types.js'
 import type {
-  RouteDockManifest,
+  KikisAppManifest,
   SessionCloseFailedPayload,
   SessionEvent,
   SessionEventPayloadMap,
@@ -26,9 +26,9 @@ const EVENT_WAIT_MS = 1000
 /** Let the timer elapse and its close() settle before asserting a negative. */
 const SETTLE_MS = 80
 
-function manifest(): RouteDockManifest {
+function manifest(): KikisAppManifest {
   return {
-    routedock: '1.0',
+    kikis-app: '1.0',
     name: 'Test Provider',
     description: 'session-timeout fixture',
     modes: ['mpp-session'],

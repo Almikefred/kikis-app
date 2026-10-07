@@ -5,12 +5,12 @@ import { createX402Handler } from './x402Handler.js'
 import { createMppChargeHandler } from './MppChargeHandler.js'
 import { createMppSessionHandler } from './MppSessionHandler.js'
 import { signManifest } from '../manifest/sign.js'
-import type { RouteDockManifest, PaymentMode } from '../types.js'
+import type { KikisAppManifest, PaymentMode } from '../types.js'
 import type { SeenTxStore } from './SeenTxStore.js'
 import type { OrphanedSessionInfo } from './MppSessionHandler.js'
-import type { RouteDockLogger } from '../internal/logger.js'
+import type { KikisAppLogger } from '../internal/logger.js'
 
-export interface RouteDockFastifyOptions {
+export interface KikisAppFastifyOptions {
   modes: PaymentMode[]
   pricing: {
     x402?: string
@@ -24,7 +24,7 @@ export interface RouteDockFastifyOptions {
   payeeSecretKey: string
   facilitatorApiKey?: string
   commitmentPublicKey?: string
-  manifest: RouteDockManifest
+  manifest: KikisAppManifest
   onSettled?: (txHash: string, amount: string, mode: string, payer: string | null) => Promise<void>
   onSessionOpen?: (channelId: string, payer: string | null) => Promise<void>
   onVoucher?: (channelId: string, voucherIndex: number, cumulativeAmount: string, signature: string) => Promise<void>
@@ -36,7 +36,7 @@ export interface RouteDockFastifyOptions {
    * Structured log sink for every adapter diagnostic (settlement errors,
    * callback failures, orphaned sessions). Defaults to a console-backed logger.
    */
-  logger?: RouteDockLogger
+  logger?: KikisAppLogger
 }
 
 // ---------------------------------------------------------------------------
@@ -197,7 +197,7 @@ function runExpressHandler(
 /** MPP modes in the priority order used to pick the default handler. */
 const MPP_MODES: readonly PaymentMode[] = ['mpp-session', 'mpp-charge']
 
-export function routedockFastify(opts: RouteDockFastifyOptions): FastifyPluginAsync {
+export function kikisAppFastify(opts: KikisAppFastifyOptions): FastifyPluginAsync {
   const signedManifest = signManifest(opts.manifest, opts.payeeSecretKey)
   const handlerMap = new Map<PaymentMode, RequestHandler>()
 
@@ -246,7 +246,7 @@ export function routedockFastify(opts: RouteDockFastifyOptions): FastifyPluginAs
     const sessionPricing = opts.pricing['mpp-session']
     if (sessionPricing) {
       if (!opts.commitmentPublicKey) {
-        throw new Error('routedockFastify: mpp-session mode requires commitmentPublicKey')
+        throw new Error('kikisAppFastify: mpp-session mode requires commitmentPublicKey')
       }
       handlerMap.set(
         'mpp-session',
@@ -277,7 +277,7 @@ export function routedockFastify(opts: RouteDockFastifyOptions): FastifyPluginAs
   const plugin: FastifyPluginAsync = async (fastify) => {
     // Serve the signed manifest at the well-known endpoint
     fastify.addHook('onRequest', async (request, reply) => {
-      if (request.url === '/.well-known/routedock.json') {
+      if (request.url === '/.well-known/kikis-app.json') {
         reply.hijack()
         const body = JSON.stringify(signedManifest)
         reply.raw.setHeader('Content-Type', 'application/json')

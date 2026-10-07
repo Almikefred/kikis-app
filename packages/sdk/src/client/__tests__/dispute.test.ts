@@ -6,7 +6,7 @@
  * methods' real control flow — simulation, send, response mapping, and error
  * wrapping — is exercised without touching the network.
  *
- * Run with: pnpm --filter @routedock/routedock test
+ * Run with: pnpm --filter @kikis-app/kikis-app test
  * (requires --experimental-test-module-mocks, set in the package test script)
  */
 
@@ -14,11 +14,11 @@ import assert from 'node:assert/strict'
 import { before, after, beforeEach, describe, it, mock } from 'node:test'
 import { Keypair } from '@stellar/stellar-sdk'
 import { MppSessionClient } from '../MppSessionClient.js'
-import type { RouteDockManifest } from '../../types.js'
+import type { KikisAppManifest } from '../../types.js'
 import {
-  RouteDockDisputeError,
-  RouteDockChannelStateError,
-  RouteDockRefundWindowError,
+  KikisAppDisputeError,
+  KikisAppChannelStateError,
+  KikisAppRefundWindowError,
 } from '../../types.js'
 
 const agentKeypair = Keypair.random()
@@ -29,9 +29,9 @@ const CHANNEL_CONTRACT = 'CCK4XOW3YKQUEZFONUTINKMSNW7SNMRQZURME5U3UP7E6WNGK7UHUC
 const ASSET_CONTRACT = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA'
 const SESSION_URL = 'https://provider.test/stream/orderbook'
 
-function buildManifest(): RouteDockManifest {
+function buildManifest(): KikisAppManifest {
   return {
-    routedock: '1.0',
+    kikis-app: '1.0',
     name: 'Dispute Test Provider',
     description: 'Provider exercised by dispute resolution unit tests',
     modes: ['mpp-session'],
@@ -156,35 +156,35 @@ describe('requestRefund()', () => {
     assert.equal(hash, 'REFUND_TX_HASH')
   })
 
-  it('throws RouteDockDisputeError when there is no open channel (simulation fails)', async () => {
+  it('throws KikisAppDisputeError when there is no open channel (simulation fails)', async () => {
     rpc.isSimulationError = () => true
     rpc.simulateTransaction = () => ({ error: 'channel not open' })
     const handle = await openHandle()
     await assert.rejects(
       () => handle.requestRefund(),
-      (err: unknown) => err instanceof RouteDockDisputeError,
+      (err: unknown) => err instanceof KikisAppDisputeError,
     )
   })
 
-  it('throws RouteDockDisputeError when the transaction is not sent', async () => {
+  it('throws KikisAppDisputeError when the transaction is not sent', async () => {
     rpc.sendTransaction = () => ({}) // no hash
     const handle = await openHandle()
     await assert.rejects(
       () => handle.requestRefund(),
       (err: unknown) =>
-        err instanceof RouteDockDisputeError &&
+        err instanceof KikisAppDisputeError &&
         /not sent/i.test((err as Error).message),
     )
   })
 
-  it('wraps unexpected RPC failures as RouteDockDisputeError', async () => {
+  it('wraps unexpected RPC failures as KikisAppDisputeError', async () => {
     rpc.getAccount = () => {
       throw new Error('horizon unreachable')
     }
     const handle = await openHandle()
     await assert.rejects(
       () => handle.requestRefund(),
-      (err: unknown) => err instanceof RouteDockDisputeError,
+      (err: unknown) => err instanceof KikisAppDisputeError,
     )
   })
 })
@@ -202,24 +202,24 @@ describe('settleWithLatestVoucher()', () => {
     assert.equal(hash, 'SETTLE_TX_HASH')
   })
 
-  it('throws RouteDockDisputeError when prepare_commitment returns no bytes', async () => {
+  it('throws KikisAppDisputeError when prepare_commitment returns no bytes', async () => {
     rpc.simulateTransaction = () => ({ result: { retval: { bytes: () => undefined } } })
     const handle = await openHandle()
     await assert.rejects(
       () => handle.settleWithLatestVoucher(),
       (err: unknown) =>
-        err instanceof RouteDockDisputeError &&
+        err instanceof KikisAppDisputeError &&
         /no bytes/i.test((err as Error).message),
     )
   })
 
-  it('throws RouteDockDisputeError when the commitment simulation fails', async () => {
+  it('throws KikisAppDisputeError when the commitment simulation fails', async () => {
     rpc.isSimulationError = () => true
     rpc.simulateTransaction = () => ({ error: 'sim failed' })
     const handle = await openHandle()
     await assert.rejects(
       () => handle.settleWithLatestVoucher(),
-      (err: unknown) => err instanceof RouteDockDisputeError,
+      (err: unknown) => err instanceof KikisAppDisputeError,
     )
   })
 })
@@ -250,23 +250,23 @@ describe('getDisputeStatus()', () => {
     assert.equal(status, 'open')
   })
 
-  it('throws RouteDockChannelStateError when the state query simulation fails', async () => {
+  it('throws KikisAppChannelStateError when the state query simulation fails', async () => {
     rpc.isSimulationError = () => true
     rpc.simulateTransaction = () => ({ error: 'state query failed' })
     const handle = await openHandle()
     await assert.rejects(
       () => handle.getDisputeStatus(),
-      (err: unknown) => err instanceof RouteDockChannelStateError,
+      (err: unknown) => err instanceof KikisAppChannelStateError,
     )
   })
 
-  it('throws RouteDockChannelStateError when no channel state is returned', async () => {
+  it('throws KikisAppChannelStateError when no channel state is returned', async () => {
     rpc.simulateTransaction = () => ({ result: { retval: undefined } })
     const handle = await openHandle()
     await assert.rejects(
       () => handle.getDisputeStatus(),
       (err: unknown) =>
-        err instanceof RouteDockChannelStateError &&
+        err instanceof KikisAppChannelStateError &&
         /no channel state/i.test((err as Error).message),
     )
   })
@@ -276,20 +276,20 @@ describe('getDisputeStatus()', () => {
 
 describe('dispute error types', () => {
   it('exports the dispute error classes with matching names', () => {
-    assert.equal(new RouteDockDisputeError('x').name, 'RouteDockDisputeError')
-    assert.equal(new RouteDockChannelStateError('x').name, 'RouteDockChannelStateError')
-    assert.equal(new RouteDockRefundWindowError('x').name, 'RouteDockRefundWindowError')
+    assert.equal(new KikisAppDisputeError('x').name, 'KikisAppDisputeError')
+    assert.equal(new KikisAppChannelStateError('x').name, 'KikisAppChannelStateError')
+    assert.equal(new KikisAppRefundWindowError('x').name, 'KikisAppRefundWindowError')
   })
 
   it('dispute errors are instances of Error', () => {
-    assert.ok(new RouteDockDisputeError('x') instanceof Error)
+    assert.ok(new KikisAppDisputeError('x') instanceof Error)
   })
 })
 
 // ── close() ────────────────────────────────────────────────────────────────────
 
 describe('close() — response handling', () => {
-  it('throws RouteDockChannelStateError when close response is not valid JSON', async () => {
+  it('throws KikisAppChannelStateError when close response is not valid JSON', async () => {
     rpc.simulateTransaction = () => ({
       result: { retval: { bytes: () => Buffer.from([1, 2, 3, 4]) } },
     })
@@ -304,7 +304,7 @@ describe('close() — response handling', () => {
       await assert.rejects(
         () => handle.close(),
         (err: unknown) => {
-          assert.ok(err instanceof RouteDockChannelStateError)
+          assert.ok(err instanceof KikisAppChannelStateError)
           assert.match(err.message, /Channel close response was not valid JSON \(HTTP 200\)/)
           assert.ok(err.cause instanceof SyntaxError)
           return true

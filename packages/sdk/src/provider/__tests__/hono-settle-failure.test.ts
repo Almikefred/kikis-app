@@ -12,8 +12,8 @@ import { mock, describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { Hono } from 'hono'
 import { Keypair } from '@stellar/stellar-sdk'
-import type { RouteDockManifest } from '../../types.js'
-import type { RouteDockHonoOptions } from '../hono.js'
+import type { KikisAppManifest } from '../../types.js'
+import type { KikisAppHonoOptions } from '../hono.js'
 
 const payeeKeypair = Keypair.random()
 const commitKeypair = Keypair.random()
@@ -75,10 +75,10 @@ mock.module('@x402/core/http', {
   },
 })
 
-const { routedockHono } = await import('../hono.js')
+const { kikisAppHono } = await import('../hono.js')
 
-const manifest: RouteDockManifest = {
-  routedock: '1.0',
+const manifest: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Settle Failure Test',
   description: 'Unit test provider',
   modes: ['x402'],
@@ -108,7 +108,7 @@ interface Harness {
   downstream: { called: boolean }
 }
 
-function makeHarness(overrides: Partial<RouteDockHonoOptions> = {}): Harness {
+function makeHarness(overrides: Partial<KikisAppHonoOptions> = {}): Harness {
   const seenSet: string[] = []
   const settled: string[][] = []
   const downstream = { called: false }
@@ -116,7 +116,7 @@ function makeHarness(overrides: Partial<RouteDockHonoOptions> = {}): Harness {
   const app = new Hono()
   app.use(
     '*',
-    routedockHono({
+    kikisAppHono({
       ...BASE_OPTS,
       modes: ['x402'],
       pricing: { x402: '0.001' },
@@ -153,7 +153,7 @@ beforeEach(() => {
   }
 })
 
-describe('routedockHono x402 — settle returns success: false (local facilitator)', () => {
+describe('kikisAppHono x402 — settle returns success: false (local facilitator)', () => {
   it('returns 402 and does not serve the resource', async () => {
     const h = makeHarness()
 
@@ -200,7 +200,7 @@ describe('routedockHono x402 — settle returns success: false (local facilitato
   })
 })
 
-describe('routedockHono x402 — settle returns success: false (OZ facilitator)', () => {
+describe('kikisAppHono x402 — settle returns success: false (OZ facilitator)', () => {
   it('returns 402 and does not serve the resource', async () => {
     const h = makeHarness({ network: 'mainnet', facilitatorApiKey: 'test-key' })
 

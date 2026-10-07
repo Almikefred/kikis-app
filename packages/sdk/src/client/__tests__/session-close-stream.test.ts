@@ -12,13 +12,13 @@
  * the network. The only unstubbed call is close()'s DELETE request, served by a
  * global fetch stub.
  *
- * Run with: pnpm --filter @routedock/routedock test
+ * Run with: pnpm --filter @kikis-app/kikis-app test
  */
 
 import assert from 'node:assert/strict'
 import { after, beforeEach, before, describe, test, mock } from 'node:test'
 import { Keypair } from '@stellar/stellar-sdk'
-import type { RouteDockManifest, SessionOptions } from '../../types.js'
+import type { KikisAppManifest, SessionOptions } from '../../types.js'
 
 const CHANNEL_CONTRACT = 'CCK4XOW3YKQUEZFONUTINKMSNW7SNMRQZURME5U3UP7E6WNGK7UHUCAH'
 const ASSET_CONTRACT = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA'
@@ -52,7 +52,7 @@ mock.module('mppx/client', {
 })
 
 const { MppSessionClient } = await import('../MppSessionClient.js')
-const { RouteDockChannelStateError } = await import('../../errors.js')
+const { KikisAppChannelStateError } = await import('../../errors.js')
 
 // ── Fake Soroban RPC for close() ──────────────────────────────────────────────
 
@@ -140,9 +140,9 @@ after(() => {
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-function buildManifest(): RouteDockManifest {
+function buildManifest(): KikisAppManifest {
   return {
-    routedock: '1.0',
+    kikis-app: '1.0',
     name: 'Close Stream Test Provider',
     description: 'Provider exercised by session close stream tests',
     modes: ['mpp-session'],
@@ -179,7 +179,7 @@ function openHandle(
 }
 
 const isSessionClosed = (err: unknown): boolean =>
-  err instanceof RouteDockChannelStateError &&
+  err instanceof KikisAppChannelStateError &&
   /session closed/.test((err as Error).message)
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -255,7 +255,7 @@ describe('MppSessionClient.stream() after close()', () => {
       () => iter.next(),
       (err: unknown) =>
         isSessionClosed(err) &&
-        (err as Error).name === 'RouteDockChannelStateError',
+        (err as Error).name === 'KikisAppChannelStateError',
     )
   })
 })

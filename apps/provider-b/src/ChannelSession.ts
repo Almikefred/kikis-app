@@ -3,13 +3,13 @@ import { Hono } from 'hono'
 import { upgradeWebSocket } from 'hono/cloudflare-workers'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import {
-  routedockHono,
+  kikisAppHono,
   mppSessionWsVerified,
   registerProvider,
   signManifest,
   reconcileAbandonedSessions,
   type ReconciliationStats,
-} from '@routedock/routedock/provider/hono'
+} from '@kikis-app/kikis-app/provider/hono'
 import { Store } from '@stellar/mpp/channel/server'
 import {
   buildManifest,
@@ -55,7 +55,7 @@ interface OrderBookResponse {
  * The SDK receives a store backed by this object's persistent storage, so mppx
  * channel state survives isolate eviction.
  *
- * Not yet durable: routedockHono still tracks lastCumulativeAmount,
+ * Not yet durable: kikisAppHono still tracks lastCumulativeAmount,
  * voucherCount, lastSignatureHex and sessionPayerAddress in closure scope, and
  * those are what the DELETE close path reads. If this object is evicted
  * mid-session they reset, and close falls back to the client-supplied amount
@@ -90,7 +90,7 @@ export class ChannelSession extends DurableObject<Env> {
         : null
 
     if (supabase && env.STELLAR_PAYEE_SECRET) {
-      const baseUrl = env.PUBLIC_BASE_URL ?? 'https://api-b.routedock.xyz'
+      const baseUrl = env.PUBLIC_BASE_URL ?? 'https://api-b.kikis-app.xyz'
       const signed = signManifest(manifest, env.STELLAR_PAYEE_SECRET)
       this.ctx.waitUntil(
         registerProvider({ supabase, manifest: signed, baseUrl, verified: true }).catch((err) => {
@@ -99,7 +99,7 @@ export class ChannelSession extends DurableObject<Env> {
       )
     }
 
-    const providerUrl = `${env.PUBLIC_BASE_URL ?? 'https://api-b.routedock.xyz'}/stream/orderbook`
+    const providerUrl = `${env.PUBLIC_BASE_URL ?? 'https://api-b.kikis-app.xyz'}/stream/orderbook`
 
     const sessionWriters = createSessionWriters(supabase, {
       payee: env.STELLAR_PAYEE_ADDRESS,
@@ -120,7 +120,7 @@ export class ChannelSession extends DurableObject<Env> {
 
     app.use(
       '*',
-      routedockHono({
+      kikisAppHono({
         modes: ['mpp-session', 'mpp-session-ws'],
         pricing: {
           'mpp-session': { rate: SESSION_RATE, channelFactory: channelContract },
@@ -139,7 +139,7 @@ export class ChannelSession extends DurableObject<Env> {
     )
 
     // WebSocket transport (mpp-session-ws). Registered before the SSE data
-    // route: the routedockHono middleware above verifies the handshake's
+    // route: the kikisAppHono middleware above verifies the handshake's
     // Payment credential (MPP_SESSION_WS_VERIFIED); upgrade requests are
     // answered with 101 here, everything else falls through to the data route.
     const fetchOrderbook = async () => {
@@ -234,7 +234,7 @@ export class ChannelSession extends DurableObject<Env> {
 
     const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY)
     const network: Network = env.STELLAR_NETWORK === 'mainnet' ? 'mainnet' : 'testnet'
-    const providerUrl = `${env.PUBLIC_BASE_URL ?? 'https://api-b.routedock.xyz'}/stream/orderbook`
+    const providerUrl = `${env.PUBLIC_BASE_URL ?? 'https://api-b.kikis-app.xyz'}/stream/orderbook`
 
     return reconcileAbandonedSessions({
       supabase,

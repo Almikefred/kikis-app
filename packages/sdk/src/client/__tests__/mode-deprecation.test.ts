@@ -3,17 +3,17 @@ import assert from 'node:assert/strict'
 import { Keypair } from '@stellar/stellar-sdk'
 import { fetchManifest, selectMode } from '../ModeRouter.js'
 import {
-  RouteDockManifestError,
-  RouteDockManifestSunsetError,
+  KikisAppManifestError,
+  KikisAppManifestSunsetError,
 } from '../../errors.js'
 import { signManifest } from '../../manifest/sign.js'
-import type { RouteDockManifest } from '../../types.js'
+import type { KikisAppManifest } from '../../types.js'
 
 const signingKey = Keypair.random()
 
-function createManifest(overrides: Partial<RouteDockManifest> = {}): RouteDockManifest {
+function createManifest(overrides: Partial<KikisAppManifest> = {}): KikisAppManifest {
   return {
-    routedock: '1.0',
+    kikis-app: '1.0',
     name: 'Deprecation Test Provider',
     description: 'Manifest used to verify deprecation and sunset enforcement',
     modes: ['x402', 'mpp-charge'],
@@ -43,7 +43,7 @@ function createManifest(overrides: Partial<RouteDockManifest> = {}): RouteDockMa
   }
 }
 
-function signed(manifest: RouteDockManifest): RouteDockManifest & { signature: string } {
+function signed(manifest: KikisAppManifest): KikisAppManifest & { signature: string } {
   return signManifest(manifest, signingKey.secret())
 }
 
@@ -217,7 +217,7 @@ function startManifestServer(
     await assert.rejects(
       () => fetchManifest(server.baseUrl),
       (error: unknown) => {
-        assert.ok(error instanceof RouteDockManifestSunsetError)
+        assert.ok(error instanceof KikisAppManifestSunsetError)
         assert.equal(error.code, 'MANIFEST_SUNSET')
         assert.equal(error.retryable, false)
         return true
@@ -259,7 +259,7 @@ function startManifestServer(
     now += 2_000
     await assert.rejects(
       () => fetchManifest(server.baseUrl),
-      (error: unknown) => error instanceof RouteDockManifestSunsetError,
+      (error: unknown) => error instanceof KikisAppManifestSunsetError,
     )
   } finally {
     Date.now = realDateNow
@@ -283,8 +283,8 @@ function startManifestServer(
     await assert.rejects(
       () => fetchManifest(server.baseUrl),
       (error: unknown) => {
-        assert.ok(error instanceof RouteDockManifestError)
-        assert.ok(!(error instanceof RouteDockManifestSunsetError))
+        assert.ok(error instanceof KikisAppManifestError)
+        assert.ok(!(error instanceof KikisAppManifestSunsetError))
         assert.ok(error.message.includes('Invalid manifest'))
         return true
       },

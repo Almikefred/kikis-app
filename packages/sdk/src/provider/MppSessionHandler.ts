@@ -3,7 +3,7 @@ import { Keypair } from '@stellar/stellar-sdk'
 import { stellar, close as channelClose, Store } from '@stellar/mpp/channel/server'
 import { Mppx, Request as MppxRequest } from 'mppx/server'
 import { Store as MppxStore } from 'mppx'
-import type { RouteDockManifest } from '../types.js'
+import type { KikisAppManifest } from '../types.js'
 import { buildSessionSettlementTransaction, resolveVaultSettlementAddresses } from './internal/vaultSettlement.js'
 import { extractPayerAddress } from './payer.js'
 import {
@@ -13,7 +13,7 @@ import {
   type ChannelVerifyCredential,
 } from './mppCompatibility.js'
 import type { Method } from 'mppx'
-import { resolveLogger, type RouteDockLogger } from '../internal/logger.js'
+import { resolveLogger, type KikisAppLogger } from '../internal/logger.js'
 
 /** Store shape extended with optional atomic update operation. */
 export type ChannelStore = MppxStore.Store & {
@@ -70,7 +70,7 @@ export interface MppSessionHandlerOptions {
   channelFactory: string
   rate: string
   assetContract?: string
-  manifest: RouteDockManifest
+  manifest: KikisAppManifest
   commitmentPublicKey: string
   onSettled?: (txHash: string, totalPaid: string, mode: string, payer: string | null) => Promise<void>
   onSessionOpen?: (channelId: string, payer: string | null) => Promise<void>
@@ -88,7 +88,7 @@ export interface MppSessionHandlerOptions {
    */
   idleTimeoutMs?: number
   /** Log sink for internal error paths. Defaults to a console-backed logger. */
-  logger?: RouteDockLogger
+  logger?: KikisAppLogger
 }
 
 export function createMppSessionHandler(opts: MppSessionHandlerOptions): RequestHandler {
@@ -96,7 +96,7 @@ export function createMppSessionHandler(opts: MppSessionHandlerOptions): Request
   const rateHuman = opts.rate
   const payeeKeypair = Keypair.fromSecret(opts.payeeSecretKey)
   const logger = resolveLogger(opts.logger)
-  const voucherRecordKey = `routedock:session:voucher:${opts.channelFactory}`
+  const voucherRecordKey = `kikis-app:session:voucher:${opts.channelFactory}`
 
   const innerStore = Store.memory()
 

@@ -5,20 +5,20 @@ GlobalRegistrator.register()
 import * as RTL from '@testing-library/react'
 const { renderHook } = RTL
 import { Keypair } from '@stellar/stellar-sdk'
-import { useRouteDockClient } from '../useRouteDockClient.js'
-import { RouteDockClient } from '../../client/RouteDockClient.js'
+import { useKikisAppClient } from '../useKikisAppClient.js'
+import { KikisAppClient } from '../../client/KikisAppClient.js'
 
-describe('useRouteDockClient', () => {
-  it('returns a memoized RouteDockClient instance', () => {
+describe('useKikisAppClient', () => {
+  it('returns a memoized KikisAppClient instance', () => {
     const secret = Keypair.random().secret()
     const { result, rerender } = renderHook(() =>
-      useRouteDockClient({ wallet: secret, network: 'testnet' }),
+      useKikisAppClient({ wallet: secret, network: 'testnet' }),
     )
     const first = result.current
 
     rerender()
 
-    assert.ok(first instanceof RouteDockClient)
+    assert.ok(first instanceof KikisAppClient)
     assert.equal(result.current, first, 'identity is stable across rerenders')
   })
 
@@ -27,7 +27,7 @@ describe('useRouteDockClient', () => {
     const b = Keypair.random().secret()
     const { result, rerender } = renderHook(
       ({ secret }: { secret: string }) =>
-        useRouteDockClient({ wallet: secret, network: 'testnet' }),
+        useKikisAppClient({ wallet: secret, network: 'testnet' }),
       { initialProps: { secret: a } },
     )
     const first = result.current

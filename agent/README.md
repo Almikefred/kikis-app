@@ -1,6 +1,6 @@
-# RouteDock Reference Agent
+# KikisApp Reference Agent
 
-Autonomous reference agent demonstrating multi-mode micropayments (`x402`, `mpp-charge`, and `mpp-session`) over the Stellar network using `@routedock/routedock`.
+Autonomous reference agent demonstrating multi-mode micropayments (`x402`, `mpp-charge`, and `mpp-session`) over the Stellar network using `@kikis-app/kikis-app`.
 
 ## Overview
 
@@ -20,27 +20,27 @@ The agent executes the full autonomous payment workflow:
 | `PROVIDER_A_URL` | `http://localhost:3001` | URL for discrete price provider |
 | `PROVIDER_B_URL` | `http://localhost:3002` | URL for streaming orderbook provider |
 | `AGENT_DAILY_CAP_USDC` | `0.002` | Daily spending cap in USDC |
-| `AGENT_SPEND_STORE_PATH` | `~/.routedock/spend.json` | Path to persistent file spend store |
+| `AGENT_SPEND_STORE_PATH` | `~/.kikis-app/spend.json` | Path to persistent file spend store |
 | `COMMITMENT_SECRET` | Optional | Ed25519 commitment secret key for `mpp-session` |
 
 ## Spend Cap & Store Durability
 
 > [!WARNING]
 > **Production Safety Warning**:
-> By default, initializing `RouteDockClient` without a `spendStore` parameter uses `InMemorySpendStore`.
+> By default, initializing `KikisAppClient` without a `spendStore` parameter uses `InMemorySpendStore`.
 > An in-memory spend cap resets to zero on every process restart, OOM kill, or container redeploy, which allows spend limits to be bypassed across runs.
 >
 > **Do not rely on an in-memory spend cap in production.**
-> Always pass a durable `SpendStore` (such as `FileSpendStore` pointing to disk, Redis, or SQL) via `spendStore` in `RouteDockClientConfig`:
+> Always pass a durable `SpendStore` (such as `FileSpendStore` pointing to disk, Redis, or SQL) via `spendStore` in `KikisAppClientConfig`:
 >
 > ```typescript
-> import { RouteDockClient, FileSpendStore } from '@routedock/routedock'
+> import { KikisAppClient, FileSpendStore } from '@kikis-app/kikis-app'
 >
-> const client = new RouteDockClient({
+> const client = new KikisAppClient({
 >   wallet: keypair,
 >   network: 'testnet',
 >   spendCap: { daily: '10.0', asset: 'USDC' },
->   spendStore: new FileSpendStore('~/.routedock/spend.json'),
+>   spendStore: new FileSpendStore('~/.kikis-app/spend.json'),
 > })
 > ```
 

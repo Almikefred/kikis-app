@@ -7,11 +7,11 @@ import {
   isAssetEligible,
   resolveAssetContract,
 } from '../assetUtils.js'
-import { RouteDockManifestError } from '../../errors.js'
-import type { RouteDockManifest } from '../../types.js'
+import { KikisAppManifestError } from '../../errors.js'
+import type { KikisAppManifest } from '../../types.js'
 
-const legacyManifest: RouteDockManifest = {
-  routedock: '1.0',
+const legacyManifest: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Legacy Service',
   description: 'Single-asset provider',
   modes: ['x402', 'mpp-charge'],
@@ -30,8 +30,8 @@ const legacyManifest: RouteDockManifest = {
   tags: ['test'],
 }
 
-const multiAssetManifest: RouteDockManifest = {
-  routedock: '1.0',
+const multiAssetManifest: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Multi-Asset Service',
   description: 'Provider supporting USDC and XLM',
   modes: ['x402', 'mpp-charge', 'mpp-session'],
@@ -94,11 +94,11 @@ describe('normalizeManifestAssets', () => {
     assert.equal(assets[2]?.asset, 'EURC')
   })
 
-  it('throws RouteDockManifestError when neither assets nor root fields are defined', () => {
-    const malformed = { ...legacyManifest, asset: undefined, asset_contract: undefined } as unknown as RouteDockManifest
+  it('throws KikisAppManifestError when neither assets nor root fields are defined', () => {
+    const malformed = { ...legacyManifest, asset: undefined, asset_contract: undefined } as unknown as KikisAppManifest
     assert.throws(
       () => normalizeManifestAssets(malformed),
-      (err) => err instanceof RouteDockManifestError,
+      (err) => err instanceof KikisAppManifestError,
     )
   })
 })
@@ -146,7 +146,7 @@ describe('getEligibleAssets', () => {
   })
 
   it('returns empty array when no assets are eligible for mode', () => {
-    const noModeManifest: RouteDockManifest = {
+    const noModeManifest: KikisAppManifest = {
       ...multiAssetManifest,
       assets: [
         {
@@ -168,8 +168,8 @@ describe('selectAsset', () => {
     assert.equal(asset.asset_contract, 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC')
   })
 
-  it('throws RouteDockManifestError when no asset is eligible', () => {
-    const singleModeManifest: RouteDockManifest = {
+  it('throws KikisAppManifestError when no asset is eligible', () => {
+    const singleModeManifest: KikisAppManifest = {
       ...multiAssetManifest,
       assets: [
         {
@@ -181,7 +181,7 @@ describe('selectAsset', () => {
     }
     assert.throws(
       () => selectAsset(singleModeManifest, 'mpp-charge'),
-      (err) => err instanceof RouteDockManifestError && err.message.includes("No eligible assets found for mode 'mpp-charge'"),
+      (err) => err instanceof KikisAppManifestError && err.message.includes("No eligible assets found for mode 'mpp-charge'"),
     )
   })
 })

@@ -1,5 +1,5 @@
-import { RouteDockError } from '../errors.js'
-import { resolveLogger, type RouteDockLogger } from './logger.js'
+import { KikisAppError } from '../errors.js'
+import { resolveLogger, type KikisAppLogger } from './logger.js'
 
 export interface RetryPolicy {
   /** Total attempts including the first call. Default: 4 (3 retries). */
@@ -19,7 +19,7 @@ export interface RetryPolicy {
    * Log sink for internal diagnostics (an `onRetry` hook that throws).
    * Defaults to a console-backed logger.
    */
-  logger?: RouteDockLogger
+  logger?: KikisAppLogger
 }
 
 export const DEFAULT_RETRY_POLICY: Required<Omit<RetryPolicy, 'onRetry' | 'logger'>> = {
@@ -46,7 +46,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Execute `fn` with exponential backoff on retryable RouteDockErrors.
+ * Execute `fn` with exponential backoff on retryable KikisAppErrors.
  * Honors `retryAfterMs` from facilitator 429/503 responses when present.
  */
 export async function withRetry<T>(
@@ -58,13 +58,13 @@ export async function withRetry<T>(
     ...policy,
   }
   const log = resolveLogger(logger)
-  let lastError: RouteDockError | undefined
+  let lastError: KikisAppError | undefined
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       return await fn()
     } catch (err) {
-      if (!(err instanceof RouteDockError)) {
+      if (!(err instanceof KikisAppError)) {
         throw err
       }
       lastError = err
@@ -90,5 +90,5 @@ export async function withRetry<T>(
     }
   }
 
-  throw lastError ?? new RouteDockError('Retry exhausted', 'NETWORK', false)
+  throw lastError ?? new KikisAppError('Retry exhausted', 'NETWORK', false)
 }

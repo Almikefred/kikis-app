@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic'
 
 export const metadata: Metadata = {
   title: 'Dashboard',
-  description: `Live view of RouteDock payment sessions, transactions, and voucher activity on Stellar ${networkLabel()}.`,
+  description: `Live view of KikisApp payment sessions, transactions, and voucher activity on Stellar ${networkLabel()}.`,
 }
 
 import { getSupabaseServerClient, SESSION_COLUMNS } from '@/lib/supabase'

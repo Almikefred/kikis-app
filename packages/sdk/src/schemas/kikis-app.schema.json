@@ -1,11 +1,11 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://routedock.xyz/schemas/routedock.schema.json",
-  "title": "RouteDock Manifest",
-  "description": "Discovery manifest served at /.well-known/routedock.json on every RouteDock provider endpoint",
+  "$id": "https://kikis-app.xyz/schemas/kikis-app.schema.json",
+  "title": "KikisApp Manifest",
+  "description": "Discovery manifest served at /.well-known/kikis-app.json on every KikisApp provider endpoint",
   "type": "object",
   "required": [
-    "routedock",
+    "kikis-app",
     "name",
     "description",
     "modes",
@@ -19,7 +19,7 @@
   ],
   "additionalProperties": false,
   "properties": {
-    "routedock": {
+    "kikis-app": {
       "type": "string",
       "pattern": "^[0-9]+\\.[0-9]+$",
       "description": "Manifest schema version, e.g. '1.0', '1.1', '2.0'."
@@ -214,7 +214,7 @@
     "PaymentMode": {
       "type": "string",
       "enum": ["x402", "mpp-charge", "mpp-session", "mpp-session-ws"],
-      "description": "A supported RouteDock payment mode"
+      "description": "A supported KikisApp payment mode"
     },
     "AssetConfig": {
       "type": "object",

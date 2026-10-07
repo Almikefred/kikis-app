@@ -1,4 +1,4 @@
-import type { RouteDockManifest, PaymentMode } from '../types.js'
+import type { KikisAppManifest, PaymentMode } from '../types.js'
 
 /**
  * Resolve the recipient address for a given payment mode.
@@ -17,7 +17,7 @@ import type { RouteDockManifest, PaymentMode } from '../types.js'
  * compare the 402 challenge's payee against the manifest before signing.
  */
 export function resolvePayee(
-  manifest: RouteDockManifest,
+  manifest: KikisAppManifest,
   mode: Extract<PaymentMode, 'x402' | 'mpp-charge'>,
 ): string {
   const override = manifest.pricing[mode]?.payee

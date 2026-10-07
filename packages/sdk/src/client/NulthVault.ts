@@ -1,20 +1,20 @@
 /**
- * NulthVault — self-contained Nulth ZK account support for RouteDock SDK.
+ * NulthVault — self-contained Nulth ZK account support for KikisApp SDK.
  *
- * @routedock/nulth-sdk is a workspace dependency, so usdcToStroops
- * is imported from @routedock/nulth-sdk via ../internal/usdc.js.
+ * @kikis-app/nulth-sdk is a workspace dependency, so usdcToStroops
+ * is imported from @kikis-app/nulth-sdk via ../internal/usdc.js.
  */
 import { createHash } from 'node:crypto'
 import { Address, rpc, hash, scValToNative, xdr } from '@stellar/stellar-sdk'
 import type { ClientStellarSigner } from '@x402/stellar'
 import type { SignAuthEntry } from '@stellar/stellar-sdk/contract'
-import type { RouteDockManifest, PaymentMode, VaultMode } from '../types.js'
-import { RouteDockManifestError } from '../errors.js'
+import type { KikisAppManifest, PaymentMode, VaultMode } from '../types.js'
+import { KikisAppManifestError } from '../errors.js'
 import { usdcToStroops } from '../internal/usdc.js'
-import { resolveLogger, type RouteDockLogger } from '../internal/logger.js'
+import { resolveLogger, type KikisAppLogger } from '../internal/logger.js'
 
 // ---------------------------------------------------------------------------
-// Inlined types (from @routedock/nulth-sdk/types)
+// Inlined types (from @kikis-app/nulth-sdk/types)
 // ---------------------------------------------------------------------------
 
 export interface NulthPolicyState {
@@ -60,7 +60,7 @@ export interface NulthClientConfig {
   policy: NulthPolicyState
   verifierContract?: string
   /** Log sink for the mock-prover warning. Defaults to a console-backed logger. */
-  logger?: RouteDockLogger
+  logger?: KikisAppLogger
 }
 
 export class NulthPolicyError extends Error {
@@ -73,7 +73,7 @@ export class NulthPolicyError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// Inlined proof utilities (from @routedock/nulth-sdk/proof)
+// Inlined proof utilities (from @kikis-app/nulth-sdk/proof)
 // ---------------------------------------------------------------------------
 
 function sha256Hex(data: Buffer | string): string {
@@ -111,7 +111,7 @@ function authDigestFromEntry(authEntryBase64: string): string {
  * different recipient, amount, or asset — can be the one that actually
  * gets signed and submitted.
  *
- * Mirrors @routedock/nulth-sdk's assertAuthEntryMatchesContext. Kept inline
+ * Mirrors @kikis-app/nulth-sdk's assertAuthEntryMatchesContext. Kept inline
  * (see file header) rather than imported.
  */
 function assertAuthEntryMatchesContext(
@@ -203,7 +203,7 @@ function encodeAuthSignature(proof: NulthProof): string {
 }
 
 // ---------------------------------------------------------------------------
-// Inlined NulthClient (from @routedock/nulth-sdk/NulthClient)
+// Inlined NulthClient (from @kikis-app/nulth-sdk/NulthClient)
 // ---------------------------------------------------------------------------
 
 class NulthClient {
@@ -214,12 +214,12 @@ class NulthClient {
     this.policy = { ...config.policy }
     this.prover = config.prover ?? 'mock'
     if (this.prover !== 'mock') {
-      throw new RouteDockManifestError(
+      throw new KikisAppManifestError(
         `NulthClient: unknown prover backend ${String(config.prover)}; only 'mock' is implemented`,
       )
     }
     if (config.network !== 'testnet') {
-      throw new RouteDockManifestError(
+      throw new KikisAppManifestError(
         `NulthClient cannot use the insecure mock prover on mainnet; a production prover is required (network must be 'testnet', got ${String(config.network)})`,
       )
     }
@@ -295,7 +295,7 @@ class NulthClient {
 }
 
 // ---------------------------------------------------------------------------
-// Inlined signer types & helpers (from @routedock/nulth-sdk/signer)
+// Inlined signer types & helpers (from @kikis-app/nulth-sdk/signer)
 // ---------------------------------------------------------------------------
 
 export interface NulthStellarSigner {
@@ -382,12 +382,12 @@ export interface NulthVaultConfig {
   verifierContract?: string
 }
 
-export function assertNulthVaultManifest(manifest: RouteDockManifest, nulthAccount: string): void {
+export function assertNulthVaultManifest(manifest: KikisAppManifest, nulthAccount: string): void {
   if (manifest.vault !== undefined && manifest.vault !== 'nulth') {
-    throw new RouteDockManifestError(`Provider vault mode ${manifest.vault} does not match client nulth vault`)
+    throw new KikisAppManifestError(`Provider vault mode ${manifest.vault} does not match client nulth vault`)
   }
   if (manifest.nulth_account && manifest.nulth_account !== nulthAccount) {
-    throw new RouteDockManifestError(`Manifest nulth_account ${manifest.nulth_account} does not match configured ${nulthAccount}`)
+    throw new KikisAppManifestError(`Manifest nulth_account ${manifest.nulth_account} does not match configured ${nulthAccount}`)
   }
 }
 
@@ -402,7 +402,7 @@ export async function fetchLedgerSequence(network: 'testnet' | 'mainnet'): Promi
 
 export async function prepareNulthSigner(
   vault: NulthVaultConfig,
-  manifest: RouteDockManifest,
+  manifest: KikisAppManifest,
   mode: PaymentMode,
   network: 'testnet' | 'mainnet',
   ledgerSequenceOverride?: number,
@@ -411,7 +411,7 @@ export async function prepareNulthSigner(
 
   const prover = vault.prover ?? 'mock'
   if (network === "mainnet" && prover === "mock") {
-    throw new RouteDockManifestError(
+    throw new KikisAppManifestError(
       'nulth vault uses the insecure mock prover and cannot be used on mainnet'
     )
   }
@@ -436,7 +436,7 @@ export async function prepareNulthSigner(
   if (mode === 'x402' || mode === 'mpp-charge') {
     setNulthPaymentContext(config, paymentContextFromManifest(manifest, mode, ledgerSequence))
   } else {
-    throw new RouteDockManifestError(`Nulth ZK vault does not support payment mode: ${mode}`)
+    throw new KikisAppManifestError(`Nulth ZK vault does not support payment mode: ${mode}`)
   }
 
   const signer = createNulthSigner(config)

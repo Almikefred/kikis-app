@@ -12,7 +12,7 @@ import { stellar } from '@stellar/mpp/channel/client'
 import { Challenge } from 'mppx'
 import { Mppx } from 'mppx/client'
 import type {
-  RouteDockManifest,
+  KikisAppManifest,
   SessionHandle,
   SessionCloseResult,
   SessionStats,
@@ -24,16 +24,16 @@ import type {
 } from '../types.js'
 import { DEFAULT_MAX_SESSION_DURATION_MS } from '../types.js'
 import {
-  RouteDockManifestError,
-  RouteDockChannelStateError,
-  RouteDockSignatureError,
-  RouteDockDisputeError,
+  KikisAppManifestError,
+  KikisAppChannelStateError,
+  KikisAppSignatureError,
+  KikisAppDisputeError,
   httpStatusToError,
   wrapFetchError,
   wrapMppError,
 } from '../errors.js'
 import { withRetry, type RetryPolicy } from '../internal/retry.js'
-import { consoleLogger, type RouteDockLogger } from '../internal/logger.js'
+import { consoleLogger, type KikisAppLogger } from '../internal/logger.js'
 import { usdcToStroops } from '../internal/usdc.js'
 
 const MIN_REFUND_WAITING_PERIOD = 17_280
@@ -149,12 +149,12 @@ export class MppSessionClient {
     private readonly network: 'testnet' | 'mainnet',
     private readonly retryPolicy?: RetryPolicy,
     private readonly webSocketFactory: WebSocketFactory = defaultWebSocketFactory,
-    private readonly logger: RouteDockLogger = consoleLogger,
+    private readonly logger: KikisAppLogger = consoleLogger,
   ) {}
 
   async openSession(
     url: string,
-    manifest: RouteDockManifest,
+    manifest: KikisAppManifest,
     commitmentSecret: string,
     options?: SessionOptions,
     onSpend?: (amount: string) => Promise<void>,
@@ -162,12 +162,12 @@ export class MppSessionClient {
     const mode = options?.mode ?? 'mpp-session'
     const pricing = manifest.pricing[mode]
     if (!pricing) {
-      throw new RouteDockManifestError(`manifest.pricing.${mode} missing`)
+      throw new KikisAppManifestError(`manifest.pricing.${mode} missing`)
     }
 
     const refundPeriod = pricing.refund_waiting_period_ledgers
     if (refundPeriod < MIN_REFUND_WAITING_PERIOD) {
-      throw new RouteDockManifestError(
+      throw new KikisAppManifestError(
         `refund_waiting_period_ledgers ${refundPeriod} < minimum ${MIN_REFUND_WAITING_PERIOD}`,
       )
     }
@@ -190,7 +190,7 @@ export class MppSessionClient {
     try {
       rateStroops = usdcToStroops(pricing.rate)
     } catch (err) {
-      throw new RouteDockManifestError(
+      throw new KikisAppManifestError(
         `manifest.pricing.${mode}.rate is not a valid USDC amount: "${pricing.rate}"`,
         { cause: err },
       )
@@ -212,7 +212,7 @@ export class MppSessionClient {
           const raw = (stored as { amount: unknown }).amount
           const amount = typeof raw === 'string' ? parseIntegerString(raw) : null
           if (amount === null) {
-            throw new RouteDockChannelStateError(
+            throw new KikisAppChannelStateError(
               `Stored cumulative for channel ${channel} is not an integer string: ${JSON.stringify(raw)}`,
             )
           }
@@ -225,7 +225,7 @@ export class MppSessionClient {
 
     /**
      * Validates a provider challenge and reserves the next cumulative amount.
-     * Throws RouteDockChannelStateError before anything can be signed. The
+     * Throws KikisAppChannelStateError before anything can be signed. The
      * reservation is advanced synchronously once validation settles, so
      * concurrent vouchers each get a distinct value.
      */
@@ -236,7 +236,7 @@ export class MppSessionClient {
 
       const channelValue = request['channel']
       if (typeof channelValue !== 'string' || channelValue !== channelFactory) {
-        throw new RouteDockChannelStateError(
+        throw new KikisAppChannelStateError(
           `Challenge names channel ${String(channelValue)}, but the manifest channel_factory is ${channelFactory}`,
         )
       }
@@ -244,12 +244,12 @@ export class MppSessionClient {
       const amountValue = request['amount']
       const amount = typeof amountValue === 'string' ? parseIntegerString(amountValue) : null
       if (amount === null) {
-        throw new RouteDockChannelStateError(
+        throw new KikisAppChannelStateError(
           `Challenge request.amount is not a base-10 integer string: ${JSON.stringify(amountValue)}`,
         )
       }
       if (amount !== rateStroops) {
-        throw new RouteDockChannelStateError(
+        throw new KikisAppChannelStateError(
           `Challenge request.amount ${amount} does not match the manifest rate ${rateStroops} stroops per voucher`,
         )
       }
@@ -266,7 +266,7 @@ export class MppSessionClient {
         const parsed =
           typeof rawCumulative === 'string' ? parseIntegerString(rawCumulative) : null
         if (parsed === null) {
-          throw new RouteDockChannelStateError(
+          throw new KikisAppChannelStateError(
             `Challenge methodDetails.cumulativeAmount is not a base-10 integer string: ${JSON.stringify(rawCumulative)}`,
           )
         }
@@ -288,7 +288,7 @@ export class MppSessionClient {
         } else if (serverReported === 0n) {
           baseline = 0n
         } else {
-          throw new RouteDockChannelStateError(
+          throw new KikisAppChannelStateError(
             `Challenge reports cumulative ${serverReported} for a channel this client has no baseline for. ` +
               'Pass a `store` in SessionOptions so the signed cumulative survives restarts, or close the channel before reusing it.',
           )
@@ -296,7 +296,7 @@ export class MppSessionClient {
       }
 
       if (serverReported > baseline) {
-        throw new RouteDockChannelStateError(
+        throw new KikisAppChannelStateError(
           `Challenge reports cumulative ${serverReported}, above the locally reserved baseline ${baseline}`,
         )
       }
@@ -457,11 +457,11 @@ export class MppSessionClient {
         // issuing vouchers: every doFetch() signs a new cumulative via
         // mppx.fetch, and a value signed after close() would sit above the
         // cumulative close() is committing on-chain. Throws
-        // RouteDockChannelStateError('session closed') so the consumer can tell
+        // KikisAppChannelStateError('session closed') so the consumer can tell
         // why the stream ended.
         const assertOpen = (): void => {
           if (closed) {
-            throw new RouteDockChannelStateError('session closed')
+            throw new KikisAppChannelStateError('session closed')
           }
         }
 
@@ -487,14 +487,14 @@ export class MppSessionClient {
                   resp,
                 )
               }
-              throw new RouteDockChannelStateError(
+              throw new KikisAppChannelStateError(
                 `Voucher request failed: HTTP ${resp.status}`,
               )
             }
             try {
               return await resp.json()
             } catch (cause) {
-              throw new RouteDockChannelStateError(
+              throw new KikisAppChannelStateError(
                 `Voucher response was not valid JSON (HTTP ${resp.status})`,
                 { cause },
               )
@@ -612,7 +612,7 @@ export class MppSessionClient {
         }, retryPolicy)
 
         if (rpcMod.Api.isSimulationError(simResult)) {
-          throw new RouteDockChannelStateError(
+          throw new KikisAppChannelStateError(
             `prepare_commitment simulation failed: ${simResult.error}`,
           )
         }
@@ -621,14 +621,14 @@ export class MppSessionClient {
           simResult as { result?: { retval?: { bytes: () => Buffer } } }
         ).result?.retval?.bytes()
         if (!commitmentBytes) {
-          throw new RouteDockChannelStateError('prepare_commitment returned no bytes')
+          throw new KikisAppChannelStateError('prepare_commitment returned no bytes')
         }
 
         let signature: Buffer
         try {
           signature = commitmentKey.sign(Buffer.from(commitmentBytes))
         } catch (err) {
-          throw new RouteDockSignatureError('Channel close commitment signing failed', {
+          throw new KikisAppSignatureError('Channel close commitment signing failed', {
             cause: err,
           })
         }
@@ -660,7 +660,7 @@ export class MppSessionClient {
                 closeResp,
               )
             }
-            throw new RouteDockChannelStateError(
+            throw new KikisAppChannelStateError(
               `Channel close failed: HTTP ${closeResp.status}`,
             )
           }
@@ -669,14 +669,14 @@ export class MppSessionClient {
           try {
             body = (await closeResp.json()) as { closeTxHash?: string }
           } catch (cause) {
-            throw new RouteDockChannelStateError(
+            throw new KikisAppChannelStateError(
               `Channel close response was not valid JSON (HTTP ${closeResp.status})`,
               { cause },
             )
           }
           const closeTxHash = body.closeTxHash ?? null
           if (!closeTxHash) {
-            throw new RouteDockChannelStateError(
+            throw new KikisAppChannelStateError(
               'Channel close response missing closeTxHash',
             )
           }
@@ -709,7 +709,7 @@ export class MppSessionClient {
 
           const simResult = await server.simulateTransaction(tx)
           if (rpcMod.Api.isSimulationError(simResult)) {
-            throw new RouteDockDisputeError(`request_refund simulation failed: ${(simResult as any).error}`)
+            throw new KikisAppDisputeError(`request_refund simulation failed: ${(simResult as any).error}`)
           }
 
           const preparedTx = await server.prepareTransaction(tx)
@@ -718,16 +718,16 @@ export class MppSessionClient {
           const result = await server.sendTransaction(preparedTx)
           if (result.status === 'ERROR') {
             const errDetail = (result as any).errorResult ? JSON.stringify((result as any).errorResult) : 'status ERROR'
-            throw new RouteDockDisputeError(`Refund request transaction failed: ${errDetail}`)
+            throw new KikisAppDisputeError(`Refund request transaction failed: ${errDetail}`)
           }
           if (!result.hash) {
-            throw new RouteDockDisputeError('Refund request transaction not sent')
+            throw new KikisAppDisputeError('Refund request transaction not sent')
           }
 
           return result.hash
         } catch (err) {
-          if (err instanceof RouteDockDisputeError) throw err
-          throw new RouteDockDisputeError(`Failed to request refund: ${err instanceof Error ? err.message : String(err)}`)
+          if (err instanceof KikisAppDisputeError) throw err
+          throw new KikisAppDisputeError(`Failed to request refund: ${err instanceof Error ? err.message : String(err)}`)
         }
       },
 
@@ -748,10 +748,10 @@ export class MppSessionClient {
             .build()
           const simResult = await server.simulateTransaction(simTx)
           if (rpcMod.Api.isSimulationError(simResult)) {
-            throw new RouteDockDisputeError(`prepare_commitment simulation failed: ${(simResult as any).error}`)
+            throw new KikisAppDisputeError(`prepare_commitment simulation failed: ${(simResult as any).error}`)
           }
           const commitmentBytes = (simResult as any).result?.retval?.bytes()
-          if (!commitmentBytes) throw new RouteDockDisputeError('prepare_commitment returned no bytes')
+          if (!commitmentBytes) throw new KikisAppDisputeError('prepare_commitment returned no bytes')
 
           const signature = commitmentKey.sign(Buffer.from(commitmentBytes))
 
@@ -772,16 +772,16 @@ export class MppSessionClient {
           const settleResult = await server.sendTransaction(preparedSettleTx)
           if (settleResult.status === 'ERROR') {
             const errDetail = (settleResult as any).errorResult ? JSON.stringify((settleResult as any).errorResult) : 'status ERROR'
-            throw new RouteDockDisputeError(`Settlement transaction failed: ${errDetail}`)
+            throw new KikisAppDisputeError(`Settlement transaction failed: ${errDetail}`)
           }
           if (!settleResult.hash) {
-            throw new RouteDockDisputeError('Settlement transaction not sent')
+            throw new KikisAppDisputeError('Settlement transaction not sent')
           }
 
           return settleResult.hash
         } catch (err) {
-          if (err instanceof RouteDockDisputeError) throw err
-          throw new RouteDockDisputeError(`Failed to settle with latest voucher: ${err instanceof Error ? err.message : String(err)}`)
+          if (err instanceof KikisAppDisputeError) throw err
+          throw new KikisAppDisputeError(`Failed to settle with latest voucher: ${err instanceof Error ? err.message : String(err)}`)
         }
       },
 
@@ -803,12 +803,12 @@ export class MppSessionClient {
 
           const simResult = await server.simulateTransaction(tx)
           if (rpcMod.Api.isSimulationError(simResult)) {
-            throw new RouteDockChannelStateError(`Failed to query channel state: ${(simResult as any).error}`)
+            throw new KikisAppChannelStateError(`Failed to query channel state: ${(simResult as any).error}`)
           }
 
           const retval = (simResult as any).result?.retval
           if (!retval) {
-            throw new RouteDockChannelStateError('No channel state returned')
+            throw new KikisAppChannelStateError('No channel state returned')
           }
 
           if (typeof retval === 'object' && retval !== null) {
@@ -821,8 +821,8 @@ export class MppSessionClient {
 
           return 'open'
         } catch (err) {
-          if (err instanceof RouteDockChannelStateError) throw err
-          throw new RouteDockChannelStateError(`Failed to get dispute status: ${err instanceof Error ? err.message : String(err)}`)
+          if (err instanceof KikisAppChannelStateError) throw err
+          throw new KikisAppChannelStateError(`Failed to get dispute status: ${err instanceof Error ? err.message : String(err)}`)
         }
       },
 
@@ -859,7 +859,7 @@ export class MppSessionClient {
           emit('session:close-failed', { maxDurationMs, error })
           this.logger(
             'warn',
-            `RouteDock: maxDuration auto-close failed after ${maxDurationMs}ms — ` +
+            `KikisApp: maxDuration auto-close failed after ${maxDurationMs}ms — ` +
               'the channel may still hold collateral; retry close() or call requestRefund().',
             { error },
           )
@@ -884,7 +884,7 @@ export class MppSessionClient {
    * Each server frame is yielded (JSON frames parsed; raw strings yielded
    * as-is). The stream ends when the server closes the socket with a normal
    * close code (1000/1001); abnormal closes and connection failures surface as
-   * RouteDockChannelStateError.
+   * KikisAppChannelStateError.
    */
   private async *streamWebSocket(
     url: string,
@@ -908,7 +908,7 @@ export class MppSessionClient {
           probe,
         )
       }
-      throw new RouteDockChannelStateError(
+      throw new KikisAppChannelStateError(
         `Voucher request failed: expected HTTP 402 challenge, got HTTP ${probe.status}`,
       )
     }
@@ -982,12 +982,12 @@ export class MppSessionClient {
         const event = await nextEvent()
         if (event.type === 'open') break
         if (event.type === 'error') {
-          throw new RouteDockChannelStateError(
+          throw new KikisAppChannelStateError(
             'WebSocket upgrade failed: connection error',
           )
         }
         if (event.type === 'close') {
-          throw new RouteDockChannelStateError(
+          throw new KikisAppChannelStateError(
             `WebSocket upgrade failed: server closed the connection before upgrading (code ${event.code})`,
           )
         }
@@ -1007,7 +1007,7 @@ export class MppSessionClient {
           continue
         }
         if (event.type === 'error') {
-          throw new RouteDockChannelStateError('WebSocket connection error')
+          throw new KikisAppChannelStateError('WebSocket connection error')
         }
         // A second 'open' cannot arrive after the upgrade; guard only to keep
         // the union narrow for the close branch below.
@@ -1016,7 +1016,7 @@ export class MppSessionClient {
         if (event.code === 1000 || event.code === 1001) {
           return
         }
-        throw new RouteDockChannelStateError(
+        throw new KikisAppChannelStateError(
           `WebSocket stream ended abnormally (code ${event.code}${event.reason ? `: ${event.reason}` : ''})`,
         )
       }

@@ -5,10 +5,10 @@ import {
   decodePaymentRequiredHeader,
   decodePaymentResponseHeader,
 } from '@x402/core/http'
-import type { RouteDockManifest, PaymentResult } from '../types.js'
+import type { KikisAppManifest, PaymentResult } from '../types.js'
 import {
-  RouteDockManifestError,
-  RouteDockSignatureError,
+  KikisAppManifestError,
+  KikisAppSignatureError,
   httpStatusToError,
   wrapFetchError,
 } from '../errors.js'
@@ -53,13 +53,13 @@ export class X402Client {
     return new X402Client(signer, this.network, this.retryPolicy)
   }
 
-  async pay(url: string, manifest: RouteDockManifest): Promise<PaymentResult> {
+  async pay(url: string, manifest: KikisAppManifest): Promise<PaymentResult> {
     const pricing = manifest.pricing.x402
     if (!pricing) {
-      throw new RouteDockManifestError('manifest.pricing.x402 missing')
+      throw new KikisAppManifestError('manifest.pricing.x402 missing')
     }
     if (!pricing.facilitator) {
-      throw new RouteDockManifestError('manifest.pricing.x402.facilitator missing')
+      throw new KikisAppManifestError('manifest.pricing.x402.facilitator missing')
     }
 
     const caip2 = CAIP2[this.network]
@@ -85,7 +85,7 @@ export class X402Client {
         try {
           data = await init.json()
         } catch {
-          throw new RouteDockManifestError(
+          throw new KikisAppManifestError(
             `Failed to parse JSON from non-402 response (HTTP ${init.status})`,
           )
         }
@@ -102,21 +102,21 @@ export class X402Client {
     const init = probe.init
     const reqHeader = init.headers.get('X-Payment-Requirements')
     if (!reqHeader) {
-      throw new RouteDockManifestError('402 response missing X-Payment-Requirements header')
+      throw new KikisAppManifestError('402 response missing X-Payment-Requirements header')
     }
 
     let paymentRequired
     try {
       paymentRequired = decodePaymentRequiredHeader(reqHeader)
     } catch (err) {
-      throw new RouteDockManifestError('402 X-Payment-Requirements header is malformed', {
+      throw new KikisAppManifestError('402 X-Payment-Requirements header is malformed', {
         cause: err,
       })
     }
 
     const firstAccept = paymentRequired.accepts[0]
     if (!firstAccept) {
-      throw new RouteDockManifestError('402 response carries no payment accepts')
+      throw new KikisAppManifestError('402 response carries no payment accepts')
     }
 
     // Phase 2: bind the unsigned 402 to the signed manifest BEFORE signing.
@@ -136,7 +136,7 @@ export class X402Client {
         accepts: allowed,
       })
     } catch (err) {
-      throw new RouteDockSignatureError(`x402 payment signing failed: ${String(err)}`, {
+      throw new KikisAppSignatureError(`x402 payment signing failed: ${String(err)}`, {
         cause: err,
       })
     }
@@ -163,7 +163,7 @@ export class X402Client {
             response,
           )
         }
-        throw new RouteDockManifestError(`x402 payment failed: HTTP ${response.status}`)
+        throw new KikisAppManifestError(`x402 payment failed: HTTP ${response.status}`)
       }
 
       return response
@@ -184,7 +184,7 @@ export class X402Client {
     try {
       data = await settled.json()
     } catch {
-      throw new RouteDockManifestError('Failed to parse JSON from settled response')
+      throw new KikisAppManifestError('Failed to parse JSON from settled response')
     }
     return { data, txHash, mode: 'x402', amount: signedAmount, timestamp: Date.now() }
   }

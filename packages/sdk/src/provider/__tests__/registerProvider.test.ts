@@ -4,16 +4,16 @@ import { Keypair } from '@stellar/stellar-sdk'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { registerProvider } from '../registerProvider.js'
 import { signManifest } from '../../manifest/sign.js'
-import type { RouteDockManifest } from '../../types.js'
-import { RouteDockSignatureError } from '../../errors.js'
+import type { KikisAppManifest } from '../../types.js'
+import { KikisAppSignatureError } from '../../errors.js'
 
 describe('registerProvider', () => {
   const keypair = Keypair.random()
   const payee = keypair.publicKey()
   const secret = keypair.secret()
 
-  const rawManifest: RouteDockManifest = {
-    routedock: '1.0',
+  const rawManifest: KikisAppManifest = {
+    kikis-app: '1.0',
     name: 'Test DEX Provider',
     description: 'Test provider description',
     modes: ['x402', 'mpp-charge'],
@@ -30,11 +30,11 @@ describe('registerProvider', () => {
     categories: ['data/price'],
   }
 
-  it('rejects an unsigned manifest with RouteDockSignatureError', async () => {
+  it('rejects an unsigned manifest with KikisAppSignatureError', async () => {
     const mockSupabase = {} as SupabaseClient
     await assert.rejects(
       () => registerProvider({ supabase: mockSupabase, manifest: rawManifest, baseUrl: 'https://api.test' }),
-      RouteDockSignatureError,
+      KikisAppSignatureError,
     )
   })
 
@@ -48,7 +48,7 @@ describe('registerProvider', () => {
 
     await assert.rejects(
       () => registerProvider({ supabase: mockSupabase, manifest: tampered, baseUrl: 'https://api.test' }),
-      RouteDockSignatureError,
+      KikisAppSignatureError,
     )
   })
 

@@ -9,7 +9,7 @@
  * TRUST MODEL: the `payee` field is part of the document being signed, so a
  * valid signature only proves that whoever signed it controlled the signing
  * key declared in `payee`. It does NOT, by itself, prove the manifest was
- * served by that entity — any host serving `/.well-known/routedock.json` can
+ * served by that entity — any host serving `/.well-known/kikis-app.json` can
  * substitute its own payee and self-sign.
  *
  * Verification must therefore be bound to an out-of-band trust anchor. Callers
@@ -23,8 +23,8 @@
 
 import { createHash } from 'node:crypto'
 import { Keypair } from '@stellar/stellar-sdk'
-import type { RouteDockManifest } from '../types.js'
-import { RouteDockSignatureError } from '../errors.js'
+import type { KikisAppManifest } from '../types.js'
+import { KikisAppSignatureError } from '../errors.js'
 
 export const MANIFEST_SIGNATURE_VERSION = '2' as const
 
@@ -47,9 +47,9 @@ function canonicalize(value: JsonValue): JsonValue {
 }
 
 /** Produce the canonical SHA-256 digest of the manifest (signature field excluded). */
-export function manifestDigest(manifest: RouteDockManifest): Buffer {
+export function manifestDigest(manifest: KikisAppManifest): Buffer {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { signature: _omit, ...rest } = manifest as RouteDockManifest & { signature?: string }
+  const { signature: _omit, ...rest } = manifest as KikisAppManifest & { signature?: string }
   const canonical = JSON.stringify(canonicalize(rest as unknown as JsonValue))
   return createHash('sha256').update(canonical, 'utf8').digest()
 }
@@ -59,9 +59,9 @@ export function manifestDigest(manifest: RouteDockManifest): Buffer {
  * Returns a new manifest object with the `signature` field populated.
  */
 export function signManifest(
-  manifest: RouteDockManifest,
+  manifest: KikisAppManifest,
   payeeSecretKey: string,
-): RouteDockManifest & { signature_version: typeof MANIFEST_SIGNATURE_VERSION; signature: string } {
+): KikisAppManifest & { signature_version: typeof MANIFEST_SIGNATURE_VERSION; signature: string } {
   const keypair = Keypair.fromSecret(payeeSecretKey)
   const versionedManifest = {
     ...manifest,
@@ -77,31 +77,31 @@ export function signManifest(
  *
  * `expectedPayee` binds the manifest to an out-of-band trust anchor: when
  * provided, the (attacker-controllable) `manifest.payee` must equal it,
- * otherwise `RouteDockSignatureError` is thrown before signature verification.
+ * otherwise `KikisAppSignatureError` is thrown before signature verification.
  * Callers that have a registry/pinned payee MUST pass it; omitting it leaves
  * only self-signed authenticity, which is insufficient for routing trust.
  *
- * Throws `RouteDockSignatureError` if the signature is missing, the payee does
+ * Throws `KikisAppSignatureError` if the signature is missing, the payee does
  * not match `expectedPayee`, or the signature is invalid.
  */
 export function verifyManifestSignature(
-  manifest: RouteDockManifest & { signature?: string },
+  manifest: KikisAppManifest & { signature?: string },
   expectedPayee?: string,
 ): void {
   if (!manifest.signature) {
-    throw new RouteDockSignatureError(
+    throw new KikisAppSignatureError(
       'Manifest is missing a signature field — cannot verify payee authenticity',
     )
   }
 
   if (manifest.signature_version !== MANIFEST_SIGNATURE_VERSION) {
-    throw new RouteDockSignatureError(
+    throw new KikisAppSignatureError(
       `Manifest signature version must be ${MANIFEST_SIGNATURE_VERSION}; legacy signatures are not safe because nested fields were excluded from their digest`,
     )
   }
 
   if (expectedPayee !== undefined && manifest.payee !== expectedPayee) {
-    throw new RouteDockSignatureError(
+    throw new KikisAppSignatureError(
       `Manifest payee ${manifest.payee} does not match expected payee ${expectedPayee}`,
     )
   }
@@ -112,20 +112,20 @@ export function verifyManifestSignature(
   try {
     sigBytes = Buffer.from(manifest.signature, 'base64')
   } catch {
-    throw new RouteDockSignatureError('Manifest signature is not valid base64')
+    throw new KikisAppSignatureError('Manifest signature is not valid base64')
   }
 
   let valid = false
   try {
     valid = keypair.verify(digest, sigBytes)
   } catch {
-    throw new RouteDockSignatureError(
+    throw new KikisAppSignatureError(
       `Manifest signature verification failed for payee ${manifest.payee}`,
     )
   }
 
   if (!valid) {
-    throw new RouteDockSignatureError(
+    throw new KikisAppSignatureError(
       `Manifest signature verification failed for payee ${manifest.payee}`,
     )
   }

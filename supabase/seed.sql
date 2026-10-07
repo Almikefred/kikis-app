@@ -1,5 +1,5 @@
 -- ============================================================
--- RouteDock — Development Seed Data
+-- KikisApp — Development Seed Data
 -- For local dashboard dev and demo purposes only.
 -- Run: supabase db seed
 -- ============================================================
@@ -12,14 +12,14 @@ VALUES
   (
     'Stellar DEX Price Feed',
     'Real-time USDC/XLM mid-price from Stellar DEX orderbook via Horizon',
-    'https://api-a.routedock.xyz',
+    'https://api-a.kikis-app.xyz',
     ARRAY['x402', 'mpp-charge'],
     ARRAY['price', 'stellar', 'dex', 'orderbook', 'usdc'],
     ARRAY['data/price/crypto'],
     'testnet',
     'GDEMO1PAYEEADDRESS11111111111111111111111111111111111111',
     '{
-      "routedock": "1.0",
+      "kikis-app": "1.0",
       "name": "Stellar DEX Price Feed",
       "description": "Real-time USDC/XLM mid-price from Stellar DEX orderbook via Horizon",
       "modes": ["x402", "mpp-charge"],
@@ -40,14 +40,14 @@ VALUES
   (
     'Stellar DEX Orderbook Stream',
     'Real-time USDC/XLM orderbook SSE stream from Stellar Horizon',
-    'https://api-b.routedock.xyz',
+    'https://api-b.kikis-app.xyz',
     ARRAY['mpp-session', 'mpp-session-ws'],
     ARRAY['stream', 'stellar', 'dex', 'orderbook', 'usdc', 'sse', 'realtime'],
     ARRAY['data/stream/crypto'],
     'testnet',
     'GDEMO2PAYEEADDRESS11111111111111111111111111111111111111',
     '{
-      "routedock": "1.0",
+      "kikis-app": "1.0",
       "name": "Stellar DEX Orderbook Stream",
       "description": "Real-time USDC/XLM orderbook SSE stream from Stellar Horizon",
       "modes": ["mpp-session", "mpp-session-ws"],

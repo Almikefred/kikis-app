@@ -5,7 +5,7 @@
  * controllable fake-fetch that resolves on demand, letting us assert
  * exactly how many requests are in-flight at each point.
  *
- * Run with: pnpm --filter @routedock/routedock test
+ * Run with: pnpm --filter @kikis-app/kikis-app test
  */
 
 import assert from 'node:assert/strict'

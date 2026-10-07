@@ -57,8 +57,8 @@ pnpm --filter provider-b run deploy
 Verify deployments with health and metadata queries:
 
 ```bash
-curl -fsS https://api-a.routedock.xyz/health
-curl -fsS https://api-b.routedock.xyz/.well-known/routedock.json
+curl -fsS https://api-a.kikis-app.xyz/health
+curl -fsS https://api-b.kikis-app.xyz/.well-known/kikis-app.json
 ```
 
 ## Related guides

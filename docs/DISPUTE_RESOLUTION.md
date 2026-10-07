@@ -34,20 +34,20 @@ The agent finishes consuming the stream and calls `session.close()`. The provide
 
 ### What happens
 
-`close()` retries the `DELETE` using the configured `RetryPolicy`. After exhausting retries it throws `RouteDockNetworkError` or `RouteDockChannelStateError`. The channel remains `open` on-chain; no funds have moved.
+`close()` retries the `DELETE` using the configured `RetryPolicy`. After exhausting retries it throws `KikisAppNetworkError` or `KikisAppChannelStateError`. The channel remains `open` on-chain; no funds have moved.
 
 ### Recovery sequence
 
 ```ts
-import { RouteDockNetworkError, RouteDockChannelStateError } from '@routedock/sdk'
+import { KikisAppNetworkError, KikisAppChannelStateError } from '@kikis-app/sdk'
 
 try {
   const result = await session.close()
   console.log('settled:', result.closeTxHash)
 } catch (err) {
   if (
-    err instanceof RouteDockNetworkError ||
-    err instanceof RouteDockChannelStateError
+    err instanceof KikisAppNetworkError ||
+    err instanceof KikisAppChannelStateError
   ) {
     console.warn('Provider unreachable — initiating on-chain refund dispute')
 
@@ -85,7 +85,7 @@ try {
 
 ### Time budget
 
-`refund_waiting_period_ledgers` is set by the provider in the manifest. The minimum enforced by the SDK is **17 280 ledgers ≈ 24 hours** at 5 s/ledger. Never connect to a provider whose manifest sets this below 17 280 — the SDK will throw `RouteDockManifestError` during `openSession`.
+`refund_waiting_period_ledgers` is set by the provider in the manifest. The minimum enforced by the SDK is **17 280 ledgers ≈ 24 hours** at 5 s/ledger. Never connect to a provider whose manifest sets this below 17 280 — the SDK will throw `KikisAppManifestError` during `openSession`.
 
 ---
 
@@ -95,18 +95,18 @@ The agent calls `session.close()`. The provider's endpoint is reachable but retu
 
 ### What happens
 
-`close()` throws `RouteDockChannelStateError` with the message `Channel close failed: HTTP <status>`. Unlike network errors, 4xx responses are **not retried** by the SDK because they indicate a protocol disagreement, not a transient failure.
+`close()` throws `KikisAppChannelStateError` with the message `Channel close failed: HTTP <status>`. Unlike network errors, 4xx responses are **not retried** by the SDK because they indicate a protocol disagreement, not a transient failure.
 
 ### Recovery sequence
 
 ```ts
-import { RouteDockChannelStateError } from '@routedock/sdk'
+import { KikisAppChannelStateError } from '@kikis-app/sdk'
 
 try {
   const result = await session.close()
   console.log('settled:', result.closeTxHash)
 } catch (err) {
-  if (err instanceof RouteDockChannelStateError) {
+  if (err instanceof KikisAppChannelStateError) {
     console.warn('Provider rejected close — checking dispute status')
 
     const status = await session.getDisputeStatus()
@@ -130,7 +130,7 @@ try {
 
 `settleWithLatestVoucher()` calls `settle_with_signature` directly from the agent side using the highest voucher the agent has signed. The contract verifies the ed25519 signature and releases funds: provider receives the cumulative amount, agent receives the remainder.
 
-> **Note:** `settleWithLatestVoucher()` can only be called while the channel is still `open`. If the provider has already called `settle_with_signature` on-chain (status `settled`), the contract will reject the duplicate and the call will throw `RouteDockDisputeError`.
+> **Note:** `settleWithLatestVoucher()` can only be called while the channel is still `open`. If the provider has already called `settle_with_signature` on-chain (status `settled`), the contract will reject the duplicate and the call will throw `KikisAppDisputeError`.
 
 ---
 
@@ -201,20 +201,20 @@ The agent calls `session.close()` successfully — the `DELETE` request reaches 
 
 ### What happens
 
-`close()` throws `RouteDockNetworkError`. The channel may or may not be settled on-chain. Acting as if it failed and calling `requestRefund()` could race with a legitimate provider settlement, wasting gas. Acting as if it succeeded could leave funds stranded if it actually failed.
+`close()` throws `KikisAppNetworkError`. The channel may or may not be settled on-chain. Acting as if it failed and calling `requestRefund()` could race with a legitimate provider settlement, wasting gas. Acting as if it succeeded could leave funds stranded if it actually failed.
 
 ### Recovery sequence
 
 Always check on-chain state before taking any dispute action:
 
 ```ts
-import { RouteDockNetworkError } from '@routedock/sdk'
+import { KikisAppNetworkError } from '@kikis-app/sdk'
 
 try {
   const result = await session.close()
   console.log('settled:', result.closeTxHash)
 } catch (err) {
-  if (err instanceof RouteDockNetworkError) {
+  if (err instanceof KikisAppNetworkError) {
     console.warn('Network error during close — checking on-chain state before disputing')
 
     // Wait a few seconds for any in-flight transaction to land
@@ -313,15 +313,15 @@ async function claimRefund(channelId: string, agentSecret: string, network: 'tes
 
 | Error class | `retryable` | When thrown |
 |---|---|---|
-| `RouteDockNetworkError` | `true` | Fetch timeout, connection reset, DNS failure |
-| `RouteDockChannelStateError` | `false` | 4xx from provider, RPC simulation error, missing `closeTxHash`, `getDisputeStatus` RPC failure (simulation error, empty result, or any other RPC error) |
-| `RouteDockDisputeError` | `false` | `request_refund` or `settleWithLatestVoucher` failure |
-| `RouteDockSignatureError` | `false` | Ed25519 signing failed (key corruption or wrong commitment key) |
-| `RouteDockRefundWindowError` | `false` | Exported from the SDK but not currently thrown by it |
+| `KikisAppNetworkError` | `true` | Fetch timeout, connection reset, DNS failure |
+| `KikisAppChannelStateError` | `false` | 4xx from provider, RPC simulation error, missing `closeTxHash`, `getDisputeStatus` RPC failure (simulation error, empty result, or any other RPC error) |
+| `KikisAppDisputeError` | `false` | `request_refund` or `settleWithLatestVoucher` failure |
+| `KikisAppSignatureError` | `false` | Ed25519 signing failed (key corruption or wrong commitment key) |
+| `KikisAppRefundWindowError` | `false` | Exported from the SDK but not currently thrown by it |
 
-Errors with `retryable: true` are automatically retried by the SDK according to the `RetryPolicy` passed to `RouteDockClientConfig`. Errors with `retryable: false` require the caller to decide — they represent either a protocol disagreement or a state that requires manual resolution.
+Errors with `retryable: true` are automatically retried by the SDK according to the `RetryPolicy` passed to `KikisAppClientConfig`. Errors with `retryable: false` require the caller to decide — they represent either a protocol disagreement or a state that requires manual resolution.
 
-Callers of `getDisputeStatus()` should catch `RouteDockChannelStateError`, which the SDK throws for every failure of that method.
+Callers of `getDisputeStatus()` should catch `KikisAppChannelStateError`, which the SDK throws for every failure of that method.
 
 ---
 
@@ -334,14 +334,14 @@ session.close() throws?
 │
 └─ Yes
    │
-   ├─ RouteDockNetworkError
+   ├─ KikisAppNetworkError
    │   └─ getDisputeStatus()
    │       ├─ 'settled'        → done ✓
    │       ├─ 'open'           → retry close() → if fails: requestRefund()
    │       ├─ 'in-refund-window' → wait + poll
    │       └─ 'refundable'    → claim_refund via Stellar SDK
    │
-   └─ RouteDockChannelStateError
+   └─ KikisAppChannelStateError
        └─ getDisputeStatus()
            ├─ 'settled'        → done ✓  (provider settled during window)
            └─ 'open'           → settleWithLatestVoucher()

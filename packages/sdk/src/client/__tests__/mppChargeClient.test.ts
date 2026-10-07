@@ -8,13 +8,13 @@
 import { mock, describe, it, beforeEach } from 'node:test'
 import assert from 'node:assert/strict'
 import { Keypair } from '@stellar/stellar-sdk'
-import type { RouteDockManifest } from '../../types.js'
+import type { KikisAppManifest } from '../../types.js'
 import {
-  RouteDockManifestError,
-  RouteDockSignatureError,
-  RouteDockNetworkError,
-  RouteDockFacilitatorError,
-  RouteDockPolicyRejectError,
+  KikisAppManifestError,
+  KikisAppSignatureError,
+  KikisAppNetworkError,
+  KikisAppFacilitatorError,
+  KikisAppPolicyRejectError,
 } from '../../errors.js'
 
 // ── Scripted mppx layer ──────────────────────────────────────────────────────
@@ -148,9 +148,9 @@ const { MppChargeClient } = await import('../MppChargeClient.js')
 const ASSET_CONTRACT = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA'
 const PAYEE = Keypair.random()
 
-function buildManifest(): RouteDockManifest {
+function buildManifest(): KikisAppManifest {
   return {
-    routedock: '1.0',
+    kikis-app: '1.0',
     name: 'Charge Test Provider',
     description: 'MppChargeClient unit test',
     modes: ['mpp-charge'],
@@ -212,7 +212,7 @@ describe('MppChargeClient — success path', () => {
 })
 
 describe('MppChargeClient — manifest validation', () => {
-  it('throws RouteDockManifestError when mpp-charge pricing is missing', async () => {
+  it('throws KikisAppManifestError when mpp-charge pricing is missing', async () => {
     const manifest = buildManifest()
     delete manifest.pricing['mpp-charge']
     const client = new MppChargeClient(Keypair.random(), 'testnet')
@@ -225,13 +225,13 @@ describe('MppChargeClient — manifest validation', () => {
 })
 
 describe('MppChargeClient — network errors', () => {
-  it('wraps fetch rejection as RouteDockNetworkError', async () => {
+  it('wraps fetch rejection as KikisAppNetworkError', async () => {
     mppxScript = { fetchRejects: true }
     const client = new MppChargeClient(Keypair.random(), 'testnet')
     await assert.rejects(
       () => client.pay('https://provider.test/price', buildManifest()),
       (err: unknown) => {
-        assert.ok(err instanceof RouteDockNetworkError)
+        assert.ok(err instanceof KikisAppNetworkError)
         assert.equal(err.code, 'NETWORK')
         assert.equal(err.retryable, true)
         assert.ok(/MPP charge request/i.test(err.message))
@@ -240,7 +240,7 @@ describe('MppChargeClient — network errors', () => {
     )
   })
 
-  it('wraps plain error as RouteDockSignatureError (retryable === false) and does not retry', async () => {
+  it('wraps plain error as KikisAppSignatureError (retryable === false) and does not retry', async () => {
     let callCount = 0
     const signingError = new Error('bad challenge')
     const originalFetch = fakeMppx.fetch
@@ -257,7 +257,7 @@ describe('MppChargeClient — network errors', () => {
       await assert.rejects(
         () => client.pay('https://provider.test/price', buildManifest()),
         (err: unknown) => {
-          assert.ok(err instanceof RouteDockSignatureError)
+          assert.ok(err instanceof KikisAppSignatureError)
           assert.equal(err.retryable, false)
           assert.equal(err.code, 'SIGNATURE')
           assert.equal(err.cause, signingError)
@@ -273,7 +273,7 @@ describe('MppChargeClient — network errors', () => {
 })
 
 describe('MppChargeClient — HTTP errors', () => {
-  it('throws RouteDockFacilitatorError for 5xx status', async () => {
+  it('throws KikisAppFacilitatorError for 5xx status', async () => {
     mppxScript = { fetchStatus: 500 }
     const client = new MppChargeClient(Keypair.random(), 'testnet')
     await assert.rejects(
@@ -285,7 +285,7 @@ describe('MppChargeClient — HTTP errors', () => {
     )
   })
 
-  it('throws RouteDockFacilitatorError for 429 status', async () => {
+  it('throws KikisAppFacilitatorError for 429 status', async () => {
     mppxScript = { fetchStatus: 429 }
     const client = new MppChargeClient(Keypair.random(), 'testnet')
     await assert.rejects(
@@ -297,7 +297,7 @@ describe('MppChargeClient — HTTP errors', () => {
     )
   })
 
-  it('throws RouteDockManifestError for 4xx status (non-retryable)', async () => {
+  it('throws KikisAppManifestError for 4xx status (non-retryable)', async () => {
     mppxScript = { fetchStatus: 400 }
     const client = new MppChargeClient(Keypair.random(), 'testnet')
     await assert.rejects(
@@ -307,13 +307,13 @@ describe('MppChargeClient — HTTP errors', () => {
     )
   })
 
-  it('throws RouteDockManifestError when 200 response body is not JSON', async () => {
+  it('throws KikisAppManifestError when 200 response body is not JSON', async () => {
     mppxScript = { fetchNonJson: true }
     const client = new MppChargeClient(Keypair.random(), 'testnet')
     await assert.rejects(
       () => client.pay('https://provider.test/price', buildManifest()),
       (err: unknown) => {
-        assert.ok(err instanceof RouteDockManifestError)
+        assert.ok(err instanceof KikisAppManifestError)
         assert.match(err.message, /Failed to parse JSON from response \(HTTP 200\)/)
         assert.ok(err.cause instanceof SyntaxError)
         return true
@@ -413,7 +413,7 @@ describe('MppChargeClient — challenge validation', () => {
     await assert.rejects(
       () => client.pay('https://provider.test/price', buildManifest()),
       (err: unknown) => {
-        assert.ok(err instanceof RouteDockPolicyRejectError)
+        assert.ok(err instanceof KikisAppPolicyRejectError)
         assert.equal(err.reason, 'challenge_amount_exceeds_manifest')
         return true
       },
@@ -430,7 +430,7 @@ describe('MppChargeClient — challenge validation', () => {
     await assert.rejects(
       () => client.pay('https://provider.test/price', buildManifest()),
       (err: unknown) => {
-        assert.ok(err instanceof RouteDockPolicyRejectError)
+        assert.ok(err instanceof KikisAppPolicyRejectError)
         assert.equal(err.reason, 'challenge_payee_mismatch')
         return true
       },
@@ -444,7 +444,7 @@ describe('MppChargeClient — challenge validation', () => {
     await assert.rejects(
       () => client.pay('https://provider.test/price', buildManifest()),
       (err: unknown) => {
-        assert.ok(err instanceof RouteDockPolicyRejectError)
+        assert.ok(err instanceof KikisAppPolicyRejectError)
         assert.equal(err.reason, 'challenge_asset_mismatch')
         return true
       },
@@ -461,7 +461,7 @@ describe('MppChargeClient — challenge validation', () => {
     await assert.rejects(
       () => client.pay('https://provider.test/price', buildManifest()),
       (err: unknown) => {
-        assert.ok(err instanceof RouteDockPolicyRejectError)
+        assert.ok(err instanceof KikisAppPolicyRejectError)
         assert.equal(err.reason, 'challenge_network_mismatch')
         return true
       },

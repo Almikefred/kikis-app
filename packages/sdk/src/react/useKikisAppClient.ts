@@ -1,9 +1,9 @@
 import { useEffect, useMemo } from 'react'
 import { Keypair } from '@stellar/stellar-sdk'
-import { RouteDockClient, type RouteDockClientConfig } from '../client/RouteDockClient.js'
+import { KikisAppClient, type KikisAppClientConfig } from '../client/KikisAppClient.js'
 
 /**
- * Returns a memoized RouteDockClient. Re-creates only when wallet / network /
+ * Returns a memoized KikisAppClient. Re-creates only when wallet / network /
  * spendCap / commitmentSecret / retryPolicy identity changes.
  *
  * The client runs in the browser, so the wallet secret is visible to anyone who
@@ -12,13 +12,13 @@ import { RouteDockClient, type RouteDockClientConfig } from '../client/RouteDock
  *
  * @example
  * const THROWAWAY_TESTNET_SECRET = 'S...'
- * const client = useRouteDockClient({
+ * const client = useKikisAppClient({
  *   wallet: THROWAWAY_TESTNET_SECRET,
  *   network: 'testnet',
  *   spendCap: { daily: '1.00', asset: 'USDC' },
  * })
  */
-export function useRouteDockClient(config: RouteDockClientConfig): RouteDockClient {
+export function useKikisAppClient(config: KikisAppClientConfig): KikisAppClient {
   const walletKey =
     typeof config.wallet === 'string' ? config.wallet : (config.wallet as Keypair).secret()
   const spendCapKey = config.spendCap
@@ -29,7 +29,7 @@ export function useRouteDockClient(config: RouteDockClientConfig): RouteDockClie
     : ''
 
   const client = useMemo(
-    () => new RouteDockClient(config),
+    () => new KikisAppClient(config),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [walletKey, config.network, spendCapKey, config.commitmentSecret, retryKey],
   )

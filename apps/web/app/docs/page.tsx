@@ -5,7 +5,7 @@ import { DOCS_MANIFEST_EXAMPLE } from '@/lib/docsManifestExample'
 
 export const metadata: Metadata = {
   title: 'Docs',
-  description: 'RouteDock SDK documentation — agent client, provider middleware, manifest standard, and contract account policies.',
+  description: 'KikisApp SDK documentation — agent client, provider middleware, manifest standard, and contract account policies.',
 }
 
 function Section({ id, icon: Icon, title, children }: { id: string; icon: LucideIcon; title: string; children: React.ReactNode }) {
@@ -81,24 +81,24 @@ export default function DocsPage() {
             <div>
               <h1 className="text-3xl font-bold text-[var(--text-primary)] mb-2">Documentation</h1>
               <p className="text-[var(--text-secondary)]">
-                Everything you need to integrate RouteDock into your agent or provider service.
+                Everything you need to integrate KikisApp into your agent or provider service.
               </p>
             </div>
 
             <Section id="install" icon={Package} title="Install">
-              <Code>{`npm install @routedock/routedock`}</Code>
+              <Code>{`npm install @kikis-app/kikis-app`}</Code>
               <p>
                 The package ships ESM and CJS dual builds with full TypeScript declarations.
                 Subpath imports keep your bundle small:
               </p>
-              <Code>{`import { RouteDockClient } from '@routedock/routedock'               // types + client
-import { RouteDockClient } from '@routedock/routedock/client'        // client only
-import { routedock } from '@routedock/routedock/provider'             // Express middleware + handlers
-import { routedockHono } from '@routedock/routedock/provider/hono'    // Hono middleware
-import { routedockFastify } from '@routedock/routedock/provider/fastify' // Fastify plugin
-import { useRouteDockClient, usePay } from '@routedock/routedock/react' // React hooks
-import { createMockRoutedockMiddleware } from '@routedock/routedock/testing' // Test utilities
-import schema from '@routedock/routedock/schema'                      // Canonical manifest JSON Schema`}</Code>
+              <Code>{`import { KikisAppClient } from '@kikis-app/kikis-app'               // types + client
+import { KikisAppClient } from '@kikis-app/kikis-app/client'        // client only
+import { kikis-app } from '@kikis-app/kikis-app/provider'             // Express middleware + handlers
+import { kikisAppHono } from '@kikis-app/kikis-app/provider/hono'    // Hono middleware
+import { kikisAppFastify } from '@kikis-app/kikis-app/provider/fastify' // Fastify plugin
+import { useKikisAppClient, usePay } from '@kikis-app/kikis-app/react' // React hooks
+import { createMockKikisAppMiddleware } from '@kikis-app/kikis-app/testing' // Test utilities
+import schema from '@kikis-app/kikis-app/schema'                      // Canonical manifest JSON Schema`}</Code>
               <p>
                 Peer dependencies (<InlineCode>express</InlineCode>, <InlineCode>hono</InlineCode>, <InlineCode>fastify</InlineCode>, <InlineCode>react</InlineCode>) are all optional — only install what your application imports.
               </p>
@@ -108,10 +108,10 @@ import schema from '@routedock/routedock/schema'                      // Canonic
               <p>
                 The agent client handles <InlineCode>x402</InlineCode> and <InlineCode>mpp-charge</InlineCode> through <InlineCode>pay()</InlineCode> and channels through <InlineCode>openSession()</InlineCode>.
               </p>
-              <Code>{`import { RouteDockClient } from '@routedock/routedock'
+              <Code>{`import { KikisAppClient } from '@kikis-app/kikis-app'
 import { Keypair } from '@stellar/stellar-sdk'
 
-const client = new RouteDockClient({
+const client = new KikisAppClient({
   wallet: Keypair.fromSecret(process.env.AGENT_SECRET),
   network: 'testnet',
   spendCap: { daily: '1.00', asset: 'USDC' },         // optional local guard
@@ -141,15 +141,15 @@ const closeResult = await session.close()
 
             <Section id="provider-middleware" icon={Server} title="Provider Middleware">
               <p>
-                Middleware adapters sign and serve the manifest at <InlineCode>/.well-known/routedock.json</InlineCode>, verify payments across supported modes, and settle on-chain.
+                Middleware adapters sign and serve the manifest at <InlineCode>/.well-known/kikis-app.json</InlineCode>, verify payments across supported modes, and settle on-chain.
               </p>
               <p><strong>Express:</strong></p>
               <Code>{`import express from 'express'
-import { routedock } from '@routedock/routedock/provider'
+import { kikis-app } from '@kikis-app/kikis-app/provider'
 
 const app = express()
 
-app.use('/price', routedock({
+app.use('/price', kikis-app({
   modes: ['x402', 'mpp-charge'],
   pricing: { x402: '0.001', 'mpp-charge': '0.0008' },
   asset: 'USDC',
@@ -171,15 +171,15 @@ app.get('/price', async (req, res) => {
 
               <p className="mt-4"><strong>Hono (Cloudflare Workers / Node):</strong></p>
               <p className="text-sm text-[var(--text-muted)]">
-                Mount at <InlineCode>&apos;*&apos;</InlineCode> so RouteDock serves the signed manifest at <InlineCode>/.well-known/routedock.json</InlineCode> automatically (as mounted in <InlineCode>apps/provider-a/src/worker.ts</InlineCode>):
+                Mount at <InlineCode>&apos;*&apos;</InlineCode> so KikisApp serves the signed manifest at <InlineCode>/.well-known/kikis-app.json</InlineCode> automatically (as mounted in <InlineCode>apps/provider-a/src/worker.ts</InlineCode>):
               </p>
               <Code>{`import { Hono } from 'hono'
-import { routedockHono } from '@routedock/routedock/provider/hono'
+import { kikisAppHono } from '@kikis-app/kikis-app/provider/hono'
 
 const app = new Hono()
 app.use(
   '*',
-  routedockHono({
+  kikisAppHono({
     modes: ['x402', 'mpp-charge'],
     pricing: { x402: '0.001', 'mpp-charge': '0.0008' },
     asset: 'USDC',
@@ -198,11 +198,11 @@ app.get('/price', (c) => c.json({ price: '0.199', pair: 'XLM/USDC' }))`}</Code>
 
               <p className="mt-4"><strong>Fastify:</strong></p>
               <Code>{`import Fastify from 'fastify'
-import { routedockFastify } from '@routedock/routedock/provider/fastify'
+import { kikisAppFastify } from '@kikis-app/kikis-app/provider/fastify'
 
 const fastify = Fastify()
 await fastify.register(
-  routedockFastify({
+  kikisAppFastify({
     modes: ['x402', 'mpp-charge'],
     pricing: { x402: '0.001', 'mpp-charge': '0.0008' },
     asset: 'USDC',
@@ -227,11 +227,11 @@ fastify.get('/price', async () => ({ price: '0.199', pair: 'XLM/USDC' }))`}</Cod
 
             <Section id="manifest" icon={Search} title="Manifest Standard">
               <p>
-                Every provider serves <InlineCode>/.well-known/routedock.json</InlineCode>. Provider adapters sign the manifest with <InlineCode>payeeSecretKey</InlineCode> using Ed25519. Clients validate the manifest against the JSON Schema (draft-07 via <InlineCode>@cfworker/json-schema</InlineCode>) and reject any manifest that fails schema validation or whose <InlineCode>signature_version</InlineCode> is not <InlineCode>&quot;2&quot;</InlineCode> (see <InlineCode>packages/sdk/src/manifest/sign.ts</InlineCode> line 97) before making any payment.
+                Every provider serves <InlineCode>/.well-known/kikis-app.json</InlineCode>. Provider adapters sign the manifest with <InlineCode>payeeSecretKey</InlineCode> using Ed25519. Clients validate the manifest against the JSON Schema (draft-07 via <InlineCode>@cfworker/json-schema</InlineCode>) and reject any manifest that fails schema validation or whose <InlineCode>signature_version</InlineCode> is not <InlineCode>&quot;2&quot;</InlineCode> (see <InlineCode>packages/sdk/src/manifest/sign.ts</InlineCode> line 97) before making any payment.
               </p>
               <Code>{JSON.stringify(DOCS_MANIFEST_EXAMPLE, null, 2)}</Code>
               <p>
-                The canonical JSON Schema is exported from <InlineCode>@routedock/routedock/schema</InlineCode> (source file at <InlineCode>packages/sdk/src/schemas/routedock.schema.json</InlineCode>). Providers can validate manifests in automated test suites (see <InlineCode>apps/provider-a/src/__tests__/manifest.test.ts</InlineCode> for the canonical test pattern with Ajv). Modes retained solely for backwards compatibility can be flagged in <InlineCode>deprecated_modes</InlineCode>.
+                The canonical JSON Schema is exported from <InlineCode>@kikis-app/kikis-app/schema</InlineCode> (source file at <InlineCode>packages/sdk/src/schemas/kikis-app.schema.json</InlineCode>). Providers can validate manifests in automated test suites (see <InlineCode>apps/provider-a/src/__tests__/manifest.test.ts</InlineCode> for the canonical test pattern with Ajv). Modes retained solely for backwards compatibility can be flagged in <InlineCode>deprecated_modes</InlineCode>.
               </p>
             </Section>
 
@@ -240,7 +240,7 @@ fastify.get('/price', async () => ({ price: '0.199', pair: 'XLM/USDC' }))`}</Cod
                 Deterministic, manifest-driven mode selection (implemented in <InlineCode>packages/sdk/src/client/ModeRouter.ts</InlineCode>):
               </p>
               <ol className="list-decimal list-inside space-y-2 pl-1">
-                <li><strong>Forced mode override:</strong> If <InlineCode>{'{ forceMode }'}</InlineCode> is specified, that mode is used directly (throws <InlineCode>RouteDockNoSupportedModeError</InlineCode> if unsupported by the provider, and logs a warning if deprecated).</li>
+                <li><strong>Forced mode override:</strong> If <InlineCode>{'{ forceMode }'}</InlineCode> is specified, that mode is used directly (throws <InlineCode>KikisAppNoSupportedModeError</InlineCode> if unsupported by the provider, and logs a warning if deprecated).</li>
                 <li><strong>Active before deprecated:</strong> Modes declared in <InlineCode>deprecated_modes</InlineCode> are only evaluated as a fallback if no active supported mode matches the criteria.</li>
                 <li><strong>Session modes:</strong> With <InlineCode>{'{ sustained: true }'}</InlineCode> or <InlineCode>{'{ session: true }'}</InlineCode>, selection picks a session mode by <InlineCode>transport</InlineCode>:
                   <ul className="list-disc list-inside space-y-1 pl-4 mt-1">
@@ -249,12 +249,12 @@ fastify.get('/price', async () => ({ price: '0.199', pair: 'XLM/USDC' }))`}</Cod
                   </ul>
                   To open one, call <InlineCode>{'client.openSession(url, { mode })'}</InlineCode>. It uses the mode you pass and defaults to <InlineCode>mpp-session</InlineCode>.
                 </li>
-                <li><strong>Cost optimization:</strong> When <InlineCode>{'optimize: \'cost\''}</InlineCode> is set, the client compares amounts across candidate per-request modes (<InlineCode>x402</InlineCode>, <InlineCode>mpp-charge</InlineCode>) and picks the cheapest. If <InlineCode>budget_per_request</InlineCode> is provided and all candidates exceed it, throws <InlineCode>RouteDockPolicyRejectError</InlineCode>.</li>
+                <li><strong>Cost optimization:</strong> When <InlineCode>{'optimize: \'cost\''}</InlineCode> is set, the client compares amounts across candidate per-request modes (<InlineCode>x402</InlineCode>, <InlineCode>mpp-charge</InlineCode>) and picks the cheapest. If <InlineCode>budget_per_request</InlineCode> is provided and all candidates exceed it, throws <InlineCode>KikisAppPolicyRejectError</InlineCode>.</li>
                 <li><strong>Default discrete precedence (<InlineCode>client.pay</InlineCode>):</strong>
                   <ul className="list-disc list-inside space-y-1 pl-4 mt-1">
                     <li>Prefers <InlineCode>mpp-charge</InlineCode> — native SAC transfer (lower fees, no facilitator).</li>
                     <li>Falls back to <InlineCode>x402</InlineCode> with facilitator.</li>
-                    <li>Throws <InlineCode>RouteDockNoSupportedModeError</InlineCode> if no supported mode is available.</li>
+                    <li>Throws <InlineCode>KikisAppNoSupportedModeError</InlineCode> if no supported mode is available.</li>
                   </ul>
                 </li>
               </ol>

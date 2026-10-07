@@ -1,5 +1,5 @@
 {
-  "name": "@routedock/example-price-oracle-agent",
+  "name": "@kikis-app/example-price-oracle-agent",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@routedock/routedock": "workspace:*"
+    "@kikis-app/kikis-app": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.4.5"

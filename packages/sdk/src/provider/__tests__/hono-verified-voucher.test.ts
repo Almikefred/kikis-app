@@ -21,7 +21,7 @@ import { mock, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { Hono } from 'hono'
 import { Keypair } from '@stellar/stellar-sdk'
-import type { RouteDockManifest } from '../../types.js'
+import type { KikisAppManifest } from '../../types.js'
 
 const payeeKeypair = Keypair.random()
 const commitKeypair = Keypair.random()
@@ -70,10 +70,10 @@ mock.module('../mppCompatibility.js', {
   },
 })
 
-const { routedockHono } = await import('../hono.js')
+const { kikisAppHono } = await import('../hono.js')
 
-const manifest: RouteDockManifest = {
-  routedock: '1.0',
+const manifest: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Test Service',
   description: 'Unit test provider',
   modes: ['mpp-session'],
@@ -95,7 +95,7 @@ const manifest: RouteDockManifest = {
 }
 
 /**
- * Builds a fresh routedockHono app and returns it along with the `commit`
+ * Builds a fresh kikisAppHono app and returns it along with the `commit`
  * callback that *this specific instance* registered with onVerifiedCredential
  * (mocked module-wide, so we must capture it immediately after construction,
  * before any other test's app-building can reassign it).
@@ -110,7 +110,7 @@ function buildApp(handlers: {
   const app = new Hono()
   app.use(
     '*',
-    routedockHono({
+    kikisAppHono({
       asset: 'USDC',
       assetContract: ASSET_CONTRACT,
       payee: payeeKeypair.publicKey(),
@@ -136,7 +136,7 @@ function hexToBytesLocal(hex: string): Uint8Array {
   return bytes
 }
 
-describe('routedockHono — voucher state only from verified credentials', () => {
+describe('kikisAppHono — voucher state only from verified credentials', () => {
   it('pairs each committed amount with its own signature (last onVoucher call reflects the latest pair)', async () => {
     const voucherCalls: Array<{ amount: string; signature: string }> = []
     const { commit } = buildApp({

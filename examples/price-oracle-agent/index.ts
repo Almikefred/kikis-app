@@ -5,16 +5,16 @@
  * No session channel is needed — each call is a discrete on-chain settlement.
  *
  * Flow:
- *   1. RouteDockClient fetches Provider A's manifest.
+ *   1. KikisAppClient fetches Provider A's manifest.
  *   2. selectMode() picks x402 (forced here for illustration).
  *   3. X402Client sends initial GET, receives 402 + X-Payment-Requirements.
  *   4. Signs a payment payload and retries with payment-signature header.
  *   5. Provider settles on-chain; returns price data + X-Payment-Response.
  */
 
-import { RouteDockClient } from '@routedock/routedock'
+import { KikisAppClient } from '@kikis-app/kikis-app'
 
-const PROVIDER_A_URL = cleanUrl(process.env['PROVIDER_A_URL'] ?? 'https://api-a.routedock.xyz')
+const PROVIDER_A_URL = cleanUrl(process.env['PROVIDER_A_URL'] ?? 'https://api-a.kikis-app.xyz')
 const PRICE_URL = `${PROVIDER_A_URL}/price`
 const STELLAR_NETWORK = process.env['STELLAR_NETWORK'] === 'mainnet' ? 'mainnet' : 'testnet'
 const AGENT_SECRET = process.env['AGENT_SECRET'] ?? ''
@@ -41,7 +41,7 @@ function formatQuote(data: unknown): string {
 async function main(): Promise<void> {
     requireSecret('AGENT_SECRET', AGENT_SECRET)
 
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
         wallet: AGENT_SECRET,
         network: STELLAR_NETWORK,
         // Optional: cap daily spend at $0.10 so runaway loops can't drain the wallet.

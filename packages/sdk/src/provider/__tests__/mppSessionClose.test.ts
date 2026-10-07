@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { Hono } from 'hono'
 import { Keypair } from '@stellar/stellar-sdk'
-import { routedockHono } from '../hono.js'
-import type { RouteDockManifest } from '../../types.js'
+import { kikisAppHono } from '../hono.js'
+import type { KikisAppManifest } from '../../types.js'
 
 const payeeKeypair = Keypair.random()
 const commitKeypair = Keypair.random()
@@ -11,8 +11,8 @@ const commitKeypair = Keypair.random()
 const ASSET_CONTRACT = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA'
 const CHANNEL_CONTRACT = 'CCK4XOW3YKQUEZFONUTINKMSNW7SNMRQZURME5U3UP7E6WNGK7UHUCAH'
 
-const manifest: RouteDockManifest = {
-  routedock: '1.0',
+const manifest: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Test Service',
   description: 'Unit test provider',
   modes: ['mpp-session'],
@@ -39,7 +39,7 @@ test('MPP Session DELETE close prefers tracked higher voucher over lower body am
   const app = new Hono()
   app.use(
     '*',
-    routedockHono({
+    kikisAppHono({
       modes: ['mpp-session'],
       pricing: {
         'mpp-session': { rate: '0.0001', channelFactory: CHANNEL_CONTRACT },

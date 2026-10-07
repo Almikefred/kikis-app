@@ -88,7 +88,7 @@ Required values in each:
 ## Build Everything
 
 ```bash
-pnpm --filter @routedock/routedock build
+pnpm --filter @kikis-app/kikis-app build
 pnpm --filter provider-a build
 pnpm --filter provider-b build
 pnpm --filter agent build
@@ -102,17 +102,17 @@ pnpm --filter agent build
 ```bash
 pnpm --filter provider-a start
 # Verify: curl http://localhost:3001/health
-# Verify: curl http://localhost:3001/.well-known/routedock.json
+# Verify: curl http://localhost:3001/.well-known/kikis-app.json
 ```
 
 **Terminal 2 — Provider B:**
 ```bash
 pnpm --filter provider-b start
 # Verify: curl http://localhost:3002/health
-# Verify: curl http://localhost:3002/.well-known/routedock.json
+# Verify: curl http://localhost:3002/.well-known/kikis-app.json
 ```
 
-> If using deployed Workers instead, set `PROVIDER_A_URL=https://api-a.routedock.xyz` and `PROVIDER_B_URL=https://api-b.routedock.xyz` in `agent/.env` and skip running providers locally.
+> If using deployed Workers instead, set `PROVIDER_A_URL=https://api-a.kikis-app.xyz` and `PROVIDER_B_URL=https://api-b.kikis-app.xyz` in `agent/.env` and skip running providers locally.
 
 ---
 

@@ -15,7 +15,7 @@ const mockEnv: Env = {
   STELLAR_NETWORK: 'testnet',
   STELLAR_PAYEE_SECRET: TEST_PAYEE_SECRET,
   STELLAR_PAYEE_ADDRESS: TEST_PAYEE_ADDRESS,
-  PUBLIC_BASE_URL: 'https://api-a.routedock.xyz',
+  PUBLIC_BASE_URL: 'https://api-a.kikis-app.xyz',
   USDC_ASSET_CONTRACT: TESTNET_USDC_CONTRACT,
 }
 
@@ -31,8 +31,8 @@ describe('provider-a worker payment path & routes', () => {
     assert.equal(typeof body.payee, 'string')
   })
 
-  it('/.well-known/routedock.json serves a signed manifest with status 200', async () => {
-    const req = new Request('http://localhost/.well-known/routedock.json')
+  it('/.well-known/kikis-app.json serves a signed manifest with status 200', async () => {
+    const req = new Request('http://localhost/.well-known/kikis-app.json')
     const res = await worker.fetch(req, mockEnv, mockCtx)
 
     assert.equal(res.status, 200)

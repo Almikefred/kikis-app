@@ -1,5 +1,5 @@
 /** Stable error codes for programmatic handling. */
-export type RouteDockErrorCode =
+export type KikisAppErrorCode =
   | 'MANIFEST'
   | 'MANIFEST_TIMEOUT'
   | 'MANIFEST_SUNSET'
@@ -15,26 +15,26 @@ export type RouteDockErrorCode =
   | 'CLIENT_VERSION_TOO_OLD'
   | 'TRUSTLINE'
 
-export interface RouteDockErrorOptions {
+export interface KikisAppErrorOptions {
   cause?: unknown
   /** Milliseconds to wait before retry (e.g. from Retry-After header). */
   retryAfterMs?: number
 }
 
-/** Base error for all RouteDock SDK failures. */
-export class RouteDockError extends Error {
-  readonly code: RouteDockErrorCode
+/** Base error for all KikisApp SDK failures. */
+export class KikisAppError extends Error {
+  readonly code: KikisAppErrorCode
   readonly retryable: boolean
   readonly retryAfterMs?: number
 
   constructor(
     message: string,
-    code: RouteDockErrorCode,
+    code: KikisAppErrorCode,
     retryable: boolean,
-    options: RouteDockErrorOptions = {},
+    options: KikisAppErrorOptions = {},
   ) {
     super(message, { cause: options.cause })
-    this.name = 'RouteDockError'
+    this.name = 'KikisAppError'
     this.code = code
     this.retryable = retryable
     if (options.retryAfterMs !== undefined) {
@@ -44,42 +44,42 @@ export class RouteDockError extends Error {
 }
 
 /** Manifest fetch failed, schema invalid, or required fields missing. */
-export class RouteDockManifestError extends RouteDockError {
-  constructor(message: string, options: RouteDockErrorOptions = {}) {
+export class KikisAppManifestError extends KikisAppError {
+  constructor(message: string, options: KikisAppErrorOptions = {}) {
     super(message, 'MANIFEST', false, options)
-    this.name = 'RouteDockManifestError'
+    this.name = 'KikisAppManifestError'
   }
 }
 
 /** Manifest fetch exceeded the configured timeout without receiving a response. */
-export class RouteDockManifestTimeoutError extends RouteDockError {
-  constructor(message: string, options: RouteDockErrorOptions = {}) {
+export class KikisAppManifestTimeoutError extends KikisAppError {
+  constructor(message: string, options: KikisAppErrorOptions = {}) {
     super(message, 'MANIFEST_TIMEOUT', true, options)
-    this.name = 'RouteDockManifestTimeoutError'
+    this.name = 'KikisAppManifestTimeoutError'
   }
 }
 
 /** The provider's signed manifest has reached its declared sunset timestamp. */
-export class RouteDockManifestSunsetError extends RouteDockError {
-  constructor(message: string, options: RouteDockErrorOptions = {}) {
+export class KikisAppManifestSunsetError extends KikisAppError {
+  constructor(message: string, options: KikisAppErrorOptions = {}) {
     super(message, 'MANIFEST_SUNSET', false, options)
-    this.name = 'RouteDockManifestSunsetError'
+    this.name = 'KikisAppManifestSunsetError'
   }
 }
 
 /** No payment mode in the manifest is supported by this client. */
-export class RouteDockNoSupportedModeError extends RouteDockError {
-  constructor(message: string, options: RouteDockErrorOptions = {}) {
+export class KikisAppNoSupportedModeError extends KikisAppError {
+  constructor(message: string, options: KikisAppErrorOptions = {}) {
     super(message, 'NO_SUPPORTED_MODE', false, options)
-    this.name = 'RouteDockNoSupportedModeError'
+    this.name = 'KikisAppNoSupportedModeError'
   }
 }
 
 /** This client's SDK version is below the manifest's min_client_version. Upgrade the SDK to proceed. */
-export class RouteDockClientVersionError extends RouteDockError {
-  constructor(message: string, options: RouteDockErrorOptions = {}) {
+export class KikisAppClientVersionError extends KikisAppError {
+  constructor(message: string, options: KikisAppErrorOptions = {}) {
     super(message, 'CLIENT_VERSION_TOO_OLD', false, options)
-    this.name = 'RouteDockClientVersionError'
+    this.name = 'KikisAppClientVersionError'
   }
 }
 
@@ -88,7 +88,7 @@ export class RouteDockClientVersionError extends RouteDockError {
  * Thrown preflight — before any payment transaction is submitted —
  * so the caller can establish the trustline first.
  */
-export class RouteDockTrustlineError extends RouteDockError {
+export class KikisAppTrustlineError extends KikisAppError {
   readonly asset: string
   readonly issuer: string
   readonly remediation: string
@@ -97,7 +97,7 @@ export class RouteDockTrustlineError extends RouteDockError {
     asset: string,
     issuer: string,
     remediation: string,
-    options: RouteDockErrorOptions = {},
+    options: KikisAppErrorOptions = {},
   ) {
     super(
       `Missing trustline for ${asset} (issuer: ${issuer}). ${remediation}`,
@@ -105,7 +105,7 @@ export class RouteDockTrustlineError extends RouteDockError {
       false,
       options,
     )
-    this.name = 'RouteDockTrustlineError'
+    this.name = 'KikisAppTrustlineError'
     this.asset = asset
     this.issuer = issuer
     this.remediation = remediation
@@ -113,84 +113,84 @@ export class RouteDockTrustlineError extends RouteDockError {
 }
 
 /** x402 facilitator or provider returned a retryable HTTP failure (5xx, 429). */
-export class RouteDockFacilitatorError extends RouteDockError {
+export class KikisAppFacilitatorError extends KikisAppError {
   readonly status: number
 
   constructor(
     message: string,
     status: number,
-    options: RouteDockErrorOptions = {},
+    options: KikisAppErrorOptions = {},
   ) {
     super(message, 'FACILITATOR', true, options)
-    this.name = 'RouteDockFacilitatorError'
+    this.name = 'KikisAppFacilitatorError'
     this.status = status
   }
 }
 
 /** Transient network failure (timeouts, connection reset, unreachable host). */
-export class RouteDockNetworkError extends RouteDockError {
-  constructor(message: string, options: RouteDockErrorOptions = {}) {
+export class KikisAppNetworkError extends KikisAppError {
+  constructor(message: string, options: KikisAppErrorOptions = {}) {
     super(message, 'NETWORK', true, options)
-    this.name = 'RouteDockNetworkError'
+    this.name = 'KikisAppNetworkError'
   }
 }
 
 /** Payment or commitment signature could not be produced or verified. */
-export class RouteDockSignatureError extends RouteDockError {
-  constructor(message: string, options: RouteDockErrorOptions = {}) {
+export class KikisAppSignatureError extends KikisAppError {
+  constructor(message: string, options: KikisAppErrorOptions = {}) {
     super(message, 'SIGNATURE', false, options)
-    this.name = 'RouteDockSignatureError'
+    this.name = 'KikisAppSignatureError'
   }
 }
 
 /** Voucher cumulative amount did not increase monotonically. */
-export class RouteDockVoucherMonotonicityError extends RouteDockError {
-  constructor(message: string, options: RouteDockErrorOptions = {}) {
+export class KikisAppVoucherMonotonicityError extends KikisAppError {
+  constructor(message: string, options: KikisAppErrorOptions = {}) {
     super(message, 'VOUCHER_MONOTONICITY', false, options)
-    this.name = 'RouteDockVoucherMonotonicityError'
+    this.name = 'KikisAppVoucherMonotonicityError'
   }
 }
 
 /** Local spend cap or on-chain policy rejected the payment. */
-export class RouteDockPolicyRejectError extends RouteDockError {
+export class KikisAppPolicyRejectError extends KikisAppError {
   readonly reason: string
 
-  constructor(reason: string, options: RouteDockErrorOptions = {}) {
+  constructor(reason: string, options: KikisAppErrorOptions = {}) {
     super(`Payment rejected by policy: ${reason}`, 'POLICY_REJECT', false, options)
-    this.name = 'RouteDockPolicyRejectError'
+    this.name = 'KikisAppPolicyRejectError'
     this.reason = reason
   }
 }
 
 /** Channel lifecycle failure (open, simulate, close, missing settlement fields). */
-export class RouteDockChannelStateError extends RouteDockError {
-  constructor(message: string, options: RouteDockErrorOptions = {}) {
+export class KikisAppChannelStateError extends KikisAppError {
+  constructor(message: string, options: KikisAppErrorOptions = {}) {
     super(message, 'CHANNEL_STATE', false, options)
-    this.name = 'RouteDockChannelStateError'
+    this.name = 'KikisAppChannelStateError'
   }
 }
 
 /** Channel dispute operation failed (refund request, settlement, or contract invariant). */
-export class RouteDockDisputeError extends RouteDockError {
-  constructor(message: string, options: RouteDockErrorOptions = {}) {
+export class KikisAppDisputeError extends KikisAppError {
+  constructor(message: string, options: KikisAppErrorOptions = {}) {
     super(message, 'DISPUTE', false, options)
-    this.name = 'RouteDockDisputeError'
+    this.name = 'KikisAppDisputeError'
   }
 }
 
 /** Refund window has not yet opened or has already expired. */
-export class RouteDockRefundWindowError extends RouteDockError {
-  constructor(message: string, options: RouteDockErrorOptions = {}) {
+export class KikisAppRefundWindowError extends KikisAppError {
+  constructor(message: string, options: KikisAppErrorOptions = {}) {
     super(message, 'REFUND_WINDOW', false, options)
-    this.name = 'RouteDockRefundWindowError'
+    this.name = 'KikisAppRefundWindowError'
   }
 }
 
-/** @deprecated Use {@link RouteDockPolicyRejectError} */
-export const RouteDockPolicyRejectedError = RouteDockPolicyRejectError
+/** @deprecated Use {@link KikisAppPolicyRejectError} */
+export const KikisAppPolicyRejectedError = KikisAppPolicyRejectError
 
-/** @deprecated Use {@link RouteDockVoucherMonotonicityError} or {@link RouteDockChannelStateError} */
-export const RouteDockSessionError = RouteDockVoucherMonotonicityError
+/** @deprecated Use {@link KikisAppVoucherMonotonicityError} or {@link KikisAppChannelStateError} */
+export const KikisAppSessionError = KikisAppVoucherMonotonicityError
 
 /** Parse Retry-After from a Response (seconds or HTTP-date). */
 export function parseRetryAfterMs(response: Response): number | undefined {
@@ -210,45 +210,45 @@ export function parseRetryAfterMs(response: Response): number | undefined {
   return undefined
 }
 
-/** Map an HTTP status to a typed, retryable-aware RouteDock error. */
+/** Map an HTTP status to a typed, retryable-aware KikisApp error. */
 export function httpStatusToError(
   message: string,
   status: number,
   response?: Response,
-): RouteDockError {
+): KikisAppError {
   const retryAfterMs = response ? parseRetryAfterMs(response) : undefined
   const opts = retryAfterMs !== undefined ? { retryAfterMs } : {}
 
   if (status === 429 || status === 503 || (status >= 500 && status < 600)) {
-    return new RouteDockFacilitatorError(message, status, opts)
+    return new KikisAppFacilitatorError(message, status, opts)
   }
 
   if (status >= 400) {
-    return new RouteDockManifestError(message, opts)
+    return new KikisAppManifestError(message, opts)
   }
 
-  return new RouteDockNetworkError(message, opts)
+  return new KikisAppNetworkError(message, opts)
 }
 
-/** Wrap a low-level fetch failure; preserves existing RouteDockErrors. */
-export function wrapFetchError(err: unknown, context: string): RouteDockError {
-  if (err instanceof RouteDockError) return err
-  return new RouteDockNetworkError(`${context}: ${String(err)}`, { cause: err })
+/** Wrap a low-level fetch failure; preserves existing KikisAppErrors. */
+export function wrapFetchError(err: unknown, context: string): KikisAppError {
+  if (err instanceof KikisAppError) return err
+  return new KikisAppNetworkError(`${context}: ${String(err)}`, { cause: err })
 }
 
 /**
  * Wrap an mppx failure; differentiates network transport errors from signing/credential errors.
  * Real transport failures (fetch TypeError, AbortError, TimeoutError) are wrapped as retryable
- * RouteDockNetworkError, while signing and challenge failures are wrapped as non-retryable
- * RouteDockSignatureError.
+ * KikisAppNetworkError, while signing and challenge failures are wrapped as non-retryable
+ * KikisAppSignatureError.
  */
-export function wrapMppError(err: unknown, context: string): RouteDockError {
-  if (err instanceof RouteDockError) return err
+export function wrapMppError(err: unknown, context: string): KikisAppError {
+  if (err instanceof KikisAppError) return err
   if (
     err instanceof TypeError ||
     (err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError'))
   ) {
-    return new RouteDockNetworkError(`${context}: ${String(err)}`, { cause: err })
+    return new KikisAppNetworkError(`${context}: ${String(err)}`, { cause: err })
   }
-  return new RouteDockSignatureError(`${context}: ${String(err)}`, { cause: err })
+  return new KikisAppSignatureError(`${context}: ${String(err)}`, { cause: err })
 }

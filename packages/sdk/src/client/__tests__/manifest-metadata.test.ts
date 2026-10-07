@@ -4,17 +4,17 @@
  *   - surfacing regions, latency_hints, capabilities on preflight and estimateCost
  *   - rankProvidersByLatency ranking helper
  *
- * Run with: pnpm --filter @routedock/routedock test
+ * Run with: pnpm --filter @kikis-app/kikis-app test
  */
 
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import assert from 'node:assert/strict'
 import { Keypair } from '@stellar/stellar-sdk'
-import { RouteDockClient } from '../RouteDockClient.js'
+import { KikisAppClient } from '../KikisAppClient.js'
 import { assertManifestValid, rankProvidersByLatency } from '../ModeRouter.js'
-import { RouteDockManifestError } from '../../errors.js'
-import type { RouteDockManifest } from '../../types.js'
+import { KikisAppManifestError } from '../../errors.js'
+import type { KikisAppManifest } from '../../types.js'
 import { signManifest } from '../../manifest/sign.js'
 
 function startTestServer(
@@ -34,8 +34,8 @@ function startTestServer(
 
 const PAYEE_KEYPAIR = Keypair.random()
 
-const VALID_MANIFEST_BASE: RouteDockManifest = {
-  routedock: '1.0',
+const VALID_MANIFEST_BASE: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Metadata Test Provider',
   description: 'Provider for testing regions, latency_hints, capabilities',
   modes: ['x402', 'mpp-charge'],
@@ -68,7 +68,7 @@ const VALID_MANIFEST_BASE: RouteDockManifest = {
   })
 
   // Invalid: latency hint for region not in regions
-  const invalidManifest: RouteDockManifest = {
+  const invalidManifest: KikisAppManifest = {
     ...VALID_MANIFEST_BASE,
     regions: ['IAD', 'AMS'],
     latency_hints: { IAD: 14, SIN: 99 },
@@ -79,14 +79,14 @@ const VALID_MANIFEST_BASE: RouteDockManifest = {
       assertManifestValid(invalidManifest)
     },
     (err: unknown) => {
-      return err instanceof RouteDockManifestError && String(err).includes("latency_hints key 'SIN' is not declared in regions")
+      return err instanceof KikisAppManifestError && String(err).includes("latency_hints key 'SIN' is not declared in regions")
     },
-    'Should throw RouteDockManifestError when latency_hints contains unlisted region',
+    'Should throw KikisAppManifestError when latency_hints contains unlisted region',
   )
 
   // Invalid: latency hints defined but regions missing
   const { regions: _omittedRegions, ...restWithoutRegions } = VALID_MANIFEST_BASE
-  const noRegionsManifest: RouteDockManifest = {
+  const noRegionsManifest: KikisAppManifest = {
     ...restWithoutRegions,
     latency_hints: { IAD: 14 },
   }
@@ -96,9 +96,9 @@ const VALID_MANIFEST_BASE: RouteDockManifest = {
       assertManifestValid(noRegionsManifest)
     },
     (err: unknown) => {
-      return err instanceof RouteDockManifestError && String(err).includes('latency_hints defined without declaring regions')
+      return err instanceof KikisAppManifestError && String(err).includes('latency_hints defined without declaring regions')
     },
-    'Should throw RouteDockManifestError when latency_hints defined without regions',
+    'Should throw KikisAppManifestError when latency_hints defined without regions',
   )
 
   console.log('✓ Test 1: assertManifestValid correctly validates latency_hints subset constraint')
@@ -107,28 +107,28 @@ const VALID_MANIFEST_BASE: RouteDockManifest = {
 // ── Test 2: rankProvidersByLatency orders providers accurately ────────────────
 
 {
-  const providerA: RouteDockManifest = {
+  const providerA: KikisAppManifest = {
     ...VALID_MANIFEST_BASE,
     name: 'Provider A (IAD: 25ms)',
     regions: ['IAD', 'AMS'],
     latency_hints: { IAD: 25, AMS: 30 },
   }
 
-  const providerB: RouteDockManifest = {
+  const providerB: KikisAppManifest = {
     ...VALID_MANIFEST_BASE,
     name: 'Provider B (IAD: 12ms)',
     regions: ['IAD'],
     latency_hints: { IAD: 12 },
   }
 
-  const providerC: RouteDockManifest = {
+  const providerC: KikisAppManifest = {
     ...VALID_MANIFEST_BASE,
     name: 'Provider C (IAD declared without hint)',
     regions: ['IAD', 'FRA'],
     latency_hints: { FRA: 10 },
   }
 
-  const providerD: RouteDockManifest = {
+  const providerD: KikisAppManifest = {
     ...VALID_MANIFEST_BASE,
     name: 'Provider D (other region)',
     regions: ['SIN'],
@@ -151,7 +151,7 @@ const VALID_MANIFEST_BASE: RouteDockManifest = {
   const signedManifest = signManifest(VALID_MANIFEST_BASE, PAYEE_KEYPAIR.secret())
 
   const server = await startTestServer((req, res) => {
-    if (req.url === '/.well-known/routedock.json') {
+    if (req.url === '/.well-known/kikis-app.json') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(signedManifest))
     } else {
@@ -161,7 +161,7 @@ const VALID_MANIFEST_BASE: RouteDockManifest = {
   })
 
   try {
-    const client = new RouteDockClient({ wallet: Keypair.random(), network: 'testnet' })
+    const client = new KikisAppClient({ wallet: Keypair.random(), network: 'testnet' })
     const estimate = await client.estimateCost(`${server.url}/price`)
 
     assert.deepEqual(estimate.regions, ['IAD', 'AMS', 'FRA'])
@@ -180,7 +180,7 @@ const VALID_MANIFEST_BASE: RouteDockManifest = {
 // ── Test 4: preflight surfaces metadata and validates subset constraints ──────
 
 {
-  const client = new RouteDockClient({ wallet: Keypair.random(), network: 'testnet' })
+  const client = new KikisAppClient({ wallet: Keypair.random(), network: 'testnet' })
   // Stub trustline check for offline test
   ;(client as any)._checkTrustline = async () => {}
 
@@ -194,7 +194,7 @@ const VALID_MANIFEST_BASE: RouteDockManifest = {
   assert.equal(preflightRes.capabilities?.webhooks, true)
 
   // Preflight with invalid latency hint must throw
-  const invalidManifest: RouteDockManifest = {
+  const invalidManifest: KikisAppManifest = {
     ...VALID_MANIFEST_BASE,
     regions: ['IAD'],
     latency_hints: { AMS: 15 },
@@ -205,7 +205,7 @@ const VALID_MANIFEST_BASE: RouteDockManifest = {
       await client.preflight(invalidManifest)
     },
     (err: unknown) => {
-      return err instanceof RouteDockManifestError
+      return err instanceof KikisAppManifestError
     },
   )
 

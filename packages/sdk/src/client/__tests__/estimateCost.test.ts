@@ -1,22 +1,22 @@
 /**
- * Tests for RouteDockClient.estimateCost()
+ * Tests for KikisAppClient.estimateCost()
  *
  * Verifies that estimateCost:
  *   1. Resolves the manifest and returns the expected charge
  *   2. Does NOT submit any transaction (sub-clients never called)
  *   3. Respects ModeSelectOptions (forceMode, default priority)
- *   4. Surfaces RouteDockManifestError on bad URL / invalid manifest
+ *   4. Surfaces KikisAppManifestError on bad URL / invalid manifest
  *   5. Does not break pay() behaviour (regression)
  *
- * Run with: pnpm --filter @routedock/routedock test
+ * Run with: pnpm --filter @kikis-app/kikis-app test
  */
 
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import assert from 'node:assert/strict'
 import { Keypair } from '@stellar/stellar-sdk'
-import { RouteDockClient } from '../RouteDockClient.js'
-import { RouteDockManifestError } from '../../errors.js'
+import { KikisAppClient } from '../KikisAppClient.js'
+import { KikisAppManifestError } from '../../errors.js'
 import type { PaymentResult } from '../../types.js'
 import { signManifest } from '../../manifest/sign.js'
 
@@ -40,7 +40,7 @@ function startTestServer(
 const PAYEE_KEYPAIR = Keypair.random()
 
 const BASE_MANIFEST = signManifest({
-  routedock: '1.0',
+  kikis-app: '1.0',
   name: 'EstimateCost Test Provider',
   description: 'Provider exercised by estimateCost tests',
   modes: ['x402', 'mpp-charge'],
@@ -74,7 +74,7 @@ const SESSION_MANIFEST = signManifest({
 
 {
   const server = await startTestServer((req, res) => {
-    if (req.url === '/.well-known/routedock.json') {
+    if (req.url === '/.well-known/kikis-app.json') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(BASE_MANIFEST))
     } else {
@@ -83,7 +83,7 @@ const SESSION_MANIFEST = signManifest({
   })
 
   try {
-    const client = new RouteDockClient({ wallet: Keypair.random(), network: 'testnet' })
+    const client = new KikisAppClient({ wallet: Keypair.random(), network: 'testnet' })
 
     // Spy: assert sub-clients are never called
     let x402Called = false
@@ -114,7 +114,7 @@ const SESSION_MANIFEST = signManifest({
 
 {
   const server = await startTestServer((req, res) => {
-    if (req.url === '/.well-known/routedock.json') {
+    if (req.url === '/.well-known/kikis-app.json') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(BASE_MANIFEST))
     } else {
@@ -123,7 +123,7 @@ const SESSION_MANIFEST = signManifest({
   })
 
   try {
-    const client = new RouteDockClient({ wallet: Keypair.random(), network: 'testnet' })
+    const client = new KikisAppClient({ wallet: Keypair.random(), network: 'testnet' })
 
     const result = await client.estimateCost(`${server.url}/price`, { forceMode: 'x402' })
 
@@ -141,7 +141,7 @@ const SESSION_MANIFEST = signManifest({
 
 {
   const server = await startTestServer((req, res) => {
-    if (req.url === '/.well-known/routedock.json') {
+    if (req.url === '/.well-known/kikis-app.json') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(SESSION_MANIFEST))
     } else {
@@ -150,7 +150,7 @@ const SESSION_MANIFEST = signManifest({
   })
 
   try {
-    const client = new RouteDockClient({ wallet: Keypair.random(), network: 'testnet' })
+    const client = new KikisAppClient({ wallet: Keypair.random(), network: 'testnet' })
 
     const result = await client.estimateCost(`${server.url}/stream`, { session: true })
 
@@ -169,20 +169,20 @@ const SESSION_MANIFEST = signManifest({
   }
 }
 
-// ── Test 4: invalid manifest throws RouteDockManifestError ────────────────────
+// ── Test 4: invalid manifest throws KikisAppManifestError ────────────────────
 
 {
   const server = await startTestServer((req, res) => {
-    if (req.url === '/.well-known/routedock.json') {
+    if (req.url === '/.well-known/kikis-app.json') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ routedock: '2.0', name: 'bad' }))
+      res.end(JSON.stringify({ kikis-app: '2.0', name: 'bad' }))
     } else {
       res.writeHead(404); res.end()
     }
   })
 
   try {
-    const client = new RouteDockClient({ wallet: Keypair.random(), network: 'testnet' })
+    const client = new KikisAppClient({ wallet: Keypair.random(), network: 'testnet' })
 
     let threw = false
     try {
@@ -190,19 +190,19 @@ const SESSION_MANIFEST = signManifest({
     } catch (err) {
       threw = true
       assert.ok(
-        err instanceof RouteDockManifestError,
-        `expected RouteDockManifestError, got ${String(err)}`,
+        err instanceof KikisAppManifestError,
+        `expected KikisAppManifestError, got ${String(err)}`,
       )
     }
     assert.ok(threw, 'should have thrown for invalid manifest schema')
 
-    console.log('✓ Test 4: estimateCost throws RouteDockManifestError on invalid manifest')
+    console.log('✓ Test 4: estimateCost throws KikisAppManifestError on invalid manifest')
   } finally {
     await server.close()
   }
 }
 
-// ── Test 5: 404 manifest throws RouteDockManifestError ────────────────────────
+// ── Test 5: 404 manifest throws KikisAppManifestError ────────────────────────
 
 {
   const server = await startTestServer((_req, res) => {
@@ -210,7 +210,7 @@ const SESSION_MANIFEST = signManifest({
   })
 
   try {
-    const client = new RouteDockClient({ wallet: Keypair.random(), network: 'testnet' })
+    const client = new KikisAppClient({ wallet: Keypair.random(), network: 'testnet' })
 
     let threw = false
     try {
@@ -218,13 +218,13 @@ const SESSION_MANIFEST = signManifest({
     } catch (err) {
       threw = true
       assert.ok(
-        err instanceof RouteDockManifestError,
-        `expected RouteDockManifestError, got ${String(err)}`,
+        err instanceof KikisAppManifestError,
+        `expected KikisAppManifestError, got ${String(err)}`,
       )
     }
     assert.ok(threw, 'should have thrown for 404 manifest')
 
-    console.log('✓ Test 5: estimateCost throws RouteDockManifestError on 404')
+    console.log('✓ Test 5: estimateCost throws KikisAppManifestError on 404')
   } finally {
     await server.close()
   }
@@ -234,7 +234,7 @@ const SESSION_MANIFEST = signManifest({
 
 {
   const server = await startTestServer((req, res) => {
-    if (req.url === '/.well-known/routedock.json') {
+    if (req.url === '/.well-known/kikis-app.json') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(BASE_MANIFEST))
     } else {
@@ -243,7 +243,7 @@ const SESSION_MANIFEST = signManifest({
   })
 
   try {
-    const client = new RouteDockClient({ wallet: Keypair.random(), network: 'testnet' })
+    const client = new KikisAppClient({ wallet: Keypair.random(), network: 'testnet' })
 
     const fakeResult: PaymentResult = {
       data: { ok: true },

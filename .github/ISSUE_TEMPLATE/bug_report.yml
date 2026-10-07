@@ -1,5 +1,5 @@
 name: Bug Report
-description: File a bug report to help us improve RouteDock
+description: File a bug report to help us improve KikisApp
 title: "fix: "
 labels: ["bug"]
 body:
@@ -10,8 +10,8 @@ body:
   - type: input
     id: sdk-version
     attributes:
-      label: "@routedock/routedock version"
-      description: What version of @routedock/routedock are you using? (e.g. 0.3.1, or commit hash)
+      label: "@kikis-app/kikis-app version"
+      description: What version of @kikis-app/kikis-app are you using? (e.g. 0.3.1, or commit hash)
       placeholder: "0.3.1"
     validations:
       required: true

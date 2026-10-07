@@ -1,4 +1,4 @@
-import { usdcToStroops, USDC_DECIMALS } from '@routedock/nulth-sdk'
+import { usdcToStroops, USDC_DECIMALS } from '@kikis-app/nulth-sdk'
 
 /**
  * Row shape of the one-row `public_dashboard_stats` view (migration 005).

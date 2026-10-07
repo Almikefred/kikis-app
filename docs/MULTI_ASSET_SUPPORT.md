@@ -1,12 +1,12 @@
-# Multi-Asset Support in RouteDock Manifests
+# Multi-Asset Support in KikisApp Manifests
 
-This document describes the multi-asset manifest specification in RouteDock, enabling providers to advertise different payment assets and contracts for different payment modes and endpoints, while maintaining full backward compatibility with single-asset manifests.
+This document describes the multi-asset manifest specification in KikisApp, enabling providers to advertise different payment assets and contracts for different payment modes and endpoints, while maintaining full backward compatibility with single-asset manifests.
 
 ---
 
 ## 1. Overview & Problem
 
-RouteDock manifests historically exposed a single root-level asset pair:
+KikisApp manifests historically exposed a single root-level asset pair:
 
 ```json
 {
@@ -36,11 +36,11 @@ To preserve 100% backward compatibility for existing clients and tooling:
 - `assets[0]` serves as the canonical primary asset and **must strictly match** the root `asset` and `asset_contract`.
 
 > [!WARNING] Compatibility Warning
-> The RouteDock manifest schema uses `additionalProperties: false`. Clients older than the multi-asset release will reject manifests containing the new `assets` field during schema validation. Providers **MUST NOT** start emitting `assets` in their production manifests until their client base has upgraded to a compatible SDK version.
+> The KikisApp manifest schema uses `additionalProperties: false`. Clients older than the multi-asset release will reject manifests containing the new `assets` field during schema validation. Providers **MUST NOT** start emitting `assets` in their production manifests until their client base has upgraded to a compatible SDK version.
 
 ```json
 {
-  "routedock": "1.0",
+  "kikis-app": "1.0",
   "name": "Market Intelligence API",
   "description": "Multi-mode intelligence provider",
   "modes": ["x402", "mpp-charge"],
@@ -94,7 +94,7 @@ export interface AssetConfig {
 
 ## 3. Validation Rules
 
-Validation is enforced by `assertManifestValid()` in `@routedock/routedock/client`:
+Validation is enforced by `assertManifestValid()` in `@kikis-app/kikis-app/client`:
 
 1. **Legacy manifests without `assets`**:
    Continue to validate successfully against the draft-07 JSON schema and semantic checks.
@@ -103,13 +103,13 @@ Validation is enforced by `assertManifestValid()` in `@routedock/routedock/clien
    - Every entry must define non-empty `asset` and `asset_contract` strings.
    - `assets[0].asset` must equal root `asset`.
    - `assets[0].asset_contract` must equal root `asset_contract`.
-   - Any mismatch causes `assertManifestValid()` to throw a typed `RouteDockManifestError`.
+   - Any mismatch causes `assertManifestValid()` to throw a typed `KikisAppManifestError`.
 
 ---
 
 ## 4. Normalization and Eligibility Utilities
 
-RouteDock exports canonical helper functions:
+KikisApp exports canonical helper functions:
 
 ```ts
 import {
@@ -118,7 +118,7 @@ import {
   selectAsset,
   resolveAssetContract,
   isAssetEligible,
-} from '@routedock/routedock'
+} from '@kikis-app/kikis-app'
 ```
 
 ### `normalizeManifestAssets(manifest)`
@@ -128,7 +128,7 @@ Normalizes any manifest to always produce an `AssetConfig[]` array. For legacy m
 Filters assets for a given payment mode and optional endpoint (matched by endpoint key name, path, or full URL).
 
 ### `selectAsset(manifest, mode, endpoint?)`
-Returns the first matching `AssetConfig` for the specified mode and endpoint. Throws `RouteDockManifestError` if no eligible assets exist.
+Returns the first matching `AssetConfig` for the specified mode and endpoint. Throws `KikisAppManifestError` if no eligible assets exist.
 
 ### `resolveAssetContract(manifest, mode, endpoint?, explicitContract?)`
 Resolves the contract address for a given mode and endpoint. Uses `selectAsset` when `assets` is defined; falls back to `explicitContract` or the root `asset_contract`.
@@ -142,11 +142,11 @@ Checks whether a given asset ticker or contract address is accepted for the spec
 
 All three provider adapters resolve the correct asset contract dynamically at request/handler execution time based on the active payment mode and request path:
 
-- **Express (`routedock`)**:
+- **Express (`kikis-app`)**:
   `x402` and `mpp-charge` handlers resolve the asset contract per request using the incoming request path. Different endpoints can charge different assets under the same payment mode (e.g. USDC for `/infer` and XLM for `/lookup` under `x402`).
-- **Fastify (`routedockFastify`)**:
+- **Fastify (`kikisAppFastify`)**:
   Per-request endpoint-aware asset resolution with automatic Fastify reply hijacking for challenge and settlement.
-- **Hono (`routedockHono`)**:
+- **Hono (`kikisAppHono`)**:
   Cloudflare Workers and edge runtimes resolve the contract at request time using `c.req.path`.
 
 In all adapters, `asset` and `assetContract` middleware options are optional when `manifest` is provided.
@@ -158,12 +158,12 @@ In all adapters, `asset` and `assetContract` middleware options are optional whe
 
 ## 6. Client Trustline Preflight & Fail-Closed Asset Selection
 
-`RouteDockClient` avoids blindly assuming the root asset:
+`KikisAppClient` avoids blindly assuming the root asset:
 
 - **`client.preflight(manifest, mode?, endpoint?)`**:
-  Selects the eligible asset for `mode` and `endpoint` and runs the trustline preflight against that asset. Native assets like `XLM` are verified against the account's native balance. If no asset is eligible for the specified mode/endpoint, `preflight()` throws a `RouteDockManifestError` rather than silently falling back to the root asset.
+  Selects the eligible asset for `mode` and `endpoint` and runs the trustline preflight against that asset. Native assets like `XLM` are verified against the account's native balance. If no asset is eligible for the specified mode/endpoint, `preflight()` throws a `KikisAppManifestError` rather than silently falling back to the root asset.
 - **`client.pay(url, options?)`**:
-  Resolves mode and endpoint, selects the eligible asset via `selectAsset(manifest, mode, url)`, verifies the trustline, and executes payment. Throws `RouteDockManifestError` if no eligible asset is configured.
+  Resolves mode and endpoint, selects the eligible asset via `selectAsset(manifest, mode, url)`, verifies the trustline, and executes payment. Throws `KikisAppManifestError` if no eligible asset is configured.
 - **`client.estimateCost(url, options?)`**:
   Returns `asset` matching the selected eligible asset for the chosen payment mode and endpoint, failing closed if none match.
 
@@ -171,6 +171,6 @@ In all adapters, `asset` and `assetContract` middleware options are optional whe
 
 ## 7. Manifest Signing & Security
 
-RouteDock manifest signing v2 (`signManifest` / `verifyManifestSignature`) recursively sorts and canonicalizes object keys at every depth.
+KikisApp manifest signing v2 (`signManifest` / `verifyManifestSignature`) recursively sorts and canonicalizes object keys at every depth.
 
-Because `canonicalize()` maps nested arrays and canonicalizes each inner object, all entries in the `assets` array are fully protected by the Ed25519 signature. Modifying any nested property (e.g. `assets[1].asset_contract`) causes `verifyManifestSignature()` to reject the manifest with `RouteDockSignatureError`.
+Because `canonicalize()` maps nested arrays and canonicalizes each inner object, all entries in the `assets` array are fully protected by the Ed25519 signature. Modifying any nested property (e.g. `assets[1].asset_contract`) causes `verifyManifestSignature()` to reject the manifest with `KikisAppSignatureError`.

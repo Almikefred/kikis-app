@@ -9,7 +9,7 @@ const CONFIG: SessionWritersConfig = {
   payee: 'GBRLCID5A2S6HUC4D4DSWPRWNO75CLNHS2SIPS2BPCCP55Z5N7Z36DJD',
   network: 'testnet',
   channelContract: CHANNEL_ID,
-  providerUrl: 'https://api-b.routedock.xyz/stream/orderbook',
+  providerUrl: 'https://api-b.kikis-app.xyz/stream/orderbook',
 }
 
 type Row = Record<string, unknown>

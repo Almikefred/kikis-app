@@ -8,15 +8,15 @@ import Ajv from 'ajv'
 import addFormats from 'ajv-formats'
 import { Keypair } from '@stellar/stellar-sdk'
 import { signManifest, verifyManifestSignature, manifestDigest } from '../manifest/sign.js'
-import { RouteDockSignatureError } from '../errors.js'
-import type { RouteDockManifest } from '../types.js'
-import schema from '../schemas/routedock.schema.json' with { type: 'json' }
+import { KikisAppSignatureError } from '../errors.js'
+import type { KikisAppManifest } from '../types.js'
+import schema from '../schemas/kikis-app.schema.json' with { type: 'json' }
 
 const keypair = Keypair.random()
 const otherKeypair = Keypair.random()
 
-const baseManifest: RouteDockManifest = {
-  routedock: '1.0',
+const baseManifest: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Test Provider',
   description: 'Unit test provider',
   modes: ['x402'],
@@ -62,7 +62,7 @@ describe('signManifest', () => {
   it('does not mutate the original manifest', () => {
     signManifest(baseManifest, keypair.secret())
     assert.equal(
-      (baseManifest as RouteDockManifest & { signature?: string }).signature,
+      (baseManifest as KikisAppManifest & { signature?: string }).signature,
       undefined,
     )
   })
@@ -70,7 +70,7 @@ describe('signManifest', () => {
   it('produces a stable digest regardless of signature field presence', () => {
     const withSig = { ...baseManifest, signature_version: '2' as const, signature: 'somesig' }
     const withoutSig = { ...baseManifest, signature_version: '2' as const }
-    const d1 = manifestDigest(withSig as RouteDockManifest)
+    const d1 = manifestDigest(withSig as KikisAppManifest)
     const d2 = manifestDigest(withoutSig)
     assert.equal(d1.toString('hex'), d2.toString('hex'))
   })
@@ -100,10 +100,10 @@ describe('verifyManifestSignature', () => {
     assert.doesNotThrow(() => verifyManifestSignature(signed))
   })
 
-  it('throws RouteDockSignatureError when signature field is missing', () => {
+  it('throws KikisAppSignatureError when signature field is missing', () => {
     assert.throws(
       () => verifyManifestSignature(baseManifest),
-      (err) => err instanceof RouteDockSignatureError && err.message.includes('missing'),
+      (err) => err instanceof KikisAppSignatureError && err.message.includes('missing'),
     )
   })
 
@@ -112,38 +112,38 @@ describe('verifyManifestSignature', () => {
     const { signature_version: _omit, ...legacy } = signed
     assert.throws(
       () => verifyManifestSignature(legacy),
-      (err) => err instanceof RouteDockSignatureError && err.message.includes('legacy signatures'),
+      (err) => err instanceof KikisAppSignatureError && err.message.includes('legacy signatures'),
     )
   })
 
-  it('throws RouteDockSignatureError when signature is forged', () => {
+  it('throws KikisAppSignatureError when signature is forged', () => {
     const signed = signManifest(baseManifest, keypair.secret())
     const forged = { ...signed, signature: signManifest({ ...baseManifest, payee: keypair.publicKey() }, otherKeypair.secret()).signature }
     assert.throws(
       () => verifyManifestSignature(forged),
-      (err) => err instanceof RouteDockSignatureError,
+      (err) => err instanceof KikisAppSignatureError,
     )
   })
 
-  it('throws RouteDockSignatureError when payee field is tampered', () => {
+  it('throws KikisAppSignatureError when payee field is tampered', () => {
     const signed = signManifest(baseManifest, keypair.secret())
     const tampered = { ...signed, payee: otherKeypair.publicKey() }
     assert.throws(
       () => verifyManifestSignature(tampered),
-      (err) => err instanceof RouteDockSignatureError,
+      (err) => err instanceof KikisAppSignatureError,
     )
   })
 
-  it('throws RouteDockSignatureError when any manifest field is tampered', () => {
+  it('throws KikisAppSignatureError when any manifest field is tampered', () => {
     const signed = signManifest(baseManifest, keypair.secret())
     const tampered = { ...signed, name: 'Evil Provider' }
     assert.throws(
       () => verifyManifestSignature(tampered),
-      (err) => err instanceof RouteDockSignatureError,
+      (err) => err instanceof KikisAppSignatureError,
     )
   })
 
-  const nestedTamperingCases: Array<[string, (manifest: ReturnType<typeof signManifest>) => RouteDockManifest]> = [
+  const nestedTamperingCases: Array<[string, (manifest: ReturnType<typeof signManifest>) => KikisAppManifest]> = [
     ['pricing.x402.amount', (manifest) => ({
       ...manifest,
       pricing: { ...manifest.pricing, x402: { ...manifest.pricing.x402!, amount: '999' } },
@@ -177,13 +177,13 @@ describe('verifyManifestSignature', () => {
       const signed = signManifest(baseManifest, keypair.secret())
       assert.throws(
         () => verifyManifestSignature(tamper(signed)),
-        (err) => err instanceof RouteDockSignatureError,
+        (err) => err instanceof KikisAppSignatureError,
       )
     })
   }
 
   it('rejects tampering with mpp-session channel configuration', () => {
-    const sessionManifest: RouteDockManifest = {
+    const sessionManifest: KikisAppManifest = {
       ...baseManifest,
       modes: ['mpp-session'],
       pricing: {
@@ -208,7 +208,7 @@ describe('verifyManifestSignature', () => {
     }
     assert.throws(
       () => verifyManifestSignature(tampered),
-      (err) => err instanceof RouteDockSignatureError,
+      (err) => err instanceof KikisAppSignatureError,
     )
   })
 
@@ -222,7 +222,7 @@ describe('verifyManifestSignature', () => {
     assert.throws(
       () => verifyManifestSignature(signed, otherKeypair.publicKey()),
       (err) =>
-        err instanceof RouteDockSignatureError &&
+        err instanceof KikisAppSignatureError &&
         err.message.includes('does not match expected payee'),
     )
   })
@@ -237,12 +237,12 @@ describe('verifyManifestSignature', () => {
     assert.doesNotThrow(() => verifyManifestSignature(substituted))
     assert.throws(
       () => verifyManifestSignature(substituted, keypair.publicKey()),
-      (err) => err instanceof RouteDockSignatureError,
+      (err) => err instanceof KikisAppSignatureError,
     )
   })
 
   it('includes nested assets in signature and detects tampering on assets[1].asset_contract', () => {
-    const multiAssetManifest: RouteDockManifest = {
+    const multiAssetManifest: KikisAppManifest = {
       ...baseManifest,
       assets: [
         {
@@ -275,7 +275,7 @@ describe('verifyManifestSignature', () => {
 
     assert.throws(
       () => verifyManifestSignature(tampered),
-      (err) => err instanceof RouteDockSignatureError,
+      (err) => err instanceof KikisAppSignatureError,
     )
   })
 })

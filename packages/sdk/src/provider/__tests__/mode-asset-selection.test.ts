@@ -6,18 +6,18 @@ import Fastify from 'fastify'
 import { Hono } from 'hono'
 import { Keypair } from '@stellar/stellar-sdk'
 import { decodePaymentRequiredHeader } from '@x402/core/http'
-import { routedock } from '../routedockMiddleware.js'
-import { routedockFastify } from '../fastify.js'
-import { routedockHono } from '../hono.js'
-import type { RouteDockManifest } from '../../types.js'
+import { kikis-app } from '../kikisAppMiddleware.js'
+import { kikisAppFastify } from '../fastify.js'
+import { kikisAppHono } from '../hono.js'
+import type { KikisAppManifest } from '../../types.js'
 
 const USDC_CONTRACT = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA'
 const XLM_CONTRACT = 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC'
 
 const payeeKeypair = Keypair.random()
 
-const multiAssetManifest: RouteDockManifest = {
-  routedock: '1.0',
+const multiAssetManifest: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Multi-Asset Mode Selection Service',
   description: 'Provider testing per-mode asset routing',
   modes: ['x402', 'mpp-charge'],
@@ -60,11 +60,11 @@ function extractX402Asset(xReqHeader: string | null): string | undefined {
 }
 
 describe('Mode-to-Asset Selection in Provider Adapters', () => {
-  describe('Express adapter (routedock)', () => {
+  describe('Express adapter (kikis-app)', () => {
     async function makeExpressServer(): Promise<{ url: string; close: () => Promise<void> }> {
       const app = express()
       app.use(
-        routedock({
+        kikis-app({
           manifest: multiAssetManifest,
           modes: ['x402', 'mpp-charge'],
           pricing: {
@@ -122,11 +122,11 @@ describe('Mode-to-Asset Selection in Provider Adapters', () => {
     })
   })
 
-  describe('Fastify adapter (routedockFastify)', () => {
+  describe('Fastify adapter (kikisAppFastify)', () => {
     async function makeFastifyServer(): Promise<{ url: string; close: () => Promise<void> }> {
       const fastify = Fastify()
       await fastify.register(
-        routedockFastify({
+        kikisAppFastify({
           manifest: multiAssetManifest,
           modes: ['x402', 'mpp-charge'],
           pricing: {
@@ -177,12 +177,12 @@ describe('Mode-to-Asset Selection in Provider Adapters', () => {
     })
   })
 
-  describe('Hono adapter (routedockHono)', () => {
+  describe('Hono adapter (kikisAppHono)', () => {
     function makeHonoApp() {
       const app = new Hono()
       app.use(
         '*',
-        routedockHono({
+        kikisAppHono({
           manifest: multiAssetManifest,
           modes: ['x402', 'mpp-charge'],
           pricing: {
@@ -220,8 +220,8 @@ describe('Mode-to-Asset Selection in Provider Adapters', () => {
   })
 
   describe('Endpoint-Aware Asset Selection (Issue #55)', () => {
-    const issue55Manifest: RouteDockManifest = {
-      routedock: '1.0',
+    const issue55Manifest: KikisAppManifest = {
+      kikis-app: '1.0',
       name: 'Issue 55 Endpoint-Scoped Multi-Asset Service',
       description: 'USDC for inference, XLM for lookup, both x402',
       modes: ['x402'],
@@ -253,11 +253,11 @@ describe('Mode-to-Asset Selection in Provider Adapters', () => {
       tags: ['test'],
     }
 
-    describe('Express adapter (routedock)', () => {
+    describe('Express adapter (kikis-app)', () => {
       async function makeExpressServer(): Promise<{ url: string; close: () => Promise<void> }> {
         const app = express()
         app.use(
-          routedock({
+          kikis-app({
             manifest: issue55Manifest,
             modes: ['x402'],
             pricing: { x402: '0.001' },
@@ -313,11 +313,11 @@ describe('Mode-to-Asset Selection in Provider Adapters', () => {
       })
     })
 
-    describe('Fastify adapter (routedockFastify)', () => {
+    describe('Fastify adapter (kikisAppFastify)', () => {
       async function makeFastifyServer(): Promise<{ url: string; close: () => Promise<void> }> {
         const fastify = Fastify()
         await fastify.register(
-          routedockFastify({
+          kikisAppFastify({
             manifest: issue55Manifest,
             modes: ['x402'],
             pricing: { x402: '0.001' },
@@ -362,12 +362,12 @@ describe('Mode-to-Asset Selection in Provider Adapters', () => {
       })
     })
 
-    describe('Hono adapter (routedockHono)', () => {
+    describe('Hono adapter (kikisAppHono)', () => {
       function makeHonoApp() {
         const app = new Hono()
         app.use(
           '*',
-          routedockHono({
+          kikisAppHono({
             manifest: issue55Manifest,
             modes: ['x402'],
             pricing: { x402: '0.001' },
@@ -404,8 +404,8 @@ describe('Mode-to-Asset Selection in Provider Adapters', () => {
     })
 
     describe('Legacy manifest without assets array', () => {
-      const legacyProviderManifest: RouteDockManifest = {
-        routedock: '1.0',
+      const legacyProviderManifest: KikisAppManifest = {
+        kikis-app: '1.0',
         name: 'Legacy Single-Asset Provider',
         description: 'No assets array present',
         modes: ['x402'],
@@ -421,7 +421,7 @@ describe('Mode-to-Asset Selection in Provider Adapters', () => {
       it('falls back to root asset_contract on Express', async () => {
         const app = express()
         app.use(
-          routedock({
+          kikis-app({
             manifest: legacyProviderManifest,
             modes: ['x402'],
             pricing: { x402: '0.001' },

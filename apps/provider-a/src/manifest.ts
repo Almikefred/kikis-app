@@ -1,4 +1,4 @@
-import type { RouteDockManifest } from '@routedock/routedock'
+import type { KikisAppManifest } from '@kikis-app/kikis-app'
 
 export const TESTNET_USDC_CONTRACT = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA'
 
@@ -23,9 +23,9 @@ export interface ManifestInput {
   assetContract: string
 }
 
-export function buildManifest({ network, payee, assetContract }: ManifestInput): RouteDockManifest {
+export function buildManifest({ network, payee, assetContract }: ManifestInput): KikisAppManifest {
   return {
-    routedock: '1.0',
+    kikis-app: '1.0',
     name: 'Stellar DEX Price Feed',
     description: 'Real-time USDC/XLM mid-price from Stellar DEX orderbook via Horizon',
     modes: ['x402', 'mpp-charge'],

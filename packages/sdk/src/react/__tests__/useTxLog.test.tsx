@@ -7,8 +7,8 @@ const { renderHook, waitFor } = RTL
 import { Keypair } from '@stellar/stellar-sdk'
 import { createElement, type ReactNode } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { RouteDockClient } from '../../client/RouteDockClient.js'
-import { RouteDockProvider } from '../context.js'
+import { KikisAppClient } from '../../client/KikisAppClient.js'
+import { KikisAppProvider } from '../context.js'
 import { useTxLog } from '../useTxLog.js'
 
 function fakeSupabase(rows: unknown[]): SupabaseClient {
@@ -39,7 +39,7 @@ function fakeSupabase(rows: unknown[]): SupabaseClient {
 
 describe('useTxLog', () => {
   it('returns initial rows from Supabase', async () => {
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       wallet: Keypair.random().secret(),
       network: 'testnet',
     })
@@ -48,7 +48,7 @@ describe('useTxLog', () => {
     ]
     const supabase = fakeSupabase(rows)
     const wrapper = ({ children }: { children: ReactNode }) =>
-      createElement(RouteDockProvider, { client, supabase, children })
+      createElement(KikisAppProvider, { client, supabase, children })
 
     const { result } = renderHook(() => useTxLog({ limit: 10 }), { wrapper })
 

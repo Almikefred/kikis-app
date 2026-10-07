@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { PaymentRequirements } from '@x402/core/types'
-import type { RouteDockManifest } from '../../types.js'
-import { RouteDockPolicyRejectError } from '../../errors.js'
+import type { KikisAppManifest } from '../../types.js'
+import { KikisAppPolicyRejectError } from '../../errors.js'
 import { checkX402Accept, filterX402Accepts, checkChargeChallenge } from '../challenge.js'
 
 const ASSET_CONTRACT = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA'
@@ -15,9 +15,9 @@ const CHARGE_PAYEE = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACHARGE'
 const X402_PRICE = '0.01'
 const CHARGE_PRICE = '0.0008'
 
-function manifest(overrides: Partial<RouteDockManifest> = {}): RouteDockManifest {
+function manifest(overrides: Partial<KikisAppManifest> = {}): KikisAppManifest {
   return {
-    routedock: '1.0',
+    kikis-app: '1.0',
     name: 'Challenge Test',
     description: 'unit test',
     modes: ['x402', 'mpp-charge'],
@@ -50,19 +50,19 @@ function accept(overrides: Partial<PaymentRequirements> = {}): PaymentRequiremen
 
 function check(
   candidate: PaymentRequirements,
-  m: RouteDockManifest = manifest(),
-): RouteDockPolicyRejectError | null {
+  m: KikisAppManifest = manifest(),
+): KikisAppPolicyRejectError | null {
   return checkX402Accept(candidate, m, 'stellar:testnet', X402_PRICE)
 }
 
-function reason(err: RouteDockPolicyRejectError | null): string | undefined {
+function reason(err: KikisAppPolicyRejectError | null): string | undefined {
   return err?.reason
 }
 
 function charge(
   request: Record<string, unknown>,
-  m: RouteDockManifest = manifest(),
-): RouteDockPolicyRejectError | null {
+  m: KikisAppManifest = manifest(),
+): KikisAppPolicyRejectError | null {
   return checkChargeChallenge(request, m, 'stellar:testnet', CHARGE_PRICE)
 }
 

@@ -1,11 +1,11 @@
 import { Keypair, Horizon } from '@stellar/stellar-sdk'
-import { fetchManifest, selectMode, invalidateManifest as evictManifest, assertManifestValid, assertEndpointActive, type ModeSelectOptions, type RouteDockLogger } from './ModeRouter.js'
+import { fetchManifest, selectMode, invalidateManifest as evictManifest, assertManifestValid, assertEndpointActive, type ModeSelectOptions, type KikisAppLogger } from './ModeRouter.js'
 import { X402Client } from './x402Client.js'
 import { MppChargeClient } from './MppChargeClient.js'
 import { MppSessionClient } from './MppSessionClient.js'
 import { prepareNulthSigner, NulthPolicyError, type NulthVaultConfig } from './NulthVault.js'
-import type { PaymentResult, SessionHandle, SessionOptions, RouteDockManifest, PaymentMode, EstimateCostResult, PreflightResult } from '../types.js'
-import { RouteDockManifestError, RouteDockPolicyRejectError, RouteDockTrustlineError } from '../errors.js'
+import type { PaymentResult, SessionHandle, SessionOptions, KikisAppManifest, PaymentMode, EstimateCostResult, PreflightResult } from '../types.js'
+import { KikisAppManifestError, KikisAppPolicyRejectError, KikisAppTrustlineError } from '../errors.js'
 import type { RetryPolicy } from '../internal/retry.js'
 import { USDC_ISSUERS, usdcToStroops } from '../internal/usdc.js'
 import { InMemorySpendStore, type DailySpend, type SpendStore } from '../store/SpendStore.js'
@@ -15,7 +15,7 @@ import { selectAsset } from '../internal/assetUtils.js'
 // appear in JSON.stringify, structured-clone, or console.log object dumps.
 // The WeakMap key is the client instance, so secrets are GC-eligible once the
 // instance is collected (or after dispose() is called).
-const _secrets = new WeakMap<RouteDockClient, string>()
+const _secrets = new WeakMap<KikisAppClient, string>()
 
 export interface SpendCap {
   /** Maximum total USDC spend per day (decimal string, e.g. "1.00") */
@@ -58,18 +58,18 @@ function normalizeEndpointCaps(
     try {
       url = new URL(key)
     } catch {
-      throw new RouteDockManifestError(
+      throw new KikisAppManifestError(
         `spendCap.endpointCaps key "${key}" is not a valid URL — use an origin such as "https://api.example.com"`,
       )
     }
     if (url.pathname !== '/' || url.search !== '' || url.hash !== '') {
-      throw new RouteDockManifestError(
+      throw new KikisAppManifestError(
         `spendCap.endpointCaps key "${key}" must be an origin only (no path, query, or hash) — use "${url.origin}"`,
       )
     }
     const origin = url.origin
     if (Object.prototype.hasOwnProperty.call(normalized, origin)) {
-      throw new RouteDockManifestError(
+      throw new KikisAppManifestError(
         `spendCap.endpointCaps has two keys that both normalize to origin "${origin}" — remove the duplicate`,
       )
     }
@@ -86,7 +86,7 @@ function normalizeSpendCap(spendCap: SpendCap): SpendCap {
 
 export type VaultConfig = NulthVaultConfig
 
-export interface RouteDockClientConfig {
+export interface KikisAppClientConfig {
   /** Stellar keypair or raw secret key (S...) — fee payer / fallback signer */
   wallet: Keypair | string
   network: 'testnet' | 'mainnet'
@@ -96,7 +96,7 @@ export interface RouteDockClientConfig {
    * Ed25519 secret key (S...) for signing channel commitments. Required for mpp-session.
    *
    * WARNING: Do not log or serialize the config object — it contains this secret in plaintext.
-   * The RouteDockClient stores it outside the instance to prevent leakage via JSON.stringify
+   * The KikisAppClient stores it outside the instance to prevent leakage via JSON.stringify
    * or console.log, but the raw config object is not protected.
    */
   commitmentSecret?: string | undefined
@@ -109,7 +109,7 @@ export interface RouteDockClientConfig {
    */
   spendStore?: SpendStore
   /** Structured logger for SDK events. Defaults to no-op (silent). */
-  logger?: RouteDockLogger
+  logger?: KikisAppLogger
   /**
    * Timeout in milliseconds for manifest fetches. A provider that accepts the TCP
    * connection but never sends a response body will be aborted after this delay.
@@ -122,7 +122,7 @@ export interface RouteDockClientConfig {
    * expects the provider to be (e.g. the account registered in the on-chain
    * provider registry, or a pinned/allowlisted key). When set, every fetched
    * manifest's `payee` must equal this value or payment is refused with
-   * `RouteDockSignatureError`. Without it, a self-signed manifest proves nothing
+   * `KikisAppSignatureError`. Without it, a self-signed manifest proves nothing
    * about who served it, so set this whenever you obtained a provider address
    * from a registry.
    */
@@ -162,7 +162,7 @@ interface TrustlineCacheEntry {
   expiresAt: number
 }
 
-export class RouteDockClient {
+export class KikisAppClient {
   /** Per-(account,asset) trustline existence cache keyed by `${network}:${pubkey}:${asset}` */
   private static _trustlineCache = new Map<string, TrustlineCacheEntry>()
 
@@ -170,7 +170,7 @@ export class RouteDockClient {
   private readonly network: 'testnet' | 'mainnet'
   private readonly spendCap: SpendCap | undefined
   private readonly retryPolicy: RetryPolicy | undefined
-  private readonly logger: RouteDockLogger | undefined
+  private readonly logger: KikisAppLogger | undefined
   private readonly manifestTimeoutMs: number | undefined
   private readonly expectedPayee: string | undefined
   private readonly vault: VaultConfig | undefined
@@ -199,7 +199,7 @@ export class RouteDockClient {
    */
   private _pendingReserves = new Map<string, { endpointKey: string; amountMicros: bigint }>()
 
-  constructor(config: RouteDockClientConfig) {
+  constructor(config: KikisAppClientConfig) {
     this.keypair =
       typeof config.wallet === 'string' ? Keypair.fromSecret(config.wallet) : config.wallet
     this.network = config.network
@@ -238,7 +238,7 @@ export class RouteDockClient {
   private async _resolveManifest(
     url: string,
     options?: ModeSelectOptions,
-  ): Promise<{ manifest: RouteDockManifest; mode: PaymentMode }> {
+  ): Promise<{ manifest: KikisAppManifest; mode: PaymentMode }> {
     const baseUrl = new URL(url).origin
     const manifest = await fetchManifest(baseUrl, this.retryPolicy, this.manifestTimeoutMs, this.expectedPayee)
     assertEndpointActive(manifest, url, this.logger)
@@ -265,7 +265,7 @@ export class RouteDockClient {
    * trustline remediation.
    */
   async preflight(
-    manifest: RouteDockManifest,
+    manifest: KikisAppManifest,
     mode?: PaymentMode,
     endpoint?: string,
   ): Promise<PreflightResult> {
@@ -286,17 +286,17 @@ export class RouteDockClient {
 
   /**
    * Verify via Horizon that the payer account has a trustline for the
-   * payment asset declared in the manifest. Throws RouteDockTrustlineError
+   * payment asset declared in the manifest. Throws KikisAppTrustlineError
    * with an exact Stellar CLI change-trust remediation command when the
    * trustline is missing. Results are cached per (account, asset) so the
    * per-payment overhead is one RPC call amortized to zero after the first.
    */
   private async _checkTrustline(
-    manifest: RouteDockManifest,
+    manifest: KikisAppManifest,
     targetAsset: string = manifest.asset,
   ): Promise<void> {
     const cacheKey = `${this.network}:${this.keypair.publicKey()}:${targetAsset}`
-    const cached = RouteDockClient._trustlineCache.get(cacheKey)
+    const cached = KikisAppClient._trustlineCache.get(cacheKey)
     if (cached && Date.now() < cached.expiresAt) return
 
     const horizonUrl =
@@ -322,17 +322,17 @@ export class RouteDockClient {
         const remediation = expectedIssuer
           ? `Run: stellar tx new --source ${this.keypair.publicKey()} --network ${this.network} change-trust --asset ${targetAsset}:${expectedIssuer} --limit 100000`
           : `Establish a trustline for ${targetAsset} with the appropriate issuer on ${this.network}`
-        throw new RouteDockTrustlineError(targetAsset, expectedIssuer || 'unknown', remediation)
+        throw new KikisAppTrustlineError(targetAsset, expectedIssuer || 'unknown', remediation)
       }
-      RouteDockClient._trustlineCache.set(cacheKey, {
+      KikisAppClient._trustlineCache.set(cacheKey, {
         exists: true,
         expiresAt: Date.now() + TRUSTLINE_CACHE_TTL_MS,
       })
     } catch (err) {
-      if (err instanceof RouteDockTrustlineError) throw err
+      if (err instanceof KikisAppTrustlineError) throw err
       this.logger?.(
         'warn',
-        `[RouteDock] Trustline preflight: could not verify trustline for ${targetAsset} — continuing`,
+        `[KikisApp] Trustline preflight: could not verify trustline for ${targetAsset} — continuing`,
       )
     }
   }
@@ -366,11 +366,11 @@ export class RouteDockClient {
         break
       case 'mpp-session':
       case 'mpp-session-ws':
-        throw new RouteDockManifestError(
+        throw new KikisAppManifestError(
           `Use client.openSession() for ${mode} mode — client.pay() only handles discrete payments`,
         )
       default:
-        throw new RouteDockManifestError(`Unknown payment mode: ${mode as string}`)
+        throw new KikisAppManifestError(`Unknown payment mode: ${mode as string}`)
     }
 
     // Reserve before dispatching so no path can spend outside the cap.
@@ -391,7 +391,7 @@ export class RouteDockClient {
             result = await this.charge.pay(url, manifest)
             break
           default:
-            throw new RouteDockManifestError(`Unknown payment mode: ${mode as string}`)
+            throw new KikisAppManifestError(`Unknown payment mode: ${mode as string}`)
         }
       }
     } catch (err) {
@@ -417,15 +417,15 @@ export class RouteDockClient {
   /** Nulth ZK vault path — proof built off-chain, attached as auth signature */
   private async _payWithNulthVault(
     url: string,
-    manifest: import('../types.js').RouteDockManifest,
+    manifest: import('../types.js').KikisAppManifest,
     mode: import('../types.js').PaymentMode,
   ): Promise<PaymentResult> {
     const prover = this.vault?.prover ?? 'mock';
     if (this.network === 'mainnet' && prover === 'mock') {
-      throw new RouteDockManifestError('nulth vault uses a MOCK Groth16 prover and cannot be used on mainnet');
+      throw new KikisAppManifestError('nulth vault uses a MOCK Groth16 prover and cannot be used on mainnet');
     }
     if (mode !== 'x402') {
-      throw new RouteDockManifestError(
+      throw new KikisAppManifestError(
         'nulth vault currently supports x402 mode — force x402 via { forceMode: "x402" }',
       )
     }
@@ -437,7 +437,7 @@ export class RouteDockClient {
       return result
     } catch (err) {
       if (err instanceof NulthPolicyError) {
-        throw new RouteDockPolicyRejectError((err as NulthPolicyError).code)
+        throw new KikisAppPolicyRejectError((err as NulthPolicyError).code)
       }
       throw err
     }
@@ -466,7 +466,7 @@ export class RouteDockClient {
         amount = manifest.pricing['mpp-session-ws']!.rate
         break
       default:
-        throw new RouteDockManifestError(`Unknown payment mode: ${mode as string}`)
+        throw new KikisAppManifestError(`Unknown payment mode: ${mode as string}`)
     }
 
     const selectedAsset = selectAsset(manifest, mode, url).asset
@@ -497,15 +497,15 @@ export class RouteDockClient {
 
     const mode = options?.mode ?? 'mpp-session'
     if (!manifest.modes.includes(mode)) {
-      throw new RouteDockManifestError(
+      throw new KikisAppManifestError(
         `Provider at ${baseUrl} does not support ${mode} mode`,
       )
     }
 
     const secret = _secrets.get(this)
     if (!secret) {
-      throw new RouteDockManifestError(
-        'commitmentSecret is required in RouteDockClientConfig for mpp-session mode',
+      throw new KikisAppManifestError(
+        'commitmentSecret is required in KikisAppClientConfig for mpp-session mode',
       )
     }
 
@@ -589,14 +589,14 @@ export class RouteDockClient {
         const endpointCapMicros = usdcToStroops(endpointCapStr)
         const endpointTotal = BigInt(current.endpoints[endpointKey] ?? '0')
         if (endpointTotal + amountMicros > endpointCapMicros) {
-          throw new RouteDockPolicyRejectError('local_endpoint_cap_exceeded')
+          throw new KikisAppPolicyRejectError('local_endpoint_cap_exceeded')
         }
       }
 
       // 2. Global daily cap check
       const globalCapMicros = usdcToStroops(this.spendCap!.daily)
       if (total + amountMicros > globalCapMicros) {
-        throw new RouteDockPolicyRejectError('local_daily_cap_exceeded')
+        throw new KikisAppPolicyRejectError('local_daily_cap_exceeded')
       }
 
       // Both checks passed — reserve the spend (tentatively record)

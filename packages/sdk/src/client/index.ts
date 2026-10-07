@@ -10,9 +10,9 @@ export {
   resolveLogger,
 } from '../internal/logger.js'
 export type {
-  RouteDockLogger,
-  RouteDockLogLevel,
-  RouteDockLogFields,
+  KikisAppLogger,
+  KikisAppLogLevel,
+  KikisAppLogFields,
 } from '../internal/logger.js'
 export { usdcToStroops, usdcToUnits, USDC_DECIMALS } from '../internal/usdc.js'
 export {
@@ -22,7 +22,7 @@ export {
   isAssetEligible,
   resolveAssetContract,
 } from '../internal/assetUtils.js'
-export * from './RouteDockClient.js'
+export * from './KikisAppClient.js'
 export * from './ModeRouter.js'
 export * from './x402Client.js'
 export * from './MppChargeClient.js'

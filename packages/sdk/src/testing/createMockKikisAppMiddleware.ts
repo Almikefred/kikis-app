@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction, RequestHandler } from 'express'
 import type { PaymentMode } from '../types.js'
-import type { RouteDockMiddlewareOptions } from '../provider/routedockMiddleware.js'
+import type { KikisAppMiddlewareOptions } from '../provider/kikisAppMiddleware.js'
 
 /**
  * Loosen a production callback's return type so a plain sync test spy works,
@@ -12,16 +12,16 @@ type TestCallback<F> = F extends (...args: infer A) => unknown
 
 /**
  * Provider settlement callbacks under test. Same parameter list as the real
- * `RouteDockMiddlewareOptions` callbacks — including `payer` — but they accept
+ * `KikisAppMiddlewareOptions` callbacks — including `payer` — but they accept
  * sync or async fns so a plain test spy works without wrapping it in a Promise.
  */
-export interface MockRoutedockCallbacks {
+export interface MockKikisAppCallbacks {
   /** Called after each (synthetic) on-chain settlement. */
-  onSettled?: TestCallback<NonNullable<RouteDockMiddlewareOptions['onSettled']>>
+  onSettled?: TestCallback<NonNullable<KikisAppMiddlewareOptions['onSettled']>>
   /** Called once when a synthetic session is opened (first voucher). */
-  onSessionOpen?: TestCallback<NonNullable<RouteDockMiddlewareOptions['onSessionOpen']>>
+  onSessionOpen?: TestCallback<NonNullable<KikisAppMiddlewareOptions['onSessionOpen']>>
   /** Called for each synthetic voucher in a session (1-based index). */
-  onVoucher?: TestCallback<NonNullable<RouteDockMiddlewareOptions['onVoucher']>>
+  onVoucher?: TestCallback<NonNullable<KikisAppMiddlewareOptions['onVoucher']>>
 }
 
 /** Synthetic settlement values handed to the callbacks. All optional — sensible defaults per mode. */
@@ -45,7 +45,7 @@ export interface SyntheticPayment {
   payer?: string | null
 }
 
-export interface MockRoutedockOptions extends MockRoutedockCallbacks {
+export interface MockKikisAppOptions extends MockKikisAppCallbacks {
   /** Payment mode the synthetic payment uses. Default: 'x402'. */
   mode?: PaymentMode
   /**
@@ -60,7 +60,7 @@ export interface MockRoutedockOptions extends MockRoutedockCallbacks {
   failStatus?: number
 }
 
-/** Synthetic settlement record attached to `req.routedock` for assertions. */
+/** Synthetic settlement record attached to `req.kikis-app` for assertions. */
 export interface MockSettlementRecord {
   mode: PaymentMode
   txHash: string
@@ -98,7 +98,7 @@ function toScaled(decimal: string): bigint {
  * Honors `payment: 'auto-fail'` by invoking no callbacks and returning null.
  */
 export async function runMockSettlement(
-  opts: MockRoutedockOptions,
+  opts: MockKikisAppOptions,
 ): Promise<MockSettlementRecord | null> {
   const mode = opts.mode ?? 'x402'
   if ((opts.payment ?? 'auto-pass') === 'auto-fail') return null
@@ -138,10 +138,10 @@ export async function runMockSettlement(
 }
 
 /**
- * Express middleware that mocks RouteDock payment verification — the testing
- * counterpart to `routedock()`. Drop it in front of a route to drive that
+ * Express middleware that mocks KikisApp payment verification — the testing
+ * counterpart to `kikis-app()`. Drop it in front of a route to drive that
  * route's settlement callbacks with synthetic data, without any on-chain
- * settlement, facilitator, or wallet. Think `msw` for RouteDock providers.
+ * settlement, facilitator, or wallet. Think `msw` for KikisApp providers.
  *
  * On `payment: 'auto-pass'` (default) it invokes the configured callbacks with
  * synthetic data and then calls the next handler (your route). On
@@ -149,17 +149,17 @@ export async function runMockSettlement(
  * skips both the callbacks and the route handler — exactly as a real payment
  * rejection would.
  *
- * The synthetic settlement is attached to `req.routedock` for assertions.
+ * The synthetic settlement is attached to `req.kikis-app` for assertions.
  *
  * @example
  * ```ts
  * import express from 'express'
  * import request from 'supertest'
- * import { createMockRoutedockMiddleware } from '@routedock/routedock/testing'
+ * import { createMockKikisAppMiddleware } from '@kikis-app/kikis-app/testing'
  *
  * const onSettled = vi.fn()
  * const app = express()
- * app.use('/price', createMockRoutedockMiddleware({ mode: 'x402', payment: 'auto-pass', onSettled }))
+ * app.use('/price', createMockKikisAppMiddleware({ mode: 'x402', payment: 'auto-pass', onSettled }))
  * app.get('/price', (_req, res) => res.json({ price: '42' }))
  *
  * await request(app).get('/price').expect(200)
@@ -171,7 +171,7 @@ export async function runMockSettlement(
  * )
  * ```
  */
-export function createMockRoutedockMiddleware(opts: MockRoutedockOptions = {}): RequestHandler {
+export function createMockKikisAppMiddleware(opts: MockKikisAppOptions = {}): RequestHandler {
   const payment = opts.payment ?? 'auto-pass'
   const failStatus = opts.failStatus ?? 402
 
@@ -179,14 +179,14 @@ export function createMockRoutedockMiddleware(opts: MockRoutedockOptions = {}): 
     if (payment === 'auto-fail') {
       res.status(failStatus).json({
         error: 'payment required',
-        detail: 'mock routedock middleware: payment=auto-fail',
+        detail: 'mock kikis-app middleware: payment=auto-fail',
       })
       return
     }
 
     void runMockSettlement(opts)
       .then((record) => {
-        if (record) (req as Request & { routedock?: MockSettlementRecord }).routedock = record
+        if (record) (req as Request & { kikis-app?: MockSettlementRecord }).kikis-app = record
         next()
       })
       .catch((err) => next(err))

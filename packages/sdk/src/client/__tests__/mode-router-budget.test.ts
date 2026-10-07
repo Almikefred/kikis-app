@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { selectMode } from '../ModeRouter.js'
-import { RouteDockPolicyRejectError } from '../../errors.js'
-import type { RouteDockManifest } from '../../types.js'
+import { KikisAppPolicyRejectError } from '../../errors.js'
+import type { KikisAppManifest } from '../../types.js'
 
 function createManifest(
-  pricing: RouteDockManifest['pricing'],
-  modes: RouteDockManifest['modes'] = ['x402', 'mpp-charge'],
-): RouteDockManifest {
+  pricing: KikisAppManifest['pricing'],
+  modes: KikisAppManifest['modes'] = ['x402', 'mpp-charge'],
+): KikisAppManifest {
   return {
-    routedock: '1.0',
+    kikis-app: '1.0',
     name: 'Budget Test Provider',
     description: 'Manifest used to verify budget_per_request validation',
     modes,
@@ -31,7 +31,7 @@ const manifest = createManifest({
 
 function assertPolicyReject(reason: string) {
   return (error: unknown): boolean => {
-    assert.ok(error instanceof RouteDockPolicyRejectError)
+    assert.ok(error instanceof KikisAppPolicyRejectError)
     assert.equal(error.code, 'POLICY_REJECT')
     assert.equal(error.reason, reason)
     return true

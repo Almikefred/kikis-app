@@ -1,11 +1,11 @@
 import type { Request, Response, NextFunction, RequestHandler } from 'express'
 import { stellar } from '@stellar/mpp/charge/server'
 import { Mppx, Request as MppxRequest } from 'mppx/server'
-import type { RouteDockManifest } from '../types.js'
+import type { KikisAppManifest } from '../types.js'
 import { resolvePayee } from '../internal/payee.js'
 import { extractPayerAddress } from './payer.js'
 import type { SessionStore } from '../store/SessionStore.js'
-import { resolveLogger, type RouteDockLogger } from '../internal/logger.js'
+import { resolveLogger, type KikisAppLogger } from '../internal/logger.js'
 import {
   InMemorySeenTxStore,
   paymentIdempotencyKey,
@@ -26,7 +26,7 @@ export interface MppChargeHandlerOptions {
   network: Network
   amount: string
   assetContract?: string
-  manifest: RouteDockManifest
+  manifest: KikisAppManifest
   /**
    * @deprecated Ignored. Charge mode opens no channel, so there is nothing for a session store to hold.
    */
@@ -39,7 +39,7 @@ export interface MppChargeHandlerOptions {
    */
   seenTxStore?: SeenTxStore
   /** Log sink for internal error paths. Defaults to a console-backed logger. */
-  logger?: RouteDockLogger
+  logger?: KikisAppLogger
 }
 
 export function createMppChargeHandler(opts: MppChargeHandlerOptions): RequestHandler {

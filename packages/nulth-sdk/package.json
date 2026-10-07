@@ -1,5 +1,5 @@
 {
-  "name": "@routedock/nulth-sdk",
+  "name": "@kikis-app/nulth-sdk",
   "version": "0.2.1",
   "description": "Off-chain ZK proof builder for Nulth smart accounts on Stellar",
   "license": "MIT",

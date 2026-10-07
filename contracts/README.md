@@ -1,10 +1,10 @@
 # contracts/
 
-Smart contracts for RouteDock on Stellar.
+Smart contracts for KikisApp on Stellar.
 
 ## agent-vault/
 
-The RouteDock agent vault is a Soroban smart contract account built on top of
+The KikisApp agent vault is a Soroban smart contract account built on top of
 [Crossmint/stellar-smart-account](https://github.com/Crossmint/stellar-smart-account) v1.0.0.
 
 **Status:** Not yet scaffolded. Requires Rust + Soroban SDK setup.
@@ -66,7 +66,7 @@ Deploying the vault passes configuration arguments atomically to `__constructor`
 - `--lifetime_cap`: Lifetime USDC spend limit in stroops (`0` = unlimited).
 
 > **⚠️ SECURITY WARNING:** The underlying `stellar-experimental/one-way-channel` contract
-> is **unaudited**. RouteDock wraps it with safe defaults and a durable server-side
+> is **unaudited**. KikisApp wraps it with safe defaults and a durable server-side
 > session store, but production use should await a formal audit.
 >
 > **Audit Status:**

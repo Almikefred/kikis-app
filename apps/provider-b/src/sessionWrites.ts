@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 /**
  * Mirrors the SDK's OrphanedSessionInfo. Declared locally because the type is
- * only re-exported from `@routedock/routedock/provider`, the Node-only Express
+ * only re-exported from `@kikis-app/kikis-app/provider`, the Node-only Express
  * entry point, which must not appear in a Workers bundle.
  */
 export interface OrphanedSessionInfo {

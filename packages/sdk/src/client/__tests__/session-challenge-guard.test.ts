@@ -13,15 +13,15 @@
  * client module is imported, like session-stats.test.ts), but `mppx` itself is
  * real — challenges are built and serialized with its own Challenge helpers.
  *
- * Run with: pnpm --filter @routedock/routedock test
+ * Run with: pnpm --filter @kikis-app/kikis-app test
  */
 
 import assert from 'node:assert/strict'
 import { describe, it, mock } from 'node:test'
 import { Keypair } from '@stellar/stellar-sdk'
 import { Challenge, Store } from 'mppx'
-import type { RouteDockManifest, SessionHandle, SessionOptions } from '../../types.js'
-import { RouteDockChannelStateError } from '../../errors.js'
+import type { KikisAppManifest, SessionHandle, SessionOptions } from '../../types.js'
+import { KikisAppChannelStateError } from '../../errors.js'
 
 const CHANNEL_CONTRACT = 'CCK4XOW3YKQUEZFONUTINKMSNW7SNMRQZURME5U3UP7E6WNGK7UHUCAH'
 const OTHER_CONTRACT = 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC'
@@ -115,9 +115,9 @@ const { MppSessionClient } = await import('../MppSessionClient.js')
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-function buildManifest(): RouteDockManifest {
+function buildManifest(): KikisAppManifest {
   return {
-    routedock: '1.0',
+    kikis-app: '1.0',
     name: 'Challenge Guard Test Provider',
     description: 'Provider exercised by session challenge guard unit tests',
     modes: ['mpp-session'],
@@ -180,7 +180,7 @@ async function nextError(handle: SessionHandle): Promise<unknown> {
 
 function isChannelStateError(message: RegExp) {
   return (err: unknown): boolean =>
-    err instanceof RouteDockChannelStateError && message.test(err.message)
+    err instanceof KikisAppChannelStateError && message.test(err.message)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

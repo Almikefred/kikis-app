@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /* ============================================================
-   RouteDock Design Tokens — Section 3.2
+   KikisApp Design Tokens — Section 3.2
    These are the authoritative source of truth.
    Token-driven: never hardcode hex in component classes.
    ============================================================ */
@@ -52,7 +52,7 @@
   --radius-full: 9999px;
 
   /* ── shadcn bridge variables ─────────────────────────────── */
-  /* Maps shadcn's expected var names to RouteDock tokens so    */
+  /* Maps shadcn's expected var names to KikisApp tokens so    */
   /* any component using var(--background) etc. gets our system. */
   --background:            var(--bg-base);
   --foreground:            var(--text-primary);
@@ -109,7 +109,7 @@
   --bg-base-rgb:      10 15 30;
   --status-error-rgb: 248 113 113;
 
-  /* shadcn bridge variables inherit updated RouteDock tokens   */
+  /* shadcn bridge variables inherit updated KikisApp tokens   */
   /* automatically — no need to re-declare since they use var() */
 }
 

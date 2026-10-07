@@ -1,10 +1,10 @@
-# @routedock/mcp-server
+# @kikis-app/mcp-server
 
-Model Context Protocol (MCP) server for RouteDock Stellar payments. Exposes RouteDock's payment functionality as standardized tools that LLM agents can use directly.
+Model Context Protocol (MCP) server for KikisApp Stellar payments. Exposes KikisApp's payment functionality as standardized tools that LLM agents can use directly.
 
 ## Overview
 
-This MCP server implements the thesis that base payment infrastructure should be built for machines, not humans. Instead of requiring every LLM agent to implement the full RouteDock SDK, agents can simply connect to this MCP server and use standardized tools:
+This MCP server implements the thesis that base payment infrastructure should be built for machines, not humans. Instead of requiring every LLM agent to implement the full KikisApp SDK, agents can simply connect to this MCP server and use standardized tools:
 
 - `pay_for_data(url, max_amount)` - Pay for a single data request
 - `open_session(url)` - Open a sustained MPP session for streaming
@@ -16,7 +16,7 @@ This MCP server implements the thesis that base payment infrastructure should be
 ## Installation
 
 ```bash
-npm install -g @routedock/mcp-server
+npm install -g @kikis-app/mcp-server
 ```
 
 Or build from source:
@@ -31,13 +31,13 @@ pnpm build
 
 For security, it is highly recommended to store your secrets in an external `.env` file rather than inline in the Claude Desktop configuration.
 
-Create a `.env` file (e.g., `~/.routedock/.env`):
+Create a `.env` file (e.g., `~/.kikis-app/.env`):
 
 ```bash
 # Required
 STELLAR_SECRET="SDU5..."  # Use a dedicated low-balance testnet key for safety
 STELLAR_NETWORK="testnet"  # or "mainnet"
-ROUTEDOCK_DAILY_CAP="1.00" # Required: Maximum daily spend in USDC
+KIKIS_APP_DAILY_CAP="1.00" # Required: Maximum daily spend in USDC
 
 # Optional (for session mode)
 COMMITMENT_SECRET="S..."  # Ed25519 secret for channel commitments
@@ -52,7 +52,7 @@ SUPABASE_KEY="..."
 
 ### pay_for_data
 
-Pay for a single data request from a RouteDock provider. Automatically selects the best payment mode.
+Pay for a single data request from a KikisApp provider. Automatically selects the best payment mode.
 
 **Parameters:**
 - `url` (required): Full URL of the provider endpoint
@@ -63,7 +63,7 @@ Pay for a single data request from a RouteDock provider. Automatically selects t
 
 ### open_session
 
-Open a sustained MPP session for streaming data. Requires `COMMITMENT_SECRET`. RouteDock channels
+Open a sustained MPP session for streaming data. Requires `COMMITMENT_SECRET`. KikisApp channels
 are pre-deployed and funded out-of-band before the agent runs, so `initial_deposit` is a safety
 check against the provider's `min_deposit`, not a fund transfer. Pass the returned `channel_id` to
 `stream_session` and `close_session` — the channel's collateral cannot be settled otherwise.
@@ -109,7 +109,7 @@ Check the Stellar wallet balance for the configured account.
 
 ### list_providers
 
-List available RouteDock providers from the registry. Requires Supabase credentials.
+List available KikisApp providers from the registry. Requires Supabase credentials.
 
 **Parameters:**
 - `tags` (optional): Comma-separated tags for filtering (e.g., "price,stellar,dex")
@@ -127,11 +127,11 @@ Add this to your Claude Desktop config file:
 ```json
 {
   "mcpServers": {
-    "routedock": {
+    "kikis-app": {
       "command": "node",
-      "args": ["/path/to/@routedock/mcp-server/dist/index.js"],
+      "args": ["/path/to/@kikis-app/mcp-server/dist/index.js"],
       "env": {
-        "ROUTEDOCK_ENV_FILE": "/absolute/path/to/your/.env"
+        "KIKIS_APP_ENV_FILE": "/absolute/path/to/your/.env"
       }
     }
   }
@@ -144,8 +144,8 @@ Once configured, you can ask Claude to:
 
 > "Check my Stellar balance"
 > "List providers that offer price data"
-> "Pay for data from https://api-a.routedock.xyz/price with a max of 0.01 USDC"
-> "Open a session with https://api-b.routedock.xyz for streaming orderbook data"
+> "Pay for data from https://api-a.kikis-app.xyz/price with a max of 0.01 USDC"
+> "Open a session with https://api-b.kikis-app.xyz for streaming orderbook data"
 > "Pull the next few messages from that session"
 > "Close the session and settle the channel"
 
@@ -170,10 +170,10 @@ pnpm start
 
 ## Architecture
 
-The MCP server wraps the existing `@routedock/routedock` SDK and exposes its functionality through the Model Context Protocol. This allows any MCP-compatible LLM client (Claude Desktop, etc.) to interact with Stellar payments without implementing the SDK directly.
+The MCP server wraps the existing `@kikis-app/kikis-app` SDK and exposes its functionality through the Model Context Protocol. This allows any MCP-compatible LLM client (Claude Desktop, etc.) to interact with Stellar payments without implementing the SDK directly.
 
 ```
-LLM Agent → MCP Protocol → @routedock/mcp-server → @routedock/routedock SDK → Stellar Network
+LLM Agent → MCP Protocol → @kikis-app/mcp-server → @kikis-app/kikis-app SDK → Stellar Network
 ```
 
 ## License

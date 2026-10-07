@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import {
-  RouteDockError,
-  RouteDockManifestError,
-  RouteDockFacilitatorError,
-  RouteDockNetworkError,
+  KikisAppError,
+  KikisAppManifestError,
+  KikisAppFacilitatorError,
+  KikisAppNetworkError,
   parseRetryAfterMs,
 } from '../errors.js'
 import { withRetry, backoffDelayMs, DEFAULT_RETRY_POLICY } from '../internal/retry.js'
@@ -44,7 +44,7 @@ describe('withRetry', () => {
       async () => {
         calls++
         if (calls < 3) {
-          throw new RouteDockNetworkError('transient')
+          throw new KikisAppNetworkError('transient')
         }
         return Promise.resolve('ok')
       },
@@ -61,11 +61,11 @@ describe('withRetry', () => {
         withRetry(
           () => {
             calls++
-            throw new RouteDockManifestError('invalid manifest')
+            throw new KikisAppManifestError('invalid manifest')
           },
           { maxAttempts: 4, baseDelayMs: 1 },
         ),
-      (err: unknown) => err instanceof RouteDockManifestError,
+      (err: unknown) => err instanceof KikisAppManifestError,
     )
     assert.equal(calls, 1)
   })
@@ -85,13 +85,13 @@ describe('withRetry', () => {
           withRetry(
             () => {
               calls++
-              throw new RouteDockFacilitatorError('rate limited', 429, {
+              throw new KikisAppFacilitatorError('rate limited', 429, {
                 retryAfterMs: 750,
               })
             },
             { maxAttempts: 3, baseDelayMs: 250 },
           ),
-        (err: unknown) => err instanceof RouteDockFacilitatorError,
+        (err: unknown) => err instanceof KikisAppFacilitatorError,
       )
       assert.equal(calls, 3)
       assert.ok(delays.length >= 2, 'expected at least 2 retry delays')
@@ -120,7 +120,7 @@ describe('withRetry', () => {
         async () => {
           calls++
           if (calls < 3) {
-            throw new RouteDockNetworkError('transient')
+            throw new KikisAppNetworkError('transient')
           }
           return Promise.resolve('ok')
         },
@@ -142,11 +142,11 @@ describe('withRetry', () => {
         withRetry(
           () => {
             calls++
-            throw new RouteDockNetworkError('still down')
+            throw new KikisAppNetworkError('still down')
           },
           { maxAttempts: 4, baseDelayMs: 1 },
         ),
-      (err: unknown) => err instanceof RouteDockNetworkError,
+      (err: unknown) => err instanceof KikisAppNetworkError,
     )
     assert.equal(calls, DEFAULT_RETRY_POLICY.maxAttempts)
   })
@@ -158,7 +158,7 @@ describe('withRetry', () => {
       async () => {
         calls++
         if (calls < 3) {
-          throw new RouteDockNetworkError('transient')
+          throw new KikisAppNetworkError('transient')
         }
         return Promise.resolve('ok')
       },
@@ -175,7 +175,7 @@ describe('withRetry', () => {
     const first = retries[0]!
     const second = retries[1]!
     assert.equal(first.attempt, 0)
-    assert.ok(first.error instanceof RouteDockNetworkError)
+    assert.ok(first.error instanceof KikisAppNetworkError)
     assert.ok(first.delay >= 0)
     assert.equal(second.attempt, 1)
   })
@@ -186,7 +186,7 @@ describe('withRetry', () => {
       () =>
         withRetry(
           () => {
-            throw new RouteDockManifestError('bad')
+            throw new KikisAppManifestError('bad')
           },
           {
             maxAttempts: 4,
@@ -196,7 +196,7 @@ describe('withRetry', () => {
             },
           },
         ),
-      (err: unknown) => err instanceof RouteDockManifestError,
+      (err: unknown) => err instanceof KikisAppManifestError,
     )
     assert.equal(retries.length, 0)
   })
@@ -207,7 +207,7 @@ describe('withRetry', () => {
       () =>
         withRetry(
           () => {
-            throw new RouteDockNetworkError('still down')
+            throw new KikisAppNetworkError('still down')
           },
           {
             maxAttempts: 3,
@@ -217,7 +217,7 @@ describe('withRetry', () => {
             },
           },
         ),
-      (err: unknown) => err instanceof RouteDockNetworkError,
+      (err: unknown) => err instanceof KikisAppNetworkError,
     )
     assert.deepEqual(retries, [0, 1])
   })
@@ -239,7 +239,7 @@ describe('withRetry', () => {
           withRetry(
             () => {
               calls++
-              throw new RouteDockNetworkError('transient')
+              throw new KikisAppNetworkError('transient')
             },
             {
               maxAttempts: 3,
@@ -250,7 +250,7 @@ describe('withRetry', () => {
             },
           ),
         (err: unknown) =>
-          err instanceof RouteDockNetworkError &&
+          err instanceof KikisAppNetworkError &&
           err.message === 'transient',
       )
       assert.equal(calls, 3)
@@ -278,7 +278,7 @@ describe('withRetry', () => {
         async () => {
           calls++
           if (calls < 3) {
-            throw new RouteDockNetworkError('transient')
+            throw new KikisAppNetworkError('transient')
           }
           return Promise.resolve('ok')
         },
@@ -300,7 +300,7 @@ describe('withRetry', () => {
     }
   })
 
-  it('rethrows non-RouteDock errors immediately', async () => {
+  it('rethrows non-KikisApp errors immediately', async () => {
     let calls = 0
     await assert.rejects(
       () =>

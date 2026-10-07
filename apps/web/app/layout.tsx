@@ -21,22 +21,22 @@ const ibmPlexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: 'RouteDock — Unified Agent Payment Execution on Stellar',
-    template: '%s | RouteDock',
+    default: 'KikisApp — Unified Agent Payment Execution on Stellar',
+    template: '%s | KikisApp',
   },
   description:
     'x402, MPP charge, MPP session, and MPP session over WebSocket — unified behind client.pay(url). One interface. Four payment modes. Zero hardcoding.',
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.routedock.xyz'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL ?? 'https://www.kikis-app.xyz'),
   openGraph: {
-    title: 'RouteDock — Unified Agent Payment Execution on Stellar',
+    title: 'KikisApp — Unified Agent Payment Execution on Stellar',
     description: 'One SDK for x402, MPP charge, MPP session, and MPP session over WebSocket on Stellar. Agents pay for services with a single function call.',
-    siteName: 'RouteDock',
+    siteName: 'KikisApp',
     type: 'website',
-    images: [{ url: '/og.png', width: 1200, height: 630, alt: 'RouteDock — unified agent payment execution on Stellar' }],
+    images: [{ url: '/og.png', width: 1200, height: 630, alt: 'KikisApp — unified agent payment execution on Stellar' }],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'RouteDock',
+    title: 'KikisApp',
     description: 'Unified payment execution for autonomous agents on Stellar.',
     images: ['/og.png'],
   },
@@ -60,7 +60,7 @@ export default function RootLayout({
         <ThemeProvider
           attribute="class"
           defaultTheme="dark"
-          storageKey="routedock-theme"
+          storageKey="kikis-app-theme"
           enableSystem={false}
         >
           {children}

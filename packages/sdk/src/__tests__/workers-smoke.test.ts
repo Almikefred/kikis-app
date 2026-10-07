@@ -51,16 +51,16 @@ test('importing the SDK client works under a Workers-like no-new-Function runtim
   const restore = banNewFunction()
   try {
     // Cache-bust so module-scope code actually re-executes under the ban.
-    const { RouteDockClient, fetchManifest } = await import(
+    const { KikisAppClient, fetchManifest } = await import(
       `../client/index.js?workers-smoke=${Date.now()}`
     )
-    assert.equal(typeof RouteDockClient, 'function', 'RouteDockClient should be exported')
+    assert.equal(typeof KikisAppClient, 'function', 'KikisAppClient should be exported')
 
     // Manifest validation still functions without dynamic codegen.
     const payeeKp = Keypair.random()
     const signedManifest = signManifest(
       {
-        routedock: '1.0',
+        kikis-app: '1.0',
         name: 'Workers Smoke Provider',
         description: 'Smoke test provider',
         modes: ['x402' as const],
@@ -82,7 +82,7 @@ test('importing the SDK client works under a Workers-like no-new-Function runtim
     )
 
     const server = await startTestServer((req, res) => {
-      if (req.url === '/.well-known/routedock.json') {
+      if (req.url === '/.well-known/kikis-app.json') {
         res.writeHead(200, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify(signedManifest))
       } else {

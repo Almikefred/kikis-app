@@ -2,7 +2,7 @@
   "changelog": [
     "@changesets/changelog-github",
     {
-      "repo": "winsznx/routedock"
+      "repo": "winsznx/kikis-app"
     }
   ],
   "commit": false,

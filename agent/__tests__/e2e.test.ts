@@ -1,5 +1,5 @@
 /**
- * End-to-End Integration Tests for RouteDock Agent
+ * End-to-End Integration Tests for KikisApp Agent
  *
  * This test suite validates the complete autonomous payment workflow across all
  * three payment modes (x402, MPP charge, MPP session) against live provider
@@ -26,7 +26,7 @@ import path from 'node:path'
 import os from 'node:os'
 import assert from 'node:assert/strict'
 import { Keypair } from '@stellar/stellar-sdk'
-import { RouteDockClient, FileSpendStore, RouteDockPolicyRejectedError } from '@routedock/routedock'
+import { KikisAppClient, FileSpendStore, KikisAppPolicyRejectedError } from '@kikis-app/kikis-app'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -50,7 +50,7 @@ function log(test: string, msg: string): void {
 // ── Test Suite ────────────────────────────────────────────────────────────────
 
 async function runTests(): Promise<void> {
-  log('setup', 'Starting RouteDock E2E test suite')
+  log('setup', 'Starting KikisApp E2E test suite')
   log('setup', `Network: ${STELLAR_NETWORK}`)
   log('setup', `Provider A: ${PROVIDER_A_URL}`)
   log('setup', `Provider B: ${PROVIDER_B_URL}`)
@@ -69,10 +69,10 @@ async function runTests(): Promise<void> {
 
   const spendStorePath =
     process.env['AGENT_SPEND_STORE_PATH'] ??
-    process.env['ROUTEDOCK_SPEND_STORE_PATH'] ??
-    path.join(os.homedir(), '.routedock', 'spend.json')
+    process.env['KIKIS_APP_SPEND_STORE_PATH'] ??
+    path.join(os.homedir(), '.kikis-app', 'spend.json')
 
-  const client = new RouteDockClient({
+  const client = new KikisAppClient({
     wallet: keypair,
     network: STELLAR_NETWORK,
     spendCap: { daily: AGENT_DAILY_CAP_USDC, asset: 'USDC' },
@@ -222,7 +222,7 @@ async function runTests(): Promise<void> {
     await client.pay(`${PROVIDER_A_URL}/price`, { forceMode: 'x402' })
     log('policy', '✗ Payment succeeded when it should have been rejected')
   } catch (err) {
-    if (err instanceof RouteDockPolicyRejectedError) {
+    if (err instanceof KikisAppPolicyRejectedError) {
       policyRejected = true
       rejectionReason = err.reason
       log('policy', `✓ Policy rejection confirmed: ${rejectionReason}`)
@@ -236,7 +236,7 @@ async function runTests(): Promise<void> {
 
   // ── Summary ────────────────────────────────────────────────────────────────
   log('summary', '─'.repeat(70))
-  log('summary', 'RouteDock E2E Test Suite: ALL TESTS PASSED ✓')
+  log('summary', 'KikisApp E2E Test Suite: ALL TESTS PASSED ✓')
   log('summary', '─'.repeat(70))
   log('summary', 'Test results:')
   log('summary', '  ✓ x402 discrete query')

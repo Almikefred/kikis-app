@@ -1,6 +1,6 @@
 # Provider redeploy ordering (v1 → v2 manifest signing)
 
-`main` and the two live providers (`api-a.routedock.xyz`, `api-b.routedock.xyz`)
+`main` and the two live providers (`api-a.kikis-app.xyz`, `api-b.kikis-app.xyz`)
 have diverged on the manifest signing protocol. This is currently safe — do not
 redeploy either provider until the steps below are followed in order, or every
 published npm client will reject them.
@@ -8,7 +8,7 @@ published npm client will reject them.
 ## Current state
 
 - Live providers emit `signature_version` absent (v1).
-- `@routedock/routedock@0.1.2` on npm verifies v1 manifests.
+- `@kikis-app/kikis-app@0.1.2` on npm verifies v1 manifests.
 - `main` produces v2 manifests (`signManifest` now emits `signature_version: '2'`,
   and the client rejects v1 outright — #133/PR #240) and provider-b's manifest
   on `main` advertises `mpp-session-ws`, a mode `0.1.2` does not know (#78/PR #227).
@@ -22,7 +22,7 @@ publishes — breaks every existing client on both counts.
 1. Add the `NPM_TOKEN` repository secret. The repo currently has zero secrets,
    so publishing cannot happen without it.
 2. Merge the pending release PR (regenerated to cover all changesets).
-3. Confirm `@routedock/routedock@0.2.0` is live on npm.
+3. Confirm `@kikis-app/kikis-app@0.2.0` is live on npm.
 4. Redeploy **both** providers together:
    ```bash
    pnpm --filter provider-a deploy

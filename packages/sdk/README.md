@@ -1,20 +1,20 @@
-# @routedock/sdk
+# @kikis-app/sdk
 
-Unified payment execution layer for autonomous agents on Stellar. One SDK for x402, MPP charge, and MPP session — mode selected automatically from the provider's `routedock.json` manifest.
+Unified payment execution layer for autonomous agents on Stellar. One SDK for x402, MPP charge, and MPP session — mode selected automatically from the provider's `kikis-app.json` manifest.
 
 ## Install
 
 ```bash
-npm install @routedock/sdk
+npm install @kikis-app/sdk
 ```
 
 ## Agent Usage
 
 ```ts
-import { RouteDockClient } from '@routedock/sdk/client'
+import { KikisAppClient } from '@kikis-app/sdk/client'
 import { Keypair } from '@stellar/stellar-sdk'
 
-const client = new RouteDockClient({
+const client = new KikisAppClient({
   wallet: Keypair.fromSecret(process.env.AGENT_SECRET),
   network: 'testnet',
   spendCap: { daily: '1.00', asset: 'USDC' },
@@ -44,19 +44,19 @@ production, inject a persistent implementation so a crash or restart can't reset
 the accumulator and bypass the cap:
 
 ```ts
-import { RouteDockClient, type SpendStore, type DailySpend } from '@routedock/sdk/client'
+import { KikisAppClient, type SpendStore, type DailySpend } from '@kikis-app/sdk/client'
 
 const redisSpendStore: SpendStore = {
   async read(): Promise<DailySpend | null> {
-    const raw = await redis.get('routedock:dailySpend')
+    const raw = await redis.get('kikis-app:dailySpend')
     return raw ? (JSON.parse(raw) as DailySpend) : null
   },
   async write(state: DailySpend): Promise<void> {
-    await redis.set('routedock:dailySpend', JSON.stringify(state))
+    await redis.set('kikis-app:dailySpend', JSON.stringify(state))
   },
 }
 
-const client = new RouteDockClient({
+const client = new KikisAppClient({
   wallet: Keypair.fromSecret(process.env.AGENT_SECRET),
   network: 'mainnet',
   spendCap: { daily: '1.00', asset: 'USDC' },
@@ -68,11 +68,11 @@ const client = new RouteDockClient({
 
 ```ts
 import express from 'express'
-import { routedock } from '@routedock/sdk/provider'
+import { kikis-app } from '@kikis-app/sdk/provider'
 
 const app = express()
 
-app.use('/price', routedock({
+app.use('/price', kikis-app({
   modes: ['x402', 'mpp-charge'],
   pricing: { x402: '0.001', 'mpp-charge': '0.0008' },
   asset: 'USDC',
@@ -92,7 +92,7 @@ app.use('/price', routedock({
 For `mpp-session` mode, the middleware exposes three hooks that fire at each stage of the payment channel lifecycle:
 
 ```ts
-app.use('/stream', routedock({
+app.use('/stream', kikis-app({
   modes: ['mpp-session'],
   pricing: { 'mpp-session': { rate: '0.0001', channelContract: CHANNEL_CONTRACT } },
   asset: 'USDC',
@@ -138,7 +138,7 @@ app.use('/stream', routedock({
 
 ## Running a provider in production
 
-The `routedockHono` defaults — `InMemorySeenTxStore` for `seenTxStore` and
+The `kikisAppHono` defaults — `InMemorySeenTxStore` for `seenTxStore` and
 `Store.memory()` for `sessionStore` — are only safe in a single long-lived
 process. Any runtime that can route requests to different isolates or
 processes (Cloudflare Workers, Deno Deploy, Lambda@Edge, or even a
@@ -167,12 +167,12 @@ settlement is only replayed within a 60s window and a bounded number of times:
 
 ```ts
 import { createClient } from '@supabase/supabase-js'
-import { routedockHono, SupabaseSeenTxStore } from '@routedock/routedock/provider/hono'
+import { kikisAppHono, SupabaseSeenTxStore } from '@kikis-app/kikis-app/provider/hono'
 
 const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY)
 const seenTxStore = new SupabaseSeenTxStore(supabase)
 
-app.use('*', routedockHono({
+app.use('*', kikisAppHono({
   modes: ['x402', 'mpp-charge'],
   pricing: { x402: '0.001', 'mpp-charge': '0.0008' },
   asset: 'USDC',
@@ -209,7 +209,7 @@ reads and writes serialize through one instance:
 ```ts
 import { DurableObject } from 'cloudflare:workers'
 import { Hono } from 'hono'
-import { routedockHono } from '@routedock/routedock/provider/hono'
+import { kikisAppHono } from '@kikis-app/kikis-app/provider/hono'
 import { Store } from '@stellar/mpp/channel/server'
 
 // The provider needs @stellar/mpp as a direct dependency for Store.
@@ -228,7 +228,7 @@ export class ChannelSession extends DurableObject<Env> {
     })
 
     const app = new Hono()
-    app.use('*', routedockHono({
+    app.use('*', kikisAppHono({
       modes: ['mpp-session'],
       pricing: {
         'mpp-session': { rate: '0.0001', channelFactory: env.CHANNEL_CONTRACT_ID },
@@ -276,7 +276,7 @@ Wire the binding and migration in `wrangler.jsonc`:
 ```
 
 **Limitation:** the Durable Object persists the `@stellar/mpp` channel store
-only. `routedockHono` still tracks `lastCumulativeAmount`, `voucherCount`,
+only. `kikisAppHono` still tracks `lastCumulativeAmount`, `voucherCount`,
 `lastSignatureHex` and `sessionPayerAddress` in closure scope, so if the
 instance is evicted mid-session those reset, and the close path falls back to
 the client-supplied amount and signature. Moving them into the same durable
@@ -298,7 +298,7 @@ and an idle (as opposed to disconnected) session is never flagged orphaned.
 On Cloudflare Workers it doesn't help yet. The idle timer is a `setTimeout`
 inside the Durable Object, and Cloudflare evicts an idle object after roughly
 70 to 140 seconds, so the timer never fires. provider-b has the same gap, see
-[#314](https://github.com/winsznx/routedock/issues/314).
+[#314](https://github.com/winsznx/kikis-app/issues/314).
 
 The status and cumulative-amount fields need to be written separately.
 Writing `cumulative_amount` in the same update as `status: 'closing'` can
@@ -306,10 +306,10 @@ collide with the `monotonic_cumulative` trigger (`supabase/migrations/001_init.s
 which rejects any update where the new amount isn't strictly greater than the
 stored one — and `onVoucher` has usually already stored that exact amount, so
 the combined update silently fails and the row never reaches `closing`. This
-is the same bug tracked as [#338](https://github.com/winsznx/routedock/issues/338):
+is the same bug tracked as [#338](https://github.com/winsznx/kikis-app/issues/338):
 
 ```ts
-app.use('*', routedockHono({
+app.use('*', kikisAppHono({
   // ...
   idleTimeoutMs: 5 * 60_000,
   onOrphaned: async (channelId, info) => {
@@ -332,7 +332,7 @@ Then schedule `reconcileAbandonedSessions` to actually settle those `closing`
 sessions with their latest voucher:
 
 ```ts
-import { reconcileAbandonedSessions } from '@routedock/routedock/provider/hono'
+import { reconcileAbandonedSessions } from '@kikis-app/kikis-app/provider/hono'
 
 export default {
   async scheduled(_controller: unknown, env: Env): Promise<void> {
@@ -366,7 +366,7 @@ itself. Sign the manifest, then call `registerProvider` inside
 a request:
 
 ```ts
-import { registerProvider, signManifest } from '@routedock/routedock/provider/hono'
+import { registerProvider, signManifest } from '@kikis-app/kikis-app/provider/hono'
 
 const signed = signManifest(manifest, env.STELLAR_PAYEE_SECRET)
 ctx.waitUntil(
@@ -395,9 +395,9 @@ serve `mpp-session` requests once the payment middleware has verified them:
 
 ```ts
 import { upgradeWebSocket } from 'hono/cloudflare-workers'
-import { routedockHono, mppSessionWsVerified } from '@routedock/routedock/provider/hono'
+import { kikisAppHono, mppSessionWsVerified } from '@kikis-app/kikis-app/provider/hono'
 
-app.use('*', routedockHono({
+app.use('*', kikisAppHono({
   modes: ['mpp-session', 'mpp-session-ws'],
   pricing: {
     'mpp-session': { rate: '0.0001', channelFactory: env.CHANNEL_CONTRACT_ID },
@@ -434,34 +434,34 @@ app.get('/stream', (c) => c.json({ data: '...' }))
 
 ### Workers-safe imports
 
-Every snippet above imports from `@routedock/routedock/provider/hono`, which
-re-exports `routedockHono`, `mppSessionWsVerified`, `registerProvider`,
+Every snippet above imports from `@kikis-app/kikis-app/provider/hono`, which
+re-exports `kikisAppHono`, `mppSessionWsVerified`, `registerProvider`,
 `signManifest`, `SupabaseSeenTxStore` and `reconcileAbandonedSessions`. Don't
-import from `@routedock/routedock/provider` in a Workers snippet — that's the
+import from `@kikis-app/kikis-app/provider` in a Workers snippet — that's the
 Node-only Express entry point and pulls in dependencies (like `express`) that
 don't run on Workers.
 
 ## React Integration
 
-> **Warning:** These hooks create a RouteDockClient in the browser, so the wallet secret and any commitmentSecret are readable by anyone who loads the page.
+> **Warning:** These hooks create a KikisAppClient in the browser, so the wallet secret and any commitmentSecret are readable by anyone who loads the page.
 >
 > Next.js inlines every `NEXT_PUBLIC_*` variable into the client bundle at build time, so never put a Stellar secret in one.
 >
 > Only use these hooks with a dedicated, low-balance testnet key, and spendCap does not protect a key that has leaked.
 >
-> For production or mainnet, keep RouteDockClient on the server (a route handler or server action) and read the key from a non-public variable such as `AGENT_SECRET`, as the Agent Usage section does.
+> For production or mainnet, keep KikisAppClient on the server (a route handler or server action) and read the key from a non-public variable such as `AGENT_SECRET`, as the Agent Usage section does.
 
-`@routedock/sdk/react` provides hooks for client construction, payments, sessions, and live tx log subscription. Wrap your app with `RouteDockProvider`:
+`@kikis-app/sdk/react` provides hooks for client construction, payments, sessions, and live tx log subscription. Wrap your app with `KikisAppProvider`:
 
 ```tsx
-import { RouteDockProvider, useRouteDockClient } from '@routedock/sdk/react'
+import { KikisAppProvider, useKikisAppClient } from '@kikis-app/sdk/react'
 import { createClient } from '@supabase/supabase-js'
 
 // Dedicated throwaway testnet key. Never a funded or mainnet key.
 const THROWAWAY_TESTNET_SECRET = 'S...'
 
 function App({ children }: { children: React.ReactNode }) {
-  const client = useRouteDockClient({
+  const client = useKikisAppClient({
     wallet: THROWAWAY_TESTNET_SECRET,
     network: 'testnet',
     spendCap: { daily: '1.00', asset: 'USDC' },
@@ -471,9 +471,9 @@ function App({ children }: { children: React.ReactNode }) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   )
   return (
-    <RouteDockProvider client={client} supabase={supabase}>
+    <KikisAppProvider client={client} supabase={supabase}>
       {children}
-    </RouteDockProvider>
+    </KikisAppProvider>
   )
 }
 ```
@@ -482,9 +482,9 @@ function App({ children }: { children: React.ReactNode }) {
 
 ```ts
 // app/api/price/route.ts (runs on the server only)
-import { RouteDockClient } from '@routedock/sdk/client'
+import { KikisAppClient } from '@kikis-app/sdk/client'
 
-const client = new RouteDockClient({
+const client = new KikisAppClient({
   wallet: process.env.AGENT_SECRET!,
   network: 'testnet',
   spendCap: { daily: '1.00', asset: 'USDC' },
@@ -499,7 +499,7 @@ export async function POST() {
 ### `usePay(url, options?)`
 
 ```tsx
-import { usePay } from '@routedock/sdk/react'
+import { usePay } from '@kikis-app/sdk/react'
 
 function PriceButton() {
   const { pay, result, loading, error } = usePay('https://provider.example.com/price')
@@ -516,7 +516,7 @@ function PriceButton() {
 
 ```tsx
 import { useEffect } from 'react'
-import { useSession } from '@routedock/sdk/react'
+import { useSession } from '@kikis-app/sdk/react'
 
 function StreamingFeed() {
   const { open, close, status, vouchers, cumulative } = useSession(
@@ -537,7 +537,7 @@ The hook automatically fires `session.close()` in the background on unmount when
 ### `useTxLog(filter?)`
 
 ```tsx
-import { useTxLog } from '@routedock/sdk/react'
+import { useTxLog } from '@kikis-app/sdk/react'
 
 function ActivityFeed({ channelId }: { channelId: string }) {
   const txLog = useTxLog({ channelId, limit: 25 })
@@ -551,9 +551,9 @@ function ActivityFeed({ channelId }: { channelId: string }) {
 }
 ```
 
-| Hook | Returns | Requires from `RouteDockProvider` |
+| Hook | Returns | Requires from `KikisAppProvider` |
 |---|---|---|
-| `useRouteDockClient(config)` | Memoized `RouteDockClient` | — (creator hook) |
+| `useKikisAppClient(config)` | Memoized `KikisAppClient` | — (creator hook) |
 | `usePay(url, options?)` | `{ pay, result, loading, error }` | `client` |
 | `useSession(url)` | `{ session, status, vouchers, cumulative, error, open, close }` | `client` (with `commitmentSecret`) |
 | `useTxLog(filter?)` | `TxLogRow[]` (newest first) | `supabase` |
@@ -564,18 +564,18 @@ React is a peer dependency — install `react@^18` (or `^19`) in your app.
 
 ## Error Handling
 
-All SDK failures extend `RouteDockError` with a stable `code`, `retryable` flag, and optional `cause`. Transient failures (network timeouts, facilitator 5xx, Horizon RPC errors) are retried automatically with exponential backoff unless you disable retries.
+All SDK failures extend `KikisAppError` with a stable `code`, `retryable` flag, and optional `cause`. Transient failures (network timeouts, facilitator 5xx, Horizon RPC errors) are retried automatically with exponential backoff unless you disable retries.
 
 ```ts
 import {
-  RouteDockClient,
-  RouteDockError,
-  RouteDockFacilitatorError,
-  RouteDockManifestError,
-  RouteDockPolicyRejectError,
-} from '@routedock/sdk/client'
+  KikisAppClient,
+  KikisAppError,
+  KikisAppFacilitatorError,
+  KikisAppManifestError,
+  KikisAppPolicyRejectError,
+} from '@kikis-app/sdk/client'
 
-const client = new RouteDockClient({
+const client = new KikisAppClient({
   wallet: process.env.AGENT_SECRET!,
   network: 'testnet',
   retryPolicy: { maxAttempts: 4, baseDelayMs: 250 },
@@ -585,13 +585,13 @@ try {
   const result = await client.pay('https://provider.example.com/price')
   console.log(result.mode, result.txHash)
 } catch (err) {
-  if (err instanceof RouteDockPolicyRejectError) {
+  if (err instanceof KikisAppPolicyRejectError) {
     console.error('Spend cap exceeded:', err.reason)
-  } else if (err instanceof RouteDockFacilitatorError) {
+  } else if (err instanceof KikisAppFacilitatorError) {
     console.error(`Facilitator HTTP ${err.status} (retryable=${err.retryable})`)
-  } else if (err instanceof RouteDockManifestError) {
+  } else if (err instanceof KikisAppManifestError) {
     console.error('Manifest or config problem:', err.message)
-  } else if (err instanceof RouteDockError) {
+  } else if (err instanceof KikisAppError) {
     console.error(`[${err.code}] ${err.message} (retryable=${err.retryable})`)
   } else {
     throw err
@@ -601,14 +601,14 @@ try {
 
 | Error | `retryable` | Typical cause |
 |---|---|---|
-| `RouteDockManifestError` | no | Invalid manifest, missing pricing fields |
-| `RouteDockNoSupportedModeError` | no | Provider has no compatible payment mode |
-| `RouteDockFacilitatorError` | yes | Facilitator/provider 429 or 5xx |
-| `RouteDockNetworkError` | yes | Timeouts, connection failures |
-| `RouteDockSignatureError` | no | Signing or commitment failure |
-| `RouteDockVoucherMonotonicityError` | no | Non-increasing voucher amount |
-| `RouteDockPolicyRejectError` | no | Local spend cap exceeded |
-| `RouteDockChannelStateError` | no | Channel simulate/close invariant violation |
+| `KikisAppManifestError` | no | Invalid manifest, missing pricing fields |
+| `KikisAppNoSupportedModeError` | no | Provider has no compatible payment mode |
+| `KikisAppFacilitatorError` | yes | Facilitator/provider 429 or 5xx |
+| `KikisAppNetworkError` | yes | Timeouts, connection failures |
+| `KikisAppSignatureError` | no | Signing or commitment failure |
+| `KikisAppVoucherMonotonicityError` | no | Non-increasing voucher amount |
+| `KikisAppPolicyRejectError` | no | Local spend cap exceeded |
+| `KikisAppChannelStateError` | no | Channel simulate/close invariant violation |
 
 ## Mode Selection Logic
 
@@ -617,7 +617,7 @@ The `ModeRouter` uses this decision tree (deterministic, no randomness):
 1. If `{ sustained: true }` passed AND manifest supports `mpp-session` → session
 2. Else if manifest supports `mpp-charge` AND network is Stellar → MPP charge (lower fees)
 3. Else if manifest supports `x402` → x402 with facilitator
-4. Else throw `RouteDockNoSupportedModeError`
+4. Else throw `KikisAppNoSupportedModeError`
 
 Override with `{ forceMode: 'x402' }` to bypass auto-selection.
 
@@ -644,7 +644,7 @@ const settleTxHash = await session.settleWithLatestVoucher()
 | `requestRefund()` | Initiate refund process | Signed agent keypair | Transaction hash (string) |
 | `settleWithLatestVoucher()` | Server counter-settle | Latest voucher signature | Transaction hash (string) |
 
-Raises: `RouteDockDisputeError`, `RouteDockChannelStateError`, `RouteDockRefundWindowError`
+Raises: `KikisAppDisputeError`, `KikisAppChannelStateError`, `KikisAppRefundWindowError`
 
 ## Security
 

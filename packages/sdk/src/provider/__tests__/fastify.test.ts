@@ -3,8 +3,8 @@ import { describe, it, after } from 'node:test'
 import { createServer, type Server } from 'node:http'
 import Fastify from 'fastify'
 import { Keypair } from '@stellar/stellar-sdk'
-import { routedockFastify, type RouteDockFastifyOptions } from '../fastify.js'
-import type { RouteDockManifest } from '../../types.js'
+import { kikisAppFastify, type KikisAppFastifyOptions } from '../fastify.js'
+import type { KikisAppManifest } from '../../types.js'
 import {
   InMemorySeenTxStore,
   paymentIdempotencyKey,
@@ -19,8 +19,8 @@ const commitKeypair = Keypair.random()
 const ASSET_CONTRACT = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA'
 const CHANNEL_CONTRACT = 'CCK4XOW3YKQUEZFONUTINKMSNW7SNMRQZURME5U3UP7E6WNGK7UHUCAH'
 
-const manifest: RouteDockManifest = {
-  routedock: '1.0',
+const manifest: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Fastify Test Service',
   description: 'Unit test provider for Fastify adapter',
   modes: ['x402', 'mpp-charge', 'mpp-session'],
@@ -55,11 +55,11 @@ const BASE_OPTS = {
 
 /** Spin up a Fastify instance, return its base URL and a close function. */
 async function makeServer(
-  overrides: Partial<RouteDockFastifyOptions> = {},
+  overrides: Partial<KikisAppFastifyOptions> = {},
 ): Promise<{ url: string; close: () => Promise<void> }> {
   const fastify = Fastify()
   await fastify.register(
-    routedockFastify({
+    kikisAppFastify({
       ...BASE_OPTS,
       modes: ['x402', 'mpp-charge', 'mpp-session'],
       pricing: {
@@ -68,7 +68,7 @@ async function makeServer(
         'mpp-session': { rate: '0.0001', channelFactory: CHANNEL_CONTRACT },
       },
       ...overrides,
-    } as Parameters<typeof routedockFastify>[0]),
+    } as Parameters<typeof kikisAppFastify>[0]),
   )
 
   fastify.get('/price', async () => ({ price: '42' }))
@@ -82,11 +82,11 @@ async function makeServer(
   }
 }
 
-describe('routedockFastify — manifest endpoint', () => {
-  it('serves a signed /.well-known/routedock.json', async () => {
+describe('kikisAppFastify — manifest endpoint', () => {
+  it('serves a signed /.well-known/kikis-app.json', async () => {
     const { url, close } = await makeServer({ modes: [] as ('x402' | 'mpp-charge' | 'mpp-session')[], pricing: {} })
     try {
-      const res = await fetch(`${url}/.well-known/routedock.json`)
+      const res = await fetch(`${url}/.well-known/kikis-app.json`)
       assert.equal(res.status, 200)
       const body = await res.json() as { name: string; signature: string }
       assert.equal(body.name, manifest.name, 'manifest name should match')
@@ -109,7 +109,7 @@ describe('routedockFastify — manifest endpoint', () => {
   })
 })
 
-describe('routedockFastify — x402 flow', () => {
+describe('kikisAppFastify — x402 flow', () => {
   it('returns 402 with X-Payment-Requirements when no payment header', async () => {
     const { url, close } = await makeServer({ modes: ['x402'], pricing: { x402: '0.001' } })
     try {
@@ -168,7 +168,7 @@ describe('routedockFastify — x402 flow', () => {
   })
 })
 
-describe('routedockFastify — mpp-charge flow', () => {
+describe('kikisAppFastify — mpp-charge flow', () => {
   it('returns 402 challenge when no authorization header', async () => {
     const { url, close } = await makeServer({ modes: ['mpp-charge'], pricing: { 'mpp-charge': '0.0008' } })
     try {
@@ -204,7 +204,7 @@ describe('routedockFastify — mpp-charge flow', () => {
   })
 })
 
-describe('routedockFastify — mpp-session flow', () => {
+describe('kikisAppFastify — mpp-session flow', () => {
   it('returns 402 challenge when no authorization header', async () => {
     const { url, close } = await makeServer({ modes: ['mpp-session'], pricing: { 'mpp-session': { rate: '0.0001', channelFactory: CHANNEL_CONTRACT } } })
     try {
@@ -228,7 +228,7 @@ describe('routedockFastify — mpp-session flow', () => {
   })
 })
 
-describe('routedockFastify — settlement idempotency', () => {
+describe('kikisAppFastify — settlement idempotency', () => {
   const X402_AMOUNT = String(usdcToStroops('0.001'))
 
   /** Seed one settled-header record for `path` at `amount` stroops. */
@@ -252,16 +252,16 @@ describe('routedockFastify — settlement idempotency', () => {
 
   /** Build an app whose `/price` handler counts how many times it ran. */
   async function makeCountingServer(
-    overrides: Partial<RouteDockFastifyOptions> = {},
+    overrides: Partial<KikisAppFastifyOptions> = {},
   ): Promise<{ url: string; runs: () => number; close: () => Promise<void> }> {
     const app = Fastify()
     await app.register(
-      routedockFastify({
+      kikisAppFastify({
         ...BASE_OPTS,
         modes: ['x402'],
         pricing: { x402: '0.001' },
         ...overrides,
-      } as RouteDockFastifyOptions),
+      } as KikisAppFastifyOptions),
     )
     let handlerRuns = 0
     app.get('/price', async () => {
@@ -366,7 +366,7 @@ describe('routedockFastify — settlement idempotency', () => {
     const app = Fastify()
     await app.register(async (scope) => {
       await scope.register(
-        routedockFastify({
+        kikisAppFastify({
           ...BASE_OPTS,
           modes: ['x402'],
           pricing: { x402: '0.001' },
@@ -380,7 +380,7 @@ describe('routedockFastify — settlement idempotency', () => {
     }, { prefix: '/cheap' })
     await app.register(async (scope) => {
       await scope.register(
-        routedockFastify({
+        kikisAppFastify({
           ...BASE_OPTS,
           modes: ['x402'],
           pricing: { x402: '5.00' },
@@ -413,16 +413,16 @@ describe('routedockFastify — settlement idempotency', () => {
   })
 })
 
-describe('routedockFastify — constructor validation', () => {
+describe('kikisAppFastify — constructor validation', () => {
   it('throws when mpp-session mode is enabled without commitmentPublicKey', () => {
     assert.throws(
       () =>
-        routedockFastify({
+        kikisAppFastify({
           ...BASE_OPTS,
           commitmentPublicKey: undefined,
           modes: ['mpp-session'],
           pricing: { 'mpp-session': { rate: '0.0001', channelFactory: CHANNEL_CONTRACT } },
-        } as unknown as Parameters<typeof routedockFastify>[0]),
+        } as unknown as Parameters<typeof kikisAppFastify>[0]),
       /requirescommitmentPublicKey|commitmentPublicKey/i,
     )
   })

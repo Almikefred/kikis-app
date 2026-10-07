@@ -2,7 +2,7 @@
  * handlers.ts
  *
  * Pure, unit-testable handler functions for every MCP tool exposed by the
- * RouteDock MCP server.  All external I/O dependencies (RouteDockClient,
+ * KikisApp MCP server.  All external I/O dependencies (KikisAppClient,
  * Supabase, Stellar Horizon, the in-process openSessions map) are injected via
  * the `HandlerDeps` parameter so tests can supply lightweight fakes without
  * touching the network.
@@ -11,7 +11,7 @@
  * the MCP Server, and dispatching to these functions.
  */
 
-import type { RouteDockClient, SessionHandle, PaymentMode } from '@routedock/routedock'
+import type { KikisAppClient, SessionHandle, PaymentMode } from '@kikis-app/kikis-app'
 import { Keypair, Horizon } from '@stellar/stellar-sdk'
 import { MAX_STREAM_MESSAGES } from './tools.js'
 
@@ -54,8 +54,8 @@ export interface SupabaseQueryBuilder {
 
 /** All external dependencies required by the handlers.  Inject fakes in tests. */
 export interface HandlerDeps {
-  /** Initialised RouteDockClient for paying / opening sessions. */
-  client: RouteDockClient
+  /** Initialised KikisAppClient for paying / opening sessions. */
+  client: KikisAppClient
   /** Live sessions keyed by channelId; shared across open/stream/close. */
   openSessions: Map<string, SessionHandle>
   /** Supabase client for list_providers, or null when not configured. */
@@ -177,7 +177,7 @@ export async function handleOpenSession(
 
   if (initial_deposit) {
     const baseUrl = new URL(url).origin
-    const manifestUrl = `${baseUrl}/.well-known/routedock.json`
+    const manifestUrl = `${baseUrl}/.well-known/kikis-app.json`
 
     const fetcher = fetchManifest ?? ((u: string) => fetch(u))
     const manifestResponse = await fetcher(manifestUrl)
@@ -191,7 +191,7 @@ export async function handleOpenSession(
     if (minDeposit && parseFloat(initial_deposit) < parseFloat(minDeposit)) {
       return err(
         `initial_deposit ${initial_deposit} is below this provider's min_deposit ${minDeposit}. ` +
-          `RouteDock channels are pre-deployed and funded out-of-band before the agent runs — ` +
+          `KikisApp channels are pre-deployed and funded out-of-band before the agent runs — ` +
           `make sure the channel is funded with at least min_deposit before opening a session.`,
       )
     }

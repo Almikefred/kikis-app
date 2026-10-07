@@ -1,4 +1,4 @@
-// Shared Framer Motion config — Section 3.5 of ROUTEDOCK_MASTER.md
+// Shared Framer Motion config — Section 3.5 of KIKIS_APP_MASTER.md
 
 export const fadeInUp = {
   initial: { opacity: 0, y: 24 },

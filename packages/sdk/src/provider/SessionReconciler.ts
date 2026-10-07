@@ -13,7 +13,7 @@ import { Keypair } from '@stellar/stellar-sdk'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { usdcToStroops } from '../internal/usdc.js'
 import { channelAuthorizer, formatMppError } from './mppCompatibility.js'
-import { resolveLogger, type RouteDockLogger } from '../internal/logger.js'
+import { resolveLogger, type KikisAppLogger } from '../internal/logger.js'
 
 type Network = 'testnet' | 'mainnet'
 
@@ -168,7 +168,7 @@ export async function reconcileAbandonedSessions(
  */
 export async function runStartupReconciliation(
   opts: SessionReconcilerOptions,
-  logger?: RouteDockLogger,
+  logger?: KikisAppLogger,
 ): Promise<void> {
   const log = resolveLogger(logger)
 

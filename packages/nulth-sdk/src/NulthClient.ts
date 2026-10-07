@@ -60,7 +60,7 @@ export class NulthClient {
 
   /**
    * Build a ZK proof that the payment satisfies off-chain policy.
-   * Called by RouteDock before attaching the auth signature to the tx.
+   * Called by KikisApp before attaching the auth signature to the tx.
    */
   buildPaymentAuthProof(context: PaymentAuthContext): NulthProof {
     this.enforcePolicy(context)

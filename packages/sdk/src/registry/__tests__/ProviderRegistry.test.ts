@@ -9,14 +9,14 @@ import { createServer } from 'node:http'
 import { Keypair } from '@stellar/stellar-sdk'
 import { ProviderRegistry, deriveNetwork, type ProviderRecord } from '../ProviderRegistry.js'
 import { signManifest } from '../../manifest/sign.js'
-import { RouteDockSignatureError } from '../../errors.js'
-import type { RouteDockManifest } from '../../types.js'
+import { KikisAppSignatureError } from '../../errors.js'
+import type { KikisAppManifest } from '../../types.js'
 
 const payeeKeypair = Keypair.random()
 const attackerKeypair = Keypair.random()
 
-const validManifest: RouteDockManifest = {
-  routedock: '1.0',
+const validManifest: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Test Provider',
   description: 'Unit test provider',
   modes: ['x402'],
@@ -85,7 +85,7 @@ describe('ProviderRegistry.fetchProviderManifest', () => {
     assert.equal(manifest.payee, payeeKeypair.publicKey())
   })
 
-  it('throws RouteDockSignatureError when the record payee differs from the manifest payee', async () => {
+  it('throws KikisAppSignatureError when the record payee differs from the manifest payee', async () => {
     const registry = new ProviderRegistry({
       onChain: { horizonUrl: 'https://horizon-testnet.stellar.org', knownAccounts: [] },
     })
@@ -95,7 +95,7 @@ describe('ProviderRegistry.fetchProviderManifest', () => {
     await assert.rejects(
       () => registry.fetchProviderManifest(record),
       (err: unknown) =>
-        err instanceof RouteDockSignatureError &&
+        err instanceof KikisAppSignatureError &&
         err.message.includes('does not match expected payee'),
     )
   })

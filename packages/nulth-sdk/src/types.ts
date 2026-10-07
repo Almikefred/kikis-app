@@ -21,7 +21,7 @@ export interface NulthPolicyState {
 
 /** Inputs for building a payment authorization proof */
 export interface PaymentAuthContext {
-  /** Base64 Soroban auth entry preimage from x402 / RouteDock */
+  /** Base64 Soroban auth entry preimage from x402 / KikisApp */
   authEntry: string
   /** Destination payee address (G... or C...) */
   payee: string

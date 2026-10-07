@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { Hono } from 'hono'
 import { Keypair } from '@stellar/stellar-sdk'
-import { routedockHono, type RouteDockHonoOptions } from '../hono.js'
-import type { RouteDockManifest } from '../../types.js'
+import { kikisAppHono, type KikisAppHonoOptions } from '../hono.js'
+import type { KikisAppManifest } from '../../types.js'
 import { InMemorySeenTxStore, paymentIdempotencyKey } from '../SeenTxStore.js'
 import { usdcToStroops } from '../../internal/usdc.js'
 
@@ -14,8 +14,8 @@ const commitKeypair = Keypair.random()
 const ASSET_CONTRACT = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA'
 const CHANNEL_CONTRACT = 'CCK4XOW3YKQUEZFONUTINKMSNW7SNMRQZURME5U3UP7E6WNGK7UHUCAH'
 
-const manifest: RouteDockManifest = {
-  routedock: '1.0',
+const manifest: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Test Service',
   description: 'Unit test provider',
   modes: ['x402', 'mpp-charge', 'mpp-session'],
@@ -48,11 +48,11 @@ const BASE_OPTS = {
   manifest,
 }
 
-function makeApp(overrides: Partial<RouteDockHonoOptions> = {}) {
+function makeApp(overrides: Partial<KikisAppHonoOptions> = {}) {
   const app = new Hono()
   app.use(
     '*',
-    routedockHono({
+    kikisAppHono({
       ...BASE_OPTS,
       modes: ['x402', 'mpp-charge', 'mpp-session'],
       pricing: {
@@ -67,10 +67,10 @@ function makeApp(overrides: Partial<RouteDockHonoOptions> = {}) {
   return app
 }
 
-describe('routedockHono — manifest endpoint', () => {
-  it('serves /.well-known/routedock.json', async () => {
+describe('kikisAppHono — manifest endpoint', () => {
+  it('serves /.well-known/kikis-app.json', async () => {
     const app = makeApp({ modes: [] as ('x402' | 'mpp-charge' | 'mpp-session')[], pricing: {} })
-    const res = await app.request('/.well-known/routedock.json')
+    const res = await app.request('/.well-known/kikis-app.json')
     assert.equal(res.status, 200)
     const body = await res.json() as { name: string }
     assert.equal(body.name, manifest.name)
@@ -83,7 +83,7 @@ describe('routedockHono — manifest endpoint', () => {
   })
 })
 
-describe('routedockHono — x402 flow', () => {
+describe('kikisAppHono — x402 flow', () => {
   it('returns 402 with X-Payment-Requirements when no payment header', async () => {
     const app = makeApp({
       modes: ['x402'],
@@ -112,7 +112,7 @@ describe('routedockHono — x402 flow', () => {
   })
 })
 
-describe('routedockHono — mpp-charge flow', () => {
+describe('kikisAppHono — mpp-charge flow', () => {
   it('returns 402 challenge when no authorization header', async () => {
     const app = makeApp({
       modes: ['mpp-charge'],
@@ -123,7 +123,7 @@ describe('routedockHono — mpp-charge flow', () => {
   })
 })
 
-describe('routedockHono — mpp-session flow', () => {
+describe('kikisAppHono — mpp-session flow', () => {
   it('returns 402 challenge when no authorization header', async () => {
     const app = makeApp({
       modes: ['mpp-session'],
@@ -149,7 +149,7 @@ describe('routedockHono — mpp-session flow', () => {
   })
 })
 
-describe('routedockHono — mpp-session-ws flow', () => {
+describe('kikisAppHono — mpp-session-ws flow', () => {
   it('returns 402 challenge when no authorization header', async () => {
     const app = makeApp({
       modes: ['mpp-session-ws'],
@@ -175,12 +175,12 @@ describe('routedockHono — mpp-session-ws flow', () => {
   })
 })
 
-describe('routedockHono — constructor validation', () => {
+describe('kikisAppHono — constructor validation', () => {
   it('throws when mpp-session mode is enabled without commitmentPublicKey', () => {
     const { commitmentPublicKey: _ignored, ...withoutCommitment } = BASE_OPTS
     assert.throws(
       () =>
-        routedockHono({
+        kikisAppHono({
           ...withoutCommitment,
           modes: ['mpp-session'],
           pricing: {
@@ -192,7 +192,7 @@ describe('routedockHono — constructor validation', () => {
   })
 })
 
-describe('routedockHono — settlement idempotency', () => {
+describe('kikisAppHono — settlement idempotency', () => {
   const X402_AMOUNT = String(usdcToStroops('0.001'))
 
   it('replays cached settlement on duplicate payment-signature header', async () => {
@@ -240,7 +240,7 @@ describe('routedockHono — settlement idempotency', () => {
     const app = new Hono()
     app.use(
       '*',
-      routedockHono({
+      kikisAppHono({
         ...BASE_OPTS,
         modes: ['x402'],
         pricing: { x402: '0.001' },
@@ -297,11 +297,11 @@ describe('routedockHono — settlement idempotency', () => {
     const app = new Hono()
     app.use(
       '/cheap',
-      routedockHono({ ...BASE_OPTS, modes: ['x402'], pricing: { x402: '0.001' }, seenTxStore: seenStore }),
+      kikisAppHono({ ...BASE_OPTS, modes: ['x402'], pricing: { x402: '0.001' }, seenTxStore: seenStore }),
     )
     app.use(
       '/expensive',
-      routedockHono({ ...BASE_OPTS, modes: ['x402'], pricing: { x402: '5.00' }, seenTxStore: seenStore }),
+      kikisAppHono({ ...BASE_OPTS, modes: ['x402'], pricing: { x402: '5.00' }, seenTxStore: seenStore }),
     )
     app.get('/cheap', (c) => {
       cheapRuns++

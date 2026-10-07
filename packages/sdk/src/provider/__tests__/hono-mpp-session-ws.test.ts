@@ -12,7 +12,7 @@ import { mock, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { Hono } from 'hono'
 import { Keypair } from '@stellar/stellar-sdk'
-import type { RouteDockManifest } from '../../types.js'
+import type { KikisAppManifest } from '../../types.js'
 
 const payeeKeypair = Keypair.random()
 const commitKeypair = Keypair.random()
@@ -94,10 +94,10 @@ mock.module('mppx/server', {
   },
 })
 
-const { routedockHono, MPP_SESSION_WS_VERIFIED, mppSessionWsVerified } = await import('../hono.js')
+const { kikisAppHono, MPP_SESSION_WS_VERIFIED, mppSessionWsVerified } = await import('../hono.js')
 
-const manifest: RouteDockManifest = {
-  routedock: '1.0',
+const manifest: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Test WS Service',
   description: 'Unit test provider',
   modes: ['mpp-session-ws'],
@@ -122,7 +122,7 @@ function makeApp() {
   const app = new Hono()
   app.use(
     '*',
-    routedockHono({
+    kikisAppHono({
       asset: 'USDC',
       assetContract: ASSET_CONTRACT,
       payee: payeeKeypair.publicKey(),
@@ -149,7 +149,7 @@ function makeApp() {
   return app
 }
 
-describe('routedockHono — mpp-session-ws', () => {
+describe('kikisAppHono — mpp-session-ws', () => {
   it('returns a 402 challenge for an unauthenticated request', async () => {
     const app = makeApp()
     const res = await app.request('/stream/orderbook', { method: 'GET' })
@@ -214,7 +214,7 @@ describe('routedockHono — mpp-session-ws', () => {
   it('throws when mpp-session-ws is enabled without commitmentPublicKey', () => {
     assert.throws(
       () =>
-        routedockHono({
+        kikisAppHono({
           asset: 'USDC',
           assetContract: ASSET_CONTRACT,
           payee: payeeKeypair.publicKey(),
@@ -234,6 +234,6 @@ describe('mppSessionWsVerified helper', () => {
     assert.equal(mppSessionWsVerified({ get: () => true }), true)
     assert.equal(mppSessionWsVerified({ get: () => false }), false)
     assert.equal(mppSessionWsVerified({ get: () => 'yes' }), false)
-    assert.equal(MPP_SESSION_WS_VERIFIED, 'routedock.mppSessionWs.verified')
+    assert.equal(MPP_SESSION_WS_VERIFIED, 'kikis-app.mppSessionWs.verified')
   })
 })

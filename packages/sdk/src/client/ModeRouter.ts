@@ -1,20 +1,20 @@
 import { Validator, type Schema } from '@cfworker/json-schema'
-import type { RouteDockManifest, PaymentMode } from '../types.js'
+import type { KikisAppManifest, PaymentMode } from '../types.js'
 import {
-  RouteDockError,
-  RouteDockManifestError,
-  RouteDockManifestTimeoutError,
-  RouteDockManifestSunsetError,
-  RouteDockNoSupportedModeError,
-  RouteDockPolicyRejectError,
-  RouteDockClientVersionError,
+  KikisAppError,
+  KikisAppManifestError,
+  KikisAppManifestTimeoutError,
+  KikisAppManifestSunsetError,
+  KikisAppNoSupportedModeError,
+  KikisAppPolicyRejectError,
+  KikisAppClientVersionError,
   httpStatusToError,
   wrapFetchError,
 } from '../errors.js'
 import { withRetry, type RetryPolicy } from '../internal/retry.js'
 import { usdcToStroops } from '../internal/usdc.js'
-import { noopLogger, type RouteDockLogger } from '../internal/logger.js'
-import schema from '../schemas/routedock.schema.json' assert { type: 'json' }
+import { noopLogger, type KikisAppLogger } from '../internal/logger.js'
+import schema from '../schemas/kikis-app.schema.json' assert { type: 'json' }
 import pkg from '../../package.json' assert { type: 'json' }
 import { verifyManifestSignature } from '../manifest/sign.js'
 
@@ -33,28 +33,28 @@ function isVersionBelow(a: string, b: string): boolean {
   return aMajor < bMajor || (aMajor === bMajor && aMinor < bMinor)
 }
 
-function assertClientVersionSupported(manifest: RouteDockManifest, baseUrl: string): void {
+function assertClientVersionSupported(manifest: KikisAppManifest, baseUrl: string): void {
   const minVersion = manifest.min_client_version
   if (minVersion && isVersionBelow(SDK_VERSION, minVersion)) {
-    throw new RouteDockClientVersionError(
+    throw new KikisAppClientVersionError(
       `SDK version ${SDK_VERSION} is below the minimum required version ${minVersion} for provider at ${baseUrl}. Please upgrade the SDK.`,
     )
   }
 }
 
-function assertManifestActive(manifest: RouteDockManifest, baseUrl: string): void {
+function assertManifestActive(manifest: KikisAppManifest, baseUrl: string): void {
   const sunsetAt = manifest.sunset_at
   if (!sunsetAt) return
 
   const sunsetTime = Date.parse(sunsetAt)
   if (!Number.isFinite(sunsetTime)) {
-    throw new RouteDockManifestError(
+    throw new KikisAppManifestError(
       `Manifest at ${baseUrl} contains an invalid sunset_at timestamp: ${sunsetAt}`,
     )
   }
 
   if (sunsetTime <= Date.now()) {
-    throw new RouteDockManifestSunsetError(
+    throw new KikisAppManifestSunsetError(
       `Manifest for provider at ${baseUrl} sunset at ${sunsetAt} and can no longer be used`,
     )
   }
@@ -69,9 +69,9 @@ function assertManifestActive(manifest: RouteDockManifest, baseUrl: string): voi
  * `URL.pathname` is compared.
  */
 export function assertEndpointActive(
-  manifest: RouteDockManifest,
+  manifest: KikisAppManifest,
   url: string,
-  logger?: RouteDockLogger,
+  logger?: KikisAppLogger,
 ): void {
   const pathname = new URL(url).pathname
   const matches = Object.entries(manifest.endpoints).filter(
@@ -86,7 +86,7 @@ export function assertEndpointActive(
   })
   if (allSunset) {
     const [key, descriptor] = matches[0]!
-    throw new RouteDockManifestSunsetError(
+    throw new KikisAppManifestSunsetError(
       `Endpoint '${key}' (${pathname}) sunset at ${descriptor.sunset_at} and can no longer be used`,
     )
   }
@@ -97,7 +97,7 @@ export function assertEndpointActive(
     const sunsetSuffix = descriptor.sunset_at ? `; sunset_at ${descriptor.sunset_at}` : ''
     logger(
       'warn',
-      `[RouteDock] WARNING: ${manifest.name} → ${pathname}; endpoint '${key}' is deprecated${sunsetSuffix}`,
+      `[KikisApp] WARNING: ${manifest.name} → ${pathname}; endpoint '${key}' is deprecated${sunsetSuffix}`,
     )
   }
 }
@@ -109,18 +109,18 @@ export function assertEndpointActive(
  * - If `assets` is defined, it must be a non-empty array whose first entry
  *   (`assets[0]`) matches the root-level `asset` and `asset_contract`.
  */
-export function assertManifestValid(manifest: RouteDockManifest, baseUrl?: string): void {
+export function assertManifestValid(manifest: KikisAppManifest, baseUrl?: string): void {
   const context = baseUrl ? ` at ${baseUrl}` : ''
   if (manifest.latency_hints !== undefined) {
     if (!Array.isArray(manifest.regions) || manifest.regions.length === 0) {
-      throw new RouteDockManifestError(
+      throw new KikisAppManifestError(
         `Invalid manifest${context}: latency_hints defined without declaring regions`,
       )
     }
     const regionSet = new Set(manifest.regions)
     for (const region of Object.keys(manifest.latency_hints)) {
       if (!regionSet.has(region)) {
-        throw new RouteDockManifestError(
+        throw new KikisAppManifestError(
           `Invalid manifest${context}: latency_hints key '${region}' is not declared in regions (${manifest.regions.join(', ')})`,
         )
       }
@@ -129,21 +129,21 @@ export function assertManifestValid(manifest: RouteDockManifest, baseUrl?: strin
 
   if (manifest.assets !== undefined) {
     if (!Array.isArray(manifest.assets) || manifest.assets.length === 0) {
-      throw new RouteDockManifestError(
+      throw new KikisAppManifestError(
         `Invalid manifest${context}: assets must be a non-empty array when defined`,
       )
     }
     for (let i = 0; i < manifest.assets.length; i++) {
       const a = manifest.assets[i]
       if (!a || typeof a.asset !== 'string' || typeof a.asset_contract !== 'string') {
-        throw new RouteDockManifestError(
+        throw new KikisAppManifestError(
           `Invalid manifest${context}: assets[${i}] must define asset and asset_contract strings`,
         )
       }
     }
     const first = manifest.assets[0]!
     if (first.asset !== manifest.asset || first.asset_contract !== manifest.asset_contract) {
-      throw new RouteDockManifestError(
+      throw new KikisAppManifestError(
         `Invalid manifest${context}: assets[0] (${first.asset}:${first.asset_contract}) must match root asset fields (${manifest.asset}:${manifest.asset_contract})`,
       )
     }
@@ -151,7 +151,7 @@ export function assertManifestValid(manifest: RouteDockManifest, baseUrl?: strin
 }
 
 interface CacheEntry {
-  manifest: RouteDockManifest
+  manifest: KikisAppManifest
   fetchedAt: number
   expiresAt: number
 }
@@ -208,11 +208,11 @@ const manifestCache = new LruCache<string, CacheEntry>(DEFAULT_MANIFEST_CACHE_MA
 
 /**
  * Override the manifest cache's max size (default 512). Affects the shared,
- * process-wide cache used by all RouteDockClient instances.
+ * process-wide cache used by all KikisAppClient instances.
  */
 export function configureManifestCache(maxSize: number): void {
   if (!Number.isInteger(maxSize) || maxSize <= 0) {
-    throw new RouteDockManifestError('Invalid manifest cache size: ' + maxSize)
+    throw new KikisAppManifestError('Invalid manifest cache size: ' + maxSize)
   }
   manifestCache.setMaxSize(maxSize)
 }
@@ -225,7 +225,7 @@ export function configureManifestCache(maxSize: number): void {
  * keep routing on a stale cached copy for the remainder of the TTL.
  *
  * The cache is keyed by base URL as passed to `fetchManifest` — callers that
- * pass a full URL (e.g. `RouteDockClient.invalidateManifest`) must normalize
+ * pass a full URL (e.g. `KikisAppClient.invalidateManifest`) must normalize
  * to the origin before calling this.
  */
 export function invalidateManifest(baseUrl: string): void {
@@ -264,7 +264,7 @@ function ttlFromHeaders(headers: Headers, now: number): number {
   return CACHE_TTL_MS
 }
 
-export type { RouteDockLogger, RouteDockLogLevel, RouteDockLogFields } from '../internal/logger.js'
+export type { KikisAppLogger, KikisAppLogLevel, KikisAppLogFields } from '../internal/logger.js'
 
 export interface ModeSelectOptions {
   /** Force mpp-session if the provider supports it */
@@ -284,19 +284,19 @@ export interface ModeSelectOptions {
   budget_per_request?: string
   /**
    * Override mode selection and use this specific mode.
-   * Throws RouteDockNoSupportedModeError if the provider does not support it.
+   * Throws KikisAppNoSupportedModeError if the provider does not support it.
    */
   forceMode?: PaymentMode
   /** Structured logger for mode selection events. Defaults to no-op. */
-  logger?: RouteDockLogger
+  logger?: KikisAppLogger
 }
 
 /**
- * Fetch, validate, and cache a RouteDock manifest from `baseUrl`.
+ * Fetch, validate, and cache a KikisApp manifest from `baseUrl`.
  *
  * `expectedPayee`, when provided, is the out-of-band trust anchor for the
  * manifest (e.g. the account this provider registered on-chain): the fetched
- * manifest's `payee` must equal it or `RouteDockSignatureError` is thrown.
+ * manifest's `payee` must equal it or `KikisAppSignatureError` is thrown.
  * Callers that obtained a payee from a registry/pinned allowlist MUST pass it;
  * without it the self-signed signature alone proves nothing about who served
  * the manifest.
@@ -306,7 +306,7 @@ export async function fetchManifest(
   retryPolicy?: RetryPolicy,
   manifestTimeoutMs = DEFAULT_MANIFEST_TIMEOUT_MS,
   expectedPayee?: string,
-): Promise<RouteDockManifest> {
+): Promise<KikisAppManifest> {
   const cached = manifestCache.get(baseUrl)
   if (cached && Date.now() < cached.expiresAt) {
     // Re-assert the trust anchor even on cache hits: the manifest content is
@@ -319,7 +319,7 @@ export async function fetchManifest(
     return cached.manifest
   }
 
-  const url = baseUrl.replace(/\/$/, '') + '/.well-known/routedock.json'
+  const url = baseUrl.replace(/\/$/, '') + '/.well-known/kikis-app.json'
 
   return withRetry(async () => {
     let raw: unknown
@@ -335,18 +335,18 @@ export async function fetchManifest(
             resp,
           )
         }
-        throw new RouteDockManifestError(
+        throw new KikisAppManifestError(
           `Manifest fetch failed: HTTP ${resp.status} from ${url}`,
         )
       }
     } catch (err) {
       if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
-        throw new RouteDockManifestTimeoutError(
+        throw new KikisAppManifestTimeoutError(
           `Manifest fetch timed out after ${manifestTimeoutMs}ms from ${url}`,
           { cause: err },
         )
       }
-      if (err instanceof RouteDockError) throw err
+      if (err instanceof KikisAppError) throw err
       throw wrapFetchError(err, `Manifest fetch error from ${url}`)
     }
 
@@ -356,16 +356,16 @@ export async function fetchManifest(
     try {
       raw = await resp.json()
     } catch (err) {
-      throw new RouteDockManifestError(`Manifest at ${url} is not valid JSON`, { cause: err })
+      throw new KikisAppManifestError(`Manifest at ${url} is not valid JSON`, { cause: err })
     }
 
     const result = validator.validate(raw)
     if (!result.valid) {
       const msgs = result.errors.map(err => err.error).join('; ')
-      throw new RouteDockManifestError(`Invalid manifest at ${url}: ${msgs}`)
+      throw new KikisAppManifestError(`Invalid manifest at ${url}: ${msgs}`)
     }
 
-    const manifest = raw as unknown as RouteDockManifest
+    const manifest = raw as unknown as KikisAppManifest
     assertManifestValid(manifest, baseUrl)
     verifyManifestSignature(manifest, expectedPayee)
     assertClientVersionSupported(manifest, baseUrl)
@@ -382,7 +382,7 @@ interface ModeSelection {
 
 function selectFromModes(
   modes: PaymentMode[],
-  manifest: RouteDockManifest,
+  manifest: KikisAppManifest,
   options: ModeSelectOptions,
 ): ModeSelection | undefined {
   if (options.sustained || options.session) {
@@ -407,7 +407,7 @@ function selectFromModes(
       try {
         budgetStroops = usdcToStroops(options.budget_per_request)
       } catch {
-        throw new RouteDockPolicyRejectError('invalid_budget_per_request')
+        throw new KikisAppPolicyRejectError('invalid_budget_per_request')
       }
     }
 
@@ -440,7 +440,7 @@ function selectFromModes(
       // All candidates exceed the caller's budget ceiling — error instead of
       // silently falling through to an over-budget mode.
       if (budgetStroops !== null) {
-        throw new RouteDockPolicyRejectError('budget_per_request_exceeded')
+        throw new KikisAppPolicyRejectError('budget_per_request_exceeded')
       }
     }
   }
@@ -451,24 +451,24 @@ function selectFromModes(
 }
 
 function logSelection(
-  manifest: RouteDockManifest,
+  manifest: KikisAppManifest,
   selection: ModeSelection,
-  log: RouteDockLogger,
+  log: KikisAppLogger,
   deprecated: boolean,
 ): void {
   const reason = selection.reason ? ` (${selection.reason})` : ''
   if (deprecated) {
     log(
       'warn',
-      `[RouteDock] WARNING: ${manifest.name} → ${selection.mode}${reason}; selected deprecated mode because no active supported mode is available`,
+      `[KikisApp] WARNING: ${manifest.name} → ${selection.mode}${reason}; selected deprecated mode because no active supported mode is available`,
     )
     return
   }
-  log('info', `[RouteDock] ${manifest.name} → ${selection.mode}${reason}`)
+  log('info', `[KikisApp] ${manifest.name} → ${selection.mode}${reason}`)
 }
 
 /**
- * Deterministic mode selection per Section 6.3 of ROUTEDOCK_MASTER.md.
+ * Deterministic mode selection per Section 6.3 of KIKIS_APP_MASTER.md.
  *
  * Active modes are always considered before modes listed in `deprecated_modes`.
  * Deprecated modes remain usable as a compatibility fallback and produce a
@@ -476,7 +476,7 @@ function logSelection(
  * but also warns when the forced mode is deprecated.
  */
 export function selectMode(
-  manifest: RouteDockManifest,
+  manifest: KikisAppManifest,
   options: ModeSelectOptions = {},
 ): PaymentMode {
   const modes = manifest.modes
@@ -485,17 +485,17 @@ export function selectMode(
 
   if (options.forceMode) {
     if (!modes.includes(options.forceMode)) {
-      throw new RouteDockNoSupportedModeError(
+      throw new KikisAppNoSupportedModeError(
         `Provider does not support forced mode: ${options.forceMode} (available: ${modes.join(', ')})`,
       )
     }
     if (deprecatedSet.has(options.forceMode)) {
       log(
         'warn',
-        `[RouteDock] WARNING: ${manifest.name} → ${options.forceMode} (forced); selected mode is deprecated`,
+        `[KikisApp] WARNING: ${manifest.name} → ${options.forceMode} (forced); selected mode is deprecated`,
       )
     } else {
-      log('info', `[RouteDock] ${manifest.name} → ${options.forceMode} (forced)`)
+      log('info', `[KikisApp] ${manifest.name} → ${options.forceMode} (forced)`)
     }
     return options.forceMode
   }
@@ -515,7 +515,7 @@ export function selectMode(
     return deprecatedSelection.mode
   }
 
-  throw new RouteDockNoSupportedModeError(
+  throw new KikisAppNoSupportedModeError(
     `No supported payment mode found in manifest (modes: ${modes.join(', ')})`,
   )
 }
@@ -527,9 +527,9 @@ export function selectMode(
  * Manifests not advertising the target region come last.
  */
 export function rankProvidersByLatency(
-  manifests: RouteDockManifest[],
+  manifests: KikisAppManifest[],
   targetRegion: string,
-): RouteDockManifest[] {
+): KikisAppManifest[] {
   return [...manifests].sort((a, b) => {
     const latA = a.latency_hints?.[targetRegion]
     const latB = b.latency_hints?.[targetRegion]

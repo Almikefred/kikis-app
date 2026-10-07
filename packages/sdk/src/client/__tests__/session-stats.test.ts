@@ -9,14 +9,14 @@
  * and the channel client's onProgress 'signed' event is scripted — that event
  * is what feeds the closure's currentCumulative in the real flow.
  *
- * Run with: pnpm --filter @routedock/routedock test
+ * Run with: pnpm --filter @kikis-app/kikis-app test
  */
 
 import assert from 'node:assert/strict'
 import { describe, it, mock } from 'node:test'
 import { Keypair } from '@stellar/stellar-sdk'
-import type { RouteDockManifest } from '../../types.js'
-import { RouteDockChannelStateError, RouteDockSignatureError } from '../../errors.js'
+import type { KikisAppManifest } from '../../types.js'
+import { KikisAppChannelStateError, KikisAppSignatureError } from '../../errors.js'
 
 const CHANNEL_CONTRACT = 'CCK4XOW3YKQUEZFONUTINKMSNW7SNMRQZURME5U3UP7E6WNGK7UHUCAH'
 const ASSET_CONTRACT = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA'
@@ -83,9 +83,9 @@ const { MppSessionClient } = await import('../MppSessionClient.js')
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-function buildManifest(): RouteDockManifest {
+function buildManifest(): KikisAppManifest {
   return {
-    routedock: '1.0',
+    kikis-app: '1.0',
     name: 'Stats Test Provider',
     description: 'Provider exercised by session stats unit tests',
     modes: ['mpp-session'],
@@ -201,7 +201,7 @@ describe('SessionHandle.stats()', () => {
     assert.equal(stats.currentCumulative, '0.0003000')
   })
 
-  it('throws RouteDockChannelStateError when voucher response is not valid JSON', async () => {
+  it('throws KikisAppChannelStateError when voucher response is not valid JSON', async () => {
     scriptedCumulatives = ['1000']
     scriptedFetchRejects = false
     scriptedFetchNonJson = true
@@ -211,7 +211,7 @@ describe('SessionHandle.stats()', () => {
       await assert.rejects(
         () => iter.next(),
         (err: unknown) => {
-          assert.ok(err instanceof RouteDockChannelStateError)
+          assert.ok(err instanceof KikisAppChannelStateError)
           assert.match(err.message, /Voucher response was not valid JSON \(HTTP 200\)/)
           assert.ok(err.cause instanceof SyntaxError)
           return true
@@ -236,7 +236,7 @@ describe('SessionHandle.stats()', () => {
       await assert.rejects(
         () => iter.next(),
         (err: unknown) => {
-          assert.ok(err instanceof RouteDockSignatureError)
+          assert.ok(err instanceof KikisAppSignatureError)
           assert.equal(err.retryable, false)
           assert.equal(err.code, 'SIGNATURE')
           assert.equal(err.cause, signingErr)

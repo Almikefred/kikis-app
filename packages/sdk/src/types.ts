@@ -1,8 +1,8 @@
 /**
- * TypeScript types for the RouteDock manifest format.
- * Derived from packages/sdk/src/schemas/routedock.schema.json (draft-07).
+ * TypeScript types for the KikisApp manifest format.
+ * Derived from packages/sdk/src/schemas/kikis-app.schema.json (draft-07).
  *
- * Section 5 of ROUTEDOCK_MASTER.md is the canonical specification.
+ * Section 5 of KIKIS_APP_MASTER.md is the canonical specification.
  */
 import type { Store } from 'mppx'
 
@@ -21,7 +21,7 @@ export interface AssetConfig {
 }
 
 /**
- * Agent custody mode — declared in routedock.json when provider accepts ZK vault payers.
+ * Agent custody mode — declared in kikis-app.json when provider accepts ZK vault payers.
  * `nulth` = Nulth proof-authorized account (the ZK-account primitive; formerly "covenant-zk").
  */
 export type VaultMode = 'local-key' | 'agent-vault' | 'nulth'
@@ -76,13 +76,13 @@ export interface EndpointDescriptor {
   path: string
   /**
    * Whether this endpoint is retained only for backwards compatibility.
-   * The SDK logs a `[RouteDock] WARNING:` line before paying a deprecated
+   * The SDK logs a `[KikisApp] WARNING:` line before paying a deprecated
    * endpoint.
    */
   deprecated?: boolean
   /**
    * ISO 8601 timestamp after which callers should stop using this endpoint.
-   * The SDK refuses to pay (`RouteDockManifestSunsetError`) once it has passed.
+   * The SDK refuses to pay (`KikisAppManifestSunsetError`) once it has passed.
    */
   sunset_at?: string
   headers?: Record<string, string>
@@ -94,10 +94,10 @@ export interface EndpointDescriptor {
   }
 }
 
-/** Full RouteDock discovery manifest — served at /.well-known/routedock.json */
-export interface RouteDockManifest {
+/** Full KikisApp discovery manifest — served at /.well-known/kikis-app.json */
+export interface KikisAppManifest {
   /** Manifest schema version (major.minor), e.g. "1.0", "1.1", "2.0" */
-  routedock: string
+  kikis-app: string
   /**
    * Minimum SDK client version (major.minor) required to use this manifest.
    * Clients below this version must refuse to pay.
@@ -230,7 +230,7 @@ export interface PreflightResult {
   /** Provider-declared p50 latency in milliseconds per region code */
   latency_hints?: Record<string, number>
   /** Optional protocol features supported by this provider */
-  capabilities?: RouteDockManifest['capabilities']
+  capabilities?: KikisAppManifest['capabilities']
 }
 
 /** Result returned by client.estimateCost() — the expected charge without submitting any transaction */
@@ -242,13 +242,13 @@ export interface EstimateCostResult {
   /** Payment mode that would be used */
   mode: PaymentMode
   /** Full manifest — available for approval-gate / budget-routing decisions */
-  manifest: RouteDockManifest
+  manifest: KikisAppManifest
   /** Regions where this provider has infrastructure */
   regions?: string[]
   /** Provider-declared p50 latency in milliseconds per region code */
   latency_hints?: Record<string, number>
   /** Optional protocol features supported by this provider */
-  capabilities?: RouteDockManifest['capabilities']
+  capabilities?: KikisAppManifest['capabilities']
 }
 
 /** Result returned by session.close() */
@@ -392,7 +392,7 @@ export interface SessionHandle {
    *
    * Once close() has been called (manually or by the maxDurationMs lifetime
    * guard), the next next() on an mpp-session iterator rejects with a
-   * RouteDockChannelStateError whose message is "session closed" instead of
+   * KikisAppChannelStateError whose message is "session closed" instead of
    * signing another voucher. Pipelined streams (concurrency > 1) stop refilling
    * their in-flight window the same way.
    * UNAUDITED: uses stellar-experimental/one-way-channel contract.
@@ -446,21 +446,21 @@ export interface SessionState {
 
 // Error types live in ./errors.js — re-exported from package entry points.
 export {
-  RouteDockError,
-  RouteDockManifestError,
-  RouteDockTrustlineError,
-  RouteDockNoSupportedModeError,
-  RouteDockClientVersionError,
-  RouteDockFacilitatorError,
-  RouteDockNetworkError,
-  RouteDockSignatureError,
-  RouteDockVoucherMonotonicityError,
-  RouteDockPolicyRejectError,
-  RouteDockChannelStateError,
-  RouteDockDisputeError,
-  RouteDockRefundWindowError,
-  RouteDockPolicyRejectedError,
-  RouteDockSessionError,
+  KikisAppError,
+  KikisAppManifestError,
+  KikisAppTrustlineError,
+  KikisAppNoSupportedModeError,
+  KikisAppClientVersionError,
+  KikisAppFacilitatorError,
+  KikisAppNetworkError,
+  KikisAppSignatureError,
+  KikisAppVoucherMonotonicityError,
+  KikisAppPolicyRejectError,
+  KikisAppChannelStateError,
+  KikisAppDisputeError,
+  KikisAppRefundWindowError,
+  KikisAppPolicyRejectedError,
+  KikisAppSessionError,
 } from './errors.js'
 
 /** Dispute status of a channel */

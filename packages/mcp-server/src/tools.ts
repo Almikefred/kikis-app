@@ -19,14 +19,14 @@ export const TOOLS: Tool[] = [
   {
     name: 'pay_for_data',
     description:
-      "Pay for a single data request from a RouteDock provider. Automatically selects the best payment mode (x402, mpp-charge, mpp-session, or mpp-session-ws) based on the provider's manifest. Use mpp-session-ws for WebSocket-transport streaming providers (e.g. provider-b).",
+      "Pay for a single data request from a KikisApp provider. Automatically selects the best payment mode (x402, mpp-charge, mpp-session, or mpp-session-ws) based on the provider's manifest. Use mpp-session-ws for WebSocket-transport streaming providers (e.g. provider-b).",
     inputSchema: {
       type: 'object',
       properties: {
         url: {
           type: 'string',
           description:
-            'The full URL of the provider endpoint to pay for (e.g., https://api-a.routedock.xyz/price)',
+            'The full URL of the provider endpoint to pay for (e.g., https://api-a.kikis-app.xyz/price)',
         },
         max_amount: {
           type: 'string',
@@ -51,12 +51,12 @@ export const TOOLS: Tool[] = [
       properties: {
         url: {
           type: 'string',
-          description: 'The base URL of the provider (e.g., https://api-b.routedock.xyz)',
+          description: 'The base URL of the provider (e.g., https://api-b.kikis-app.xyz)',
         },
         initial_deposit: {
           type: 'string',
           description:
-            "Amount in USDC you intend the channel to be funded with (e.g., \"1.0\"). RouteDock channels are pre-deployed and funded out-of-band before the agent runs — this is checked against the provider's advertised min_deposit as a safety guard, it does not itself move funds.",
+            "Amount in USDC you intend the channel to be funded with (e.g., \"1.0\"). KikisApp channels are pre-deployed and funded out-of-band before the agent runs — this is checked against the provider's advertised min_deposit as a safety guard, it does not itself move funds.",
         },
       },
       required: ['url'],
@@ -120,7 +120,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'list_providers',
     description:
-      'List available RouteDock providers from the registry. Can filter by capability tags (returns providers matching any of the given tags) and by network.',
+      'List available KikisApp providers from the registry. Can filter by capability tags (returns providers matching any of the given tags) and by network.',
     inputSchema: {
       type: 'object',
       properties: {

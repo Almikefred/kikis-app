@@ -15,8 +15,8 @@ import { createServer } from 'node:http'
 import express from 'express'
 import type { Request, Response } from 'express'
 import { Keypair } from '@stellar/stellar-sdk'
-import type { RouteDockManifest } from '../../types.js'
-import type { RouteDockMiddlewareOptions } from '../routedockMiddleware.js'
+import type { KikisAppManifest } from '../../types.js'
+import type { KikisAppMiddlewareOptions } from '../kikisAppMiddleware.js'
 
 const payeeKeypair = Keypair.random()
 const commitKeypair = Keypair.random()
@@ -78,10 +78,10 @@ mock.module('@x402/core/http', {
   },
 })
 
-const { routedock } = await import('../routedockMiddleware.js')
+const { kikis-app } = await import('../kikisAppMiddleware.js')
 
-const manifest: RouteDockManifest = {
-  routedock: '1.0',
+const manifest: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Settle Failure Test',
   description: 'Unit test provider',
   modes: ['x402'],
@@ -115,7 +115,7 @@ interface Harness {
 }
 
 async function makeHarness(
-  overrides: Partial<RouteDockMiddlewareOptions> = {},
+  overrides: Partial<KikisAppMiddlewareOptions> = {},
 ): Promise<Harness> {
   const seenSet: string[] = []
   const settled: string[][] = []
@@ -123,7 +123,7 @@ async function makeHarness(
 
   const app = express()
   app.use(
-    routedock({
+    kikis-app({
       ...BASE_OPTS,
       seenTxStore: {
         get: () => undefined,
@@ -135,7 +135,7 @@ async function makeHarness(
         settled.push([txHash, amount, mode, String(payer)])
       },
       ...overrides,
-    } as RouteDockMiddlewareOptions),
+    } as KikisAppMiddlewareOptions),
   )
   app.get('/price', (_req: Request, res: Response) => {
     downstream.called = true
@@ -170,7 +170,7 @@ beforeEach(() => {
   }
 })
 
-describe('routedock Express x402 — settle returns success: false (local facilitator)', () => {
+describe('kikis-app Express x402 — settle returns success: false (local facilitator)', () => {
   it('returns 402 with requirements and does not serve the resource', async () => {
     const h = await makeHarness()
     try {
@@ -230,7 +230,7 @@ describe('routedock Express x402 — settle returns success: false (local facili
   })
 })
 
-describe('routedock Express x402 — settle returns success: false (OZ facilitator)', () => {
+describe('kikis-app Express x402 — settle returns success: false (OZ facilitator)', () => {
   it('returns 402 and does not serve the resource', async () => {
     const h = await makeHarness({ network: 'mainnet', facilitatorApiKey: 'test-key' })
     try {

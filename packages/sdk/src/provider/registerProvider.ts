@@ -1,11 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { RouteDockManifest } from '../types.js'
+import type { KikisAppManifest } from '../types.js'
 import { verifyManifestSignature } from '../manifest/sign.js'
-import { RouteDockManifestError } from '../errors.js'
+import { KikisAppManifestError } from '../errors.js'
 
 export interface RegisterProviderOptions {
   supabase: SupabaseClient
-  manifest: RouteDockManifest & { signature?: string; signature_version?: string }
+  manifest: KikisAppManifest & { signature?: string; signature_version?: string }
   baseUrl: string
   /**
    * Whether to flag the provider record as verified in Supabase.
@@ -20,17 +20,17 @@ export interface RegisterProviderOptions {
  * Verifies the manifest's Ed25519 signature before upserting into the
  * database keyed on `base_url`.
  *
- * Throws `RouteDockSignatureError` if the manifest is unsigned or invalid,
+ * Throws `KikisAppSignatureError` if the manifest is unsigned or invalid,
  * and `Error` if the database upsert fails.
  */
 export async function registerProvider(
   optionsOrSupabase: RegisterProviderOptions | SupabaseClient,
-  manifestArg?: RouteDockManifest & { signature?: string },
+  manifestArg?: KikisAppManifest & { signature?: string },
   baseUrlArg?: string,
   verifiedArg?: boolean,
 ): Promise<void> {
   let supabase: SupabaseClient
-  let manifest: RouteDockManifest & { signature?: string }
+  let manifest: KikisAppManifest & { signature?: string }
   let baseUrl: string
   let verified: boolean
 
@@ -42,7 +42,7 @@ export async function registerProvider(
   } else {
     supabase = optionsOrSupabase
     if (!manifestArg || !baseUrlArg) {
-      throw new RouteDockManifestError('manifest and baseUrl are required for registerProvider')
+      throw new KikisAppManifestError('manifest and baseUrl are required for registerProvider')
     }
     manifest = manifestArg
     baseUrl = baseUrlArg

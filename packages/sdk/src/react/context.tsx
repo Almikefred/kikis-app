@@ -1,40 +1,40 @@
 import { createContext, useContext, type ReactNode } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { RouteDockClient } from '../client/RouteDockClient.js'
+import type { KikisAppClient } from '../client/KikisAppClient.js'
 
-export interface RouteDockContextValue {
-  client: RouteDockClient
+export interface KikisAppContextValue {
+  client: KikisAppClient
   supabase?: SupabaseClient
 }
 
-const RouteDockContext = createContext<RouteDockContextValue | null>(null)
+const KikisAppContext = createContext<KikisAppContextValue | null>(null)
 
-export interface RouteDockProviderProps extends RouteDockContextValue {
+export interface KikisAppProviderProps extends KikisAppContextValue {
   children: ReactNode
 }
 
 /**
- * Wraps an app with RouteDock client + optional Supabase instance.
+ * Wraps an app with KikisApp client + optional Supabase instance.
  * Child hooks (`usePay`, `useSession`, `useTxLog`) read from this context.
  *
  * @example
- * const client = useRouteDockClient({ wallet: secret, network: 'testnet' })
- * return <RouteDockProvider client={client} supabase={supabase}>{children}</RouteDockProvider>
+ * const client = useKikisAppClient({ wallet: secret, network: 'testnet' })
+ * return <KikisAppProvider client={client} supabase={supabase}>{children}</KikisAppProvider>
  */
-export function RouteDockProvider(props: RouteDockProviderProps) {
+export function KikisAppProvider(props: KikisAppProviderProps) {
   const { children, client, supabase } = props
-  const value: RouteDockContextValue = supabase ? { client, supabase } : { client }
+  const value: KikisAppContextValue = supabase ? { client, supabase } : { client }
   return (
-    <RouteDockContext.Provider value={value}>
+    <KikisAppContext.Provider value={value}>
       {children}
-    </RouteDockContext.Provider>
+    </KikisAppContext.Provider>
   )
 }
 
-export function useRouteDockContext(): RouteDockContextValue {
-  const ctx = useContext(RouteDockContext)
+export function useKikisAppContext(): KikisAppContextValue {
+  const ctx = useContext(KikisAppContext)
   if (!ctx) {
-    throw new Error('useRouteDockContext must be used inside <RouteDockProvider>')
+    throw new Error('useKikisAppContext must be used inside <KikisAppProvider>')
   }
   return ctx
 }

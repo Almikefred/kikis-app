@@ -1,21 +1,21 @@
 /**
  * Tests for per-endpoint deprecation and sunset enforcement.
  *
- * Verifies that RouteDockClient.pay(), estimateCost() and openSession() refuse
+ * Verifies that KikisAppClient.pay(), estimateCost() and openSession() refuse
  * a URL whose matching endpoint descriptor has a past sunset_at, warn before
  * paying a deprecated endpoint, ignore query strings, leave unlisted paths
  * alone, and re-check a cached manifest against the current clock.
  *
- * Run with: pnpm --filter @routedock/routedock test
+ * Run with: pnpm --filter @kikis-app/kikis-app test
  */
 
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import assert from 'node:assert/strict'
 import { Keypair } from '@stellar/stellar-sdk'
-import { RouteDockClient } from '../RouteDockClient.js'
-import { RouteDockManifestSunsetError } from '../../errors.js'
-import type { EndpointDescriptor, PaymentResult, RouteDockManifest } from '../../types.js'
+import { KikisAppClient } from '../KikisAppClient.js'
+import { KikisAppManifestSunsetError } from '../../errors.js'
+import type { EndpointDescriptor, PaymentResult, KikisAppManifest } from '../../types.js'
 import { signManifest } from '../../manifest/sign.js'
 
 function startTestServer(
@@ -40,11 +40,11 @@ const PAYEE_KEYPAIR = Keypair.random()
 
 function endpointManifest(
   endpoints: Record<string, EndpointDescriptor>,
-  overrides: Partial<RouteDockManifest> = {},
-): RouteDockManifest & { signature: string } {
+  overrides: Partial<KikisAppManifest> = {},
+): KikisAppManifest & { signature: string } {
   return signManifest(
     {
-      routedock: '1.0',
+      kikis-app: '1.0',
       name: 'Endpoint Sunset Test Provider',
       description: 'Provider exercised by endpoint sunset tests',
       modes: ['x402', 'mpp-charge'],
@@ -69,7 +69,7 @@ function endpointManifest(
 }
 
 /** Stub the trustline preflight and both sub-client pay() methods (offline). */
-function stubSubClients(client: RouteDockClient): { x402Called: boolean; chargeCalled: boolean } {
+function stubSubClients(client: KikisAppClient): { x402Called: boolean; chargeCalled: boolean } {
   const calls = { x402Called: false, chargeCalled: false }
   const fakeResult: PaymentResult = {
     data: { ok: true },
@@ -99,13 +99,13 @@ function stubSubClients(client: RouteDockClient): { x402Called: boolean; chargeC
   )
 
   try {
-    const client = new RouteDockClient({ wallet: Keypair.random(), network: 'testnet' })
+    const client = new KikisAppClient({ wallet: Keypair.random(), network: 'testnet' })
     const calls = stubSubClients(client)
 
     await assert.rejects(
       () => client.pay(`${server.url}/price`),
       (error: unknown) => {
-        assert.ok(error instanceof RouteDockManifestSunsetError)
+        assert.ok(error instanceof KikisAppManifestSunsetError)
         assert.equal(error.code, 'MANIFEST_SUNSET')
         assert.equal(error.retryable, false)
         return true
@@ -129,11 +129,11 @@ function stubSubClients(client: RouteDockClient): { x402Called: boolean; chargeC
   )
 
   try {
-    const client = new RouteDockClient({ wallet: Keypair.random(), network: 'testnet' })
+    const client = new KikisAppClient({ wallet: Keypair.random(), network: 'testnet' })
 
     await assert.rejects(
       () => client.estimateCost(`${server.url}/price`),
-      (error: unknown) => error instanceof RouteDockManifestSunsetError,
+      (error: unknown) => error instanceof KikisAppManifestSunsetError,
     )
 
     console.log('✓ Test 2: estimateCost() rejects a sunset endpoint')
@@ -166,11 +166,11 @@ function stubSubClients(client: RouteDockClient): { x402Called: boolean; chargeC
 
   try {
     // No commitmentSecret on purpose: the endpoint check must run first.
-    const client = new RouteDockClient({ wallet: Keypair.random(), network: 'testnet' })
+    const client = new KikisAppClient({ wallet: Keypair.random(), network: 'testnet' })
 
     await assert.rejects(
       () => client.openSession(`${server.url}/stream`),
-      (error: unknown) => error instanceof RouteDockManifestSunsetError,
+      (error: unknown) => error instanceof KikisAppManifestSunsetError,
     )
 
     console.log('✓ Test 3: openSession() rejects a sunset endpoint before the commitmentSecret check')
@@ -189,7 +189,7 @@ function stubSubClients(client: RouteDockClient): { x402Called: boolean; chargeC
   )
 
   try {
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       wallet: Keypair.random(),
       network: 'testnet',
       logger: (_level, message) => logs.push(message),
@@ -215,7 +215,7 @@ function stubSubClients(client: RouteDockClient): { x402Called: boolean; chargeC
   )
 
   try {
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       wallet: Keypair.random(),
       network: 'testnet',
       logger: (_level, message) => logs.push(message),
@@ -243,12 +243,12 @@ function stubSubClients(client: RouteDockClient): { x402Called: boolean; chargeC
   )
 
   try {
-    const client = new RouteDockClient({ wallet: Keypair.random(), network: 'testnet' })
+    const client = new KikisAppClient({ wallet: Keypair.random(), network: 'testnet' })
     stubSubClients(client)
 
     await assert.rejects(
       () => client.pay(`${server.url}/price?symbol=XLM`),
-      (error: unknown) => error instanceof RouteDockManifestSunsetError,
+      (error: unknown) => error instanceof KikisAppManifestSunsetError,
     )
 
     console.log('✓ Test 6: query strings are ignored when matching an endpoint path')
@@ -267,7 +267,7 @@ function stubSubClients(client: RouteDockClient): { x402Called: boolean; chargeC
   )
 
   try {
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       wallet: Keypair.random(),
       network: 'testnet',
       logger: (_level, message) => logs.push(message),
@@ -296,7 +296,7 @@ function stubSubClients(client: RouteDockClient): { x402Called: boolean; chargeC
     }),
   )
   try {
-    const client = new RouteDockClient({ wallet: Keypair.random(), network: 'testnet' })
+    const client = new KikisAppClient({ wallet: Keypair.random(), network: 'testnet' })
     stubSubClients(client)
 
     const result = await client.pay(`${oneSunset.url}/infer`)
@@ -312,12 +312,12 @@ function stubSubClients(client: RouteDockClient): { x402Called: boolean; chargeC
     }),
   )
   try {
-    const client = new RouteDockClient({ wallet: Keypair.random(), network: 'testnet' })
+    const client = new KikisAppClient({ wallet: Keypair.random(), network: 'testnet' })
     stubSubClients(client)
 
     await assert.rejects(
       () => client.pay(`${bothSunset.url}/infer`),
-      (error: unknown) => error instanceof RouteDockManifestSunsetError,
+      (error: unknown) => error instanceof KikisAppManifestSunsetError,
     )
   } finally {
     await bothSunset.close()
@@ -339,7 +339,7 @@ function stubSubClients(client: RouteDockClient): { x402Called: boolean; chargeC
   )
 
   try {
-    const client = new RouteDockClient({ wallet: Keypair.random(), network: 'testnet' })
+    const client = new KikisAppClient({ wallet: Keypair.random(), network: 'testnet' })
     stubSubClients(client)
 
     const result = await client.pay(`${server.url}/price`)
@@ -350,7 +350,7 @@ function stubSubClients(client: RouteDockClient): { x402Called: boolean; chargeC
     now += 40_000
     await assert.rejects(
       () => client.pay(`${server.url}/price`),
-      (error: unknown) => error instanceof RouteDockManifestSunsetError,
+      (error: unknown) => error instanceof KikisAppManifestSunsetError,
     )
 
     console.log('✓ Test 9: a cached manifest is re-checked against the current clock')

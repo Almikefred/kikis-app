@@ -1,6 +1,6 @@
-# Contributing to RouteDock
+# Contributing to KikisApp
 
-RouteDock moves real money on Stellar. The bar for a change is that it is verified, not that it looks right. This document is the short path to a PR that passes CI on the first try.
+KikisApp moves real money on Stellar. The bar for a change is that it is verified, not that it looks right. This document is the short path to a PR that passes CI on the first try.
 
 ## Prerequisites
 
@@ -20,11 +20,11 @@ node --version   # must be v22 or newer
 
 ```bash
 pnpm install
-pnpm --filter @routedock/nulth-sdk build
-pnpm --filter @routedock/routedock build
+pnpm --filter @kikis-app/nulth-sdk build
+pnpm --filter @kikis-app/kikis-app build
 ```
 
-**Build order matters and is not optional.** `@routedock/routedock` depends on `nulth-sdk`'s output, and several packages import `@routedock/routedock/schema`, which resolves to the SDK's built `dist/` rather than its source. Skipping these two builds produces `ERR_MODULE_NOT_FOUND` in tests that pass for everyone else.
+**Build order matters and is not optional.** `@kikis-app/kikis-app` depends on `nulth-sdk`'s output, and several packages import `@kikis-app/kikis-app/schema`, which resolves to the SDK's built `dist/` rather than its source. Skipping these two builds produces `ERR_MODULE_NOT_FOUND` in tests that pass for everyone else.
 
 ## Verify before you push
 
@@ -54,15 +54,15 @@ If you would rather run the steps individually:
 pnpm -r typecheck
 
 # 2. Tests
-pnpm --filter @routedock/routedock test
-pnpm --filter @routedock/mcp-server test
+pnpm --filter @kikis-app/kikis-app test
+pnpm --filter @kikis-app/mcp-server test
 pnpm --filter provider-a test
 pnpm --filter provider-b test
 
 # 3. Builds — for the two providers this bundles a real Workers script
-pnpm --filter @routedock/nulth-sdk build
-pnpm --filter @routedock/routedock build
-pnpm -r --filter '!@routedock/nulth-sdk' --filter '!@routedock/routedock' build
+pnpm --filter @kikis-app/nulth-sdk build
+pnpm --filter @kikis-app/kikis-app build
+pnpm -r --filter '!@kikis-app/nulth-sdk' --filter '!@kikis-app/kikis-app' build
 
 # 4. Contracts, only if you touched contracts/
 cargo test --manifest-path contracts/agent-vault/Cargo.toml
@@ -77,7 +77,7 @@ Local `dist/` directories are gitignored but persist between branches, so a test
 
 ```bash
 rm -rf packages/*/dist apps/*/dist
-pnpm --filter @routedock/nulth-sdk build && pnpm --filter @routedock/routedock build
+pnpm --filter @kikis-app/nulth-sdk build && pnpm --filter @kikis-app/kikis-app build
 ```
 
 ### Cloudflare Workers changes

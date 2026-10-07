@@ -4,17 +4,17 @@
  * warning on Cloudflare Workers — exactly where a structured sink matters — and
  * the default SpendStore warns on every construction.
  *
- * Run with: pnpm --filter @routedock/routedock test
+ * Run with: pnpm --filter @kikis-app/kikis-app test
  */
 
 import assert from 'node:assert/strict'
 import { describe, it, beforeEach } from 'node:test'
 import { Keypair } from '@stellar/stellar-sdk'
-import { routedockHono } from '../provider/hono.js'
-import { routedock } from '../provider/routedockMiddleware.js'
-import { RouteDockClient } from '../client/RouteDockClient.js'
-import type { RouteDockLogLevel, RouteDockLogger } from '../internal/logger.js'
-import type { RouteDockManifest } from '../types.js'
+import { kikisAppHono } from '../provider/hono.js'
+import { kikis-app } from '../provider/kikisAppMiddleware.js'
+import { KikisAppClient } from '../client/KikisAppClient.js'
+import type { KikisAppLogLevel, KikisAppLogger } from '../internal/logger.js'
+import type { KikisAppManifest } from '../types.js'
 
 const payeeKeypair = Keypair.random()
 const commitKeypair = Keypair.random()
@@ -22,8 +22,8 @@ const ASSET_CONTRACT = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
 const SEEN_TX_WARNING = 'in-memory SeenTxStore'
 const SPEND_WARNING = 'in-memory SpendStore'
 
-const lines: Array<{ level: RouteDockLogLevel; message: string }> = []
-const logger: RouteDockLogger = (level, message) => {
+const lines: Array<{ level: KikisAppLogLevel; message: string }> = []
+const logger: KikisAppLogger = (level, message) => {
   lines.push({ level, message: String(message) })
 }
 
@@ -31,8 +31,8 @@ function warnedWith(needle: string): boolean {
   return lines.some((l) => l.level === 'warn' && l.message.includes(needle))
 }
 
-const manifest: RouteDockManifest = {
-  routedock: '1.0',
+const manifest: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Logger Threading Test',
   description: 'Unit test provider',
   modes: ['x402', 'mpp-charge'],
@@ -85,34 +85,34 @@ beforeEach(() => {
 describe('supplied logger reaches the default stores (#286)', () => {
   it('reaches the Hono x402 SeenTxStore', () => {
     onWorkers(() => {
-      routedockHono({ ...BASE_OPTS, modes: ['x402'], pricing: { x402: '0.001' } })
+      kikisAppHono({ ...BASE_OPTS, modes: ['x402'], pricing: { x402: '0.001' } })
     })
     assert.ok(warnedWith(SEEN_TX_WARNING), 'Hono x402 warned through console, not the logger')
   })
 
   it('reaches the Hono mpp-charge SeenTxStore', () => {
     onWorkers(() => {
-      routedockHono({ ...BASE_OPTS, modes: ['mpp-charge'], pricing: { 'mpp-charge': '0.001' } })
+      kikisAppHono({ ...BASE_OPTS, modes: ['mpp-charge'], pricing: { 'mpp-charge': '0.001' } })
     })
     assert.ok(warnedWith(SEEN_TX_WARNING), 'Hono mpp-charge warned through console, not the logger')
   })
 
   it('reaches the Express x402 SeenTxStore', () => {
     onWorkers(() => {
-      routedock({ ...BASE_OPTS, modes: ['x402'], pricing: { x402: '0.001' } })
+      kikis-app({ ...BASE_OPTS, modes: ['x402'], pricing: { x402: '0.001' } })
     })
     assert.ok(warnedWith(SEEN_TX_WARNING), 'Express x402 warned through console, not the logger')
   })
 
   it('reaches the Express mpp-charge SeenTxStore', () => {
     onWorkers(() => {
-      routedock({ ...BASE_OPTS, modes: ['mpp-charge'], pricing: { 'mpp-charge': '0.001' } })
+      kikis-app({ ...BASE_OPTS, modes: ['mpp-charge'], pricing: { 'mpp-charge': '0.001' } })
     })
     assert.ok(warnedWith(SEEN_TX_WARNING), 'Express mpp-charge warned through console, not the logger')
   })
 
   it('reaches the client default SpendStore', () => {
-    new RouteDockClient({
+    new KikisAppClient({
       wallet: Keypair.random(),
       network: 'testnet',
       spendCap: { asset: 'USDC', daily: '1.00' },

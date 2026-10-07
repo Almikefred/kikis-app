@@ -1,5 +1,5 @@
 export const DOCS_MANIFEST_EXAMPLE = {
-  routedock: '1.0',
+  kikis-app: '1.0',
   name: 'Stellar DEX Price Feed',
   description: 'Real-time Stellar DEX price feeds with micropayment settlement',
   modes: ['x402', 'mpp-charge'],

@@ -94,12 +94,12 @@ describe('SupabaseSeenTxStore', () => {
     })
   })
 
-  it('throws RouteDockNetworkError on query failure', async () => {
+  it('throws KikisAppNetworkError on query failure', async () => {
     const store = new SupabaseSeenTxStore(
       mockSupabase({ queryError: 'relation "settlements" does not exist' }).client,
     )
     await assert.rejects(() => store.get('key1'), {
-      name: 'RouteDockNetworkError',
+      name: 'KikisAppNetworkError',
       message: /SupabaseSeenTxStore\.get failed/,
     })
   })
@@ -120,12 +120,12 @@ describe('SupabaseSeenTxStore', () => {
     ])
   })
 
-  it('throws RouteDockNetworkError on upsert failure', async () => {
+  it('throws KikisAppNetworkError on upsert failure', async () => {
     const store = new SupabaseSeenTxStore(mockSupabase({ upsertError: 'duplicate key value' }).client)
     await assert.rejects(
       () => store.set('key1', { txHash: 'hash1', headers: { 'x-test': 'val' }, createdAt: Date.now() }),
       {
-        name: 'RouteDockNetworkError',
+        name: 'KikisAppNetworkError',
         message: /SupabaseSeenTxStore\.set failed/,
       },
     )
@@ -145,12 +145,12 @@ describe('SupabaseSeenTxStore', () => {
     assert.equal(await store.claimReplay('missing'), Number.POSITIVE_INFINITY)
   })
 
-  it('claimReplay throws RouteDockNetworkError when the RPC errors', async () => {
+  it('claimReplay throws KikisAppNetworkError when the RPC errors', async () => {
     const store = new SupabaseSeenTxStore(
       mockSupabase({ rpcError: 'function claim_settlement_replay(text) does not exist' }).client,
     )
     await assert.rejects(() => store.claimReplay('key1'), {
-      name: 'RouteDockNetworkError',
+      name: 'KikisAppNetworkError',
       message: /SupabaseSeenTxStore\.claimReplay failed/,
     })
   })

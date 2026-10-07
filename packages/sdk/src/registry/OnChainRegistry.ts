@@ -85,14 +85,14 @@ export class OnChainRegistry {
       const dataEntries = account.data_attr as Record<string, string> | undefined
       if (!dataEntries) continue
 
-      const rawEndpoint = dataEntries['routedock_endpoint']
+      const rawEndpoint = dataEntries['kikis-app_endpoint']
       if (!rawEndpoint) continue
 
       const endpoint = tryDecodeBase64(rawEndpoint)
       if (!endpoint.startsWith('http://') && !endpoint.startsWith('https://')) continue
 
       let tags: string[] = []
-      const rawTags = dataEntries['routedock_tags']
+      const rawTags = dataEntries['kikis-app_tags']
       if (rawTags) {
         const decoded = tryDecodeBase64(rawTags)
         try {

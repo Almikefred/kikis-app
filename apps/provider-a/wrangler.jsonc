@@ -1,6 +1,6 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "routedock-provider-a",
+  "name": "kikis-app-provider-a",
   "main": "src/worker.ts",
   "compatibility_date": "2026-06-05",
   // Wrangler resolves "@stellar/stellar-sdk" to its browser build, which
@@ -16,7 +16,7 @@
   },
   "routes": [
     {
-      "pattern": "api-a.routedock.xyz",
+      "pattern": "api-a.kikis-app.xyz",
       "custom_domain": true
     }
   ],
@@ -25,6 +25,6 @@
   // appear here — this file is committed.
   "vars": {
     "STELLAR_NETWORK": "testnet",
-    "PUBLIC_BASE_URL": "https://api-a.routedock.xyz"
+    "PUBLIC_BASE_URL": "https://api-a.kikis-app.xyz"
   }
 }

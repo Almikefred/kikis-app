@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import Ajv from 'ajv'
 import addFormats from 'ajv-formats'
-import schema from '../../schemas/routedock.schema.json' with { type: 'json' }
+import schema from '../../schemas/kikis-app.schema.json' with { type: 'json' }
 
 const ajv = new Ajv()
 addFormats(ajv)
@@ -13,7 +13,7 @@ const X402_PAYEE = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAX402'
 
 function baseManifest(): Record<string, unknown> {
   return {
-    routedock: '1.0',
+    kikis-app: '1.0',
     name: 'Test Service',
     description: 'Unit test provider',
     modes: ['x402', 'mpp-charge'],
@@ -30,7 +30,7 @@ function baseManifest(): Record<string, unknown> {
   }
 }
 
-describe('routedock.schema — per-mode payee', () => {
+describe('kikis-app.schema — per-mode payee', () => {
   it('accepts a manifest without per-mode payee overrides', () => {
     assert.equal(validate(baseManifest()), true, JSON.stringify(validate.errors))
   })

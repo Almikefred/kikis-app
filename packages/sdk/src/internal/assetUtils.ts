@@ -1,11 +1,11 @@
-import type { RouteDockManifest, AssetConfig, PaymentMode } from '../types.js'
-import { RouteDockManifestError } from '../errors.js'
+import type { KikisAppManifest, AssetConfig, PaymentMode } from '../types.js'
+import { KikisAppManifestError } from '../errors.js'
 
 /**
  * Normalizes a manifest to always have an assets array.
  * Handles backward compatibility with root asset/asset_contract fields.
  */
-export function normalizeManifestAssets(manifest: RouteDockManifest): AssetConfig[] {
+export function normalizeManifestAssets(manifest: KikisAppManifest): AssetConfig[] {
   if (manifest.assets && manifest.assets.length > 0) {
     return manifest.assets
   }
@@ -19,7 +19,7 @@ export function normalizeManifestAssets(manifest: RouteDockManifest): AssetConfi
     ]
   }
 
-  throw new RouteDockManifestError(
+  throw new KikisAppManifestError(
     'Manifest must define either assets[] or root asset/asset_contract fields',
   )
 }
@@ -29,7 +29,7 @@ export function normalizeManifestAssets(manifest: RouteDockManifest): AssetConfi
  * Returns all assets that match the criteria.
  */
 export function getEligibleAssets(
-  manifest: RouteDockManifest,
+  manifest: KikisAppManifest,
   mode: PaymentMode,
   endpoint?: string,
 ): AssetConfig[] {
@@ -95,7 +95,7 @@ export function getEligibleAssets(
  * Honors manifest.assets when defined; falls back to explicitContract or root asset_contract.
  */
 export function resolveAssetContract(
-  manifest: RouteDockManifest,
+  manifest: KikisAppManifest,
   mode: PaymentMode,
   endpoint?: string,
   explicitContract?: string,
@@ -111,7 +111,7 @@ export function resolveAssetContract(
  * Returns the first eligible asset, or throws if none are available.
  */
 export function selectAsset(
-  manifest: RouteDockManifest,
+  manifest: KikisAppManifest,
   mode: PaymentMode,
   endpoint?: string,
 ): AssetConfig {
@@ -119,7 +119,7 @@ export function selectAsset(
 
   if (eligible.length === 0) {
     const endpointMsg = endpoint ? ` for endpoint '${endpoint}'` : ''
-    throw new RouteDockManifestError(
+    throw new KikisAppManifestError(
       `No eligible assets found for mode '${mode}'${endpointMsg}`,
     )
   }
@@ -131,7 +131,7 @@ export function selectAsset(
  * Checks if a specific asset (by ticker or contract address) is eligible for a mode/endpoint.
  */
 export function isAssetEligible(
-  manifest: RouteDockManifest,
+  manifest: KikisAppManifest,
   assetIdentifier: string,
   mode: PaymentMode,
   endpoint?: string,

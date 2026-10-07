@@ -10,8 +10,8 @@ import {
   createPolicyState,
   paymentContextFromManifest,
 } from '../NulthVault.js'
-import type { RouteDockManifest } from '../../types.js'
-import { RouteDockManifestError } from '../../errors.js'
+import type { KikisAppManifest } from '../../types.js'
+import { KikisAppManifestError } from '../../errors.js'
 import { decodeAuthSignature, NulthPolicyError } from '../NulthVault.js'
 import { resolvePayee } from '../../internal/payee.js'
 
@@ -47,8 +47,8 @@ function transferPreimage(asset: string, from: string, to: string, amount: bigin
   ).toXDR('base64')
 }
 
-const baseManifest: RouteDockManifest = {
-  routedock: '1.0',
+const baseManifest: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Nulth Test Provider',
   description: 'ZK vault test',
   modes: ['x402'],
@@ -73,7 +73,7 @@ assertNulthVaultManifest(baseManifest, NULTH)
 
 assert.throws(
   () => assertNulthVaultManifest({ ...baseManifest, vault: 'agent-vault' }, NULTH),
-  RouteDockManifestError,
+  KikisAppManifestError,
 )
 
 const vault = {
@@ -114,12 +114,12 @@ console.log('✓ Nulth ZK vault SDK integration PASSED')
     dailyCapUsdc: '1.00',
   }
 
-  const manifest: RouteDockManifest = { ...baseManifest, network: 'mainnet' }
+  const manifest: KikisAppManifest = { ...baseManifest, network: 'mainnet' }
 
   await assert.rejects(
     () => prepareNulthSigner(vault, manifest, 'x402', 'mainnet', 100_000),
     (err: unknown) =>
-      err instanceof RouteDockManifestError &&
+      err instanceof KikisAppManifestError &&
       /mock prover/i.test(err.message),
   )
   console.log('✓ mainnet guard rejects mock prover')
@@ -145,7 +145,7 @@ console.log('✓ Nulth ZK vault SDK integration PASSED')
           100_000,
         ),
       (err: unknown) =>
-        err instanceof RouteDockManifestError &&
+        err instanceof KikisAppManifestError &&
         /network must be 'testnet'/.test(err.message),
       `prepareNulthSigner must reject network=${String(network)}`,
     )
@@ -314,7 +314,7 @@ console.log('✓ Nulth ZK vault SDK integration PASSED')
 
 // --- usdcToStroops validation tests ---
 
-function manifestWithPrice(amount: string): RouteDockManifest {
+function manifestWithPrice(amount: string): KikisAppManifest {
   const pricing = { ...baseManifest.pricing! }
   pricing.x402 = { ...baseManifest.pricing!.x402!, amount }
   return { ...baseManifest, pricing }
@@ -383,7 +383,7 @@ console.log('✓ prepareNulthSigner rejects negative price')
 // ── per-mode payee override: context must match the address providers charge ──
 
 {
-  const manifestWithOverride: RouteDockManifest = {
+  const manifestWithOverride: KikisAppManifest = {
     ...baseManifest,
     payee: PAYEE,
     pricing: {
@@ -398,7 +398,7 @@ console.log('✓ prepareNulthSigner rejects negative price')
     },
   }
 
-  const manifestNoOverride: RouteDockManifest = {
+  const manifestNoOverride: KikisAppManifest = {
     ...baseManifest,
     payee: PAYEE,
     pricing: {

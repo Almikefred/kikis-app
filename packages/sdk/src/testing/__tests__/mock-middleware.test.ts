@@ -2,11 +2,11 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { StrKey } from '@stellar/stellar-sdk'
 import {
-  createMockRoutedockMiddleware,
+  createMockKikisAppMiddleware,
   runMockSettlement,
   type MockSettlementRecord,
-} from '../createMockRoutedockMiddleware.js'
-import type { RouteDockMiddlewareOptions } from '../../provider/routedockMiddleware.js'
+} from '../createMockKikisAppMiddleware.js'
+import type { KikisAppMiddlewareOptions } from '../../provider/kikisAppMiddleware.js'
 
 const PAYER = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN'
 const ALL_MODES = ['x402', 'mpp-charge', 'mpp-session', 'mpp-session-ws'] as const
@@ -28,7 +28,7 @@ function fakeRes() {
 }
 
 /** Run the handler and resolve once it has either called next() or sent a response. */
-function drive(handler: ReturnType<typeof createMockRoutedockMiddleware>, req: Record<string, unknown> = {}) {
+function drive(handler: ReturnType<typeof createMockKikisAppMiddleware>, req: Record<string, unknown> = {}) {
   return new Promise<{ nexted: boolean; err: unknown; res: ReturnType<typeof fakeRes>['calls']; req: Record<string, unknown> }>((resolve) => {
     const { res, calls } = fakeRes()
     const origJson = res.json.bind(res)
@@ -94,7 +94,7 @@ describe('runMockSettlement', () => {
   })
 
   it('accepts production-typed callbacks with no cast (type guard)', async () => {
-    const prod: Pick<RouteDockMiddlewareOptions, 'onSettled' | 'onSessionOpen' | 'onVoucher'> = {
+    const prod: Pick<KikisAppMiddlewareOptions, 'onSettled' | 'onSessionOpen' | 'onVoucher'> = {
       onSettled: async (_txHash, _amount, _mode, _payer) => {},
       onSessionOpen: async (_channelId, _payer) => {},
       onVoucher: async (_channelId, _index, _cumulative, _signature) => {},
@@ -103,7 +103,7 @@ describe('runMockSettlement', () => {
     const record = await runMockSettlement({ mode: 'mpp-session', ...prod })
     assert.equal(record?.mode, 'mpp-session')
 
-    const handler = createMockRoutedockMiddleware({ mode: 'x402', payment: 'auto-pass', ...prod })
+    const handler = createMockKikisAppMiddleware({ mode: 'x402', payment: 'auto-pass', ...prod })
     assert.equal(typeof handler, 'function')
   })
 
@@ -187,10 +187,10 @@ describe('runMockSettlement', () => {
   })
 })
 
-describe('createMockRoutedockMiddleware', () => {
+describe('createMockKikisAppMiddleware', () => {
   it('auto-pass invokes onSettled then calls the route handler (next)', async () => {
     let settledMode = ''
-    const handler = createMockRoutedockMiddleware({
+    const handler = createMockKikisAppMiddleware({
       mode: 'x402',
       payment: 'auto-pass',
       onSettled: (_t, _a, mode) => { settledMode = mode },
@@ -201,10 +201,10 @@ describe('createMockRoutedockMiddleware', () => {
     assert.equal(settledMode, 'x402')
   })
 
-  it('auto-pass attaches the synthetic settlement to req.routedock', async () => {
-    const handler = createMockRoutedockMiddleware({ mode: 'mpp-charge', payment: 'auto-pass' })
+  it('auto-pass attaches the synthetic settlement to req.kikis-app', async () => {
+    const handler = createMockKikisAppMiddleware({ mode: 'mpp-charge', payment: 'auto-pass' })
     const out = await drive(handler)
-    const record = out.req.routedock as MockSettlementRecord
+    const record = out.req.kikis-app as MockSettlementRecord
     assert.equal(record.mode, 'mpp-charge')
     assert.equal(record.amount, '0.001')
     assert.ok(record.txHash)
@@ -212,7 +212,7 @@ describe('createMockRoutedockMiddleware', () => {
 
   it('auto-fail responds 402 and never calls next or onSettled', async () => {
     let called = false
-    const handler = createMockRoutedockMiddleware({
+    const handler = createMockKikisAppMiddleware({
       payment: 'auto-fail',
       onSettled: () => { called = true },
     })
@@ -223,13 +223,13 @@ describe('createMockRoutedockMiddleware', () => {
   })
 
   it('auto-fail honors a custom failStatus', async () => {
-    const handler = createMockRoutedockMiddleware({ payment: 'auto-fail', failStatus: 403 })
+    const handler = createMockKikisAppMiddleware({ payment: 'auto-fail', failStatus: 403 })
     const out = await drive(handler)
     assert.equal(out.res.status, 403)
   })
 
   it('callback errors propagate to next(err)', async () => {
-    const handler = createMockRoutedockMiddleware({
+    const handler = createMockKikisAppMiddleware({
       payment: 'auto-pass',
       onSettled: () => { throw new Error('supabase down') },
     })

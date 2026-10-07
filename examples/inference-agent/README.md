@@ -4,8 +4,8 @@ Sends prompts to a mock inference provider and pays per request using the **MPP 
 
 ## What this covers
 
-- `RouteDockClient.pay()` with `forceMode: 'mpp-charge'`
-- Building a RouteDock-compatible provider with `routedockHono` middleware
+- `KikisAppClient.pay()` with `forceMode: 'mpp-charge'`
+- Building a KikisApp-compatible provider with `kikisAppHono` middleware
 - `onSettled` callback for server-side payment logging
 - Running provider and client in the same process for local demos
 
@@ -59,19 +59,19 @@ pnpm start
 [client] provider=http://localhost:3100/infer
 [client] sending 3 inference requests via mpp-charge
 
-[RouteDock] Mock Inference Provider → mpp-charge
+[KikisApp] Mock Inference Provider → mpp-charge
 #01 prompt="hello"
      response="Hello! This response was paid for via MPP charge."
      model=mock-v1  txHash=abc123…  paid=0.0005000 USDC
   [provider] settled  txHash=abc123…  amount=0.0005000 USDC  mode=mpp-charge
 
-[RouteDock] Mock Inference Provider → mpp-charge
+[KikisApp] Mock Inference Provider → mpp-charge
 #02 prompt="Can you explain what MPP charge is?"
      response="MPP (Metered Payment Protocol) charge enables per-request micropayments without a channel."
      model=mock-v1  txHash=def456…  paid=0.0005000 USDC
   [provider] settled  txHash=def456…  amount=0.0005000 USDC  mode=mpp-charge
 
-[RouteDock] Mock Inference Provider → mpp-charge
+[KikisApp] Mock Inference Provider → mpp-charge
 #03 prompt="What is the capital of France?"
      response="I'm a mock inference endpoint. Payment received — here's your canned response."
      model=mock-v1  txHash=ghi789…  paid=0.0005000 USDC
@@ -82,7 +82,7 @@ pnpm start
 
 ## Using a real provider
 
-Set `START_MOCK_PROVIDER=false` and point `INFERENCE_PROVIDER_URL` at any RouteDock-compatible endpoint that supports `mpp-charge`:
+Set `START_MOCK_PROVIDER=false` and point `INFERENCE_PROVIDER_URL` at any KikisApp-compatible endpoint that supports `mpp-charge`:
 
 ```env
 INFERENCE_PROVIDER_URL=https://your-inference-endpoint.example.com

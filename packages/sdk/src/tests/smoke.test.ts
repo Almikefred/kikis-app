@@ -1,12 +1,12 @@
 /**
- * Integration smoke tests for @routedock/sdk.
+ * Integration smoke tests for @kikis-app/sdk.
  *
  * These tests run against actual package imports to verify:
  *   1. x402 flow against a local mock server (402 → payment → 200)
  *   2. ModeRouter manifest fetch + validation
  *   3. SessionStore monotonic invariant rejection
  *
- * Run with: pnpm --filter @routedock/sdk test
+ * Run with: pnpm --filter @kikis-app/sdk test
  * No testnet RPC calls are made — all network calls are mocked via fetch interception.
  */
 
@@ -39,8 +39,8 @@ function startTestServer(
   const { signManifest } = await import('../manifest/sign.js')
   const payeeKp = Keypair.random()
 
-  const validManifest: import('../types.js').RouteDockManifest = {
-    routedock: '1.0',
+  const validManifest: import('../types.js').KikisAppManifest = {
+    kikis-app: '1.0',
     name: 'Test Provider',
     description: 'Smoke test provider',
     modes: ['x402' as const, 'mpp-charge' as const],
@@ -55,10 +55,10 @@ function startTestServer(
     endpoints: { price: { method: 'GET', path: '/price' } },
     tags: ['price', 'stellar'],
   }
-  const signedManifest = signManifest(validManifest as import('../types.js').RouteDockManifest, payeeKp.secret())
+  const signedManifest = signManifest(validManifest as import('../types.js').KikisAppManifest, payeeKp.secret())
 
   const server = await startTestServer((req, res) => {
-    if (req.url === '/.well-known/routedock.json') {
+    if (req.url === '/.well-known/kikis-app.json') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(signedManifest))
     } else {
@@ -71,7 +71,7 @@ function startTestServer(
     const { fetchManifest, selectMode } = await import('../client/ModeRouter.js')
 
     const manifest = await fetchManifest(server.url)
-    assert.equal(manifest.routedock, '1.0', 'manifest version should be 1.0')
+    assert.equal(manifest.kikis-app, '1.0', 'manifest version should be 1.0')
     assert.equal(manifest.name, 'Test Provider', 'manifest name should match')
     assert.ok(manifest.modes.includes('x402'), 'manifest should include x402 mode')
 
@@ -83,7 +83,7 @@ function startTestServer(
     const mode = selectMode(manifest)
     assert.equal(mode, 'mpp-charge', 'mpp-charge should be preferred over x402')
 
-    const costAwareManifest: import('../types.js').RouteDockManifest = {
+    const costAwareManifest: import('../types.js').KikisAppManifest = {
       ...validManifest,
       network: 'testnet' as const,
       modes: ['x402' as const, 'mpp-charge' as const],
@@ -93,7 +93,7 @@ function startTestServer(
       },
     }
 
-    const costOptimizedMode = selectMode(costAwareManifest as import('../types.js').RouteDockManifest, { optimize: 'cost' })
+    const costOptimizedMode = selectMode(costAwareManifest as import('../types.js').KikisAppManifest, { optimize: 'cost' })
     assert.equal(costOptimizedMode, 'x402', 'cost optimization should prefer the lower-cost per-request mode')
 
     const modeForced = selectMode(manifest, { sustained: true })
@@ -113,7 +113,7 @@ function startTestServer(
   const payeeKp = Keypair.random()
 
   const validFactoryManifest = {
-    routedock: '1.0',
+    kikis-app: '1.0',
     name: 'Factory Provider',
     description: 'Smoke test provider using channel_factory',
     modes: ['mpp-session'],
@@ -135,12 +135,12 @@ function startTestServer(
   }
 
   const signedFactoryManifest = signManifest(
-    validFactoryManifest as import('../types.js').RouteDockManifest,
+    validFactoryManifest as import('../types.js').KikisAppManifest,
     payeeKp.secret(),
   )
 
   const server = await startTestServer((req, res) => {
-    if (req.url === '/.well-known/routedock.json') {
+    if (req.url === '/.well-known/kikis-app.json') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(signedFactoryManifest))
     } else {
@@ -166,7 +166,7 @@ function startTestServer(
 // ── Test 3: ModeRouter — invalid manifest rejected ────────────────────────────
 
 {
-  const badManifest = { routedock: '2.0', name: 'bad' }
+  const badManifest = { kikis-app: '2.0', name: 'bad' }
 
   const server = await startTestServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -175,7 +175,7 @@ function startTestServer(
 
   try {
     const { fetchManifest } = await import('../client/ModeRouter.js')
-    const { RouteDockManifestError: ManifestError } = await import('../errors.js')
+    const { KikisAppManifestError: ManifestError } = await import('../errors.js')
 
     let threw = false
     try {
@@ -184,7 +184,7 @@ function startTestServer(
       threw = true
       assert.ok(
         err instanceof ManifestError,
-        `should throw RouteDockManifestError, got ${String(err)}`,
+        `should throw KikisAppManifestError, got ${String(err)}`,
       )
     }
     assert.ok(threw, 'should have thrown for invalid manifest')
@@ -201,7 +201,7 @@ function startTestServer(
   const { Keypair: Kp } = await import('@stellar/stellar-sdk')
   const kp = Kp.random()
   const unsignedManifest = {
-    routedock: '1.0',
+    kikis-app: '1.0',
     name: 'Unsigned Provider',
     description: 'Missing signature',
     modes: ['x402'],
@@ -215,7 +215,7 @@ function startTestServer(
   }
 
   const server = await startTestServer((req, res) => {
-    if (req.url === '/.well-known/routedock.json') {
+    if (req.url === '/.well-known/kikis-app.json') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(unsignedManifest))
     } else {
@@ -226,7 +226,7 @@ function startTestServer(
 
   try {
     const { fetchManifest } = await import('../client/ModeRouter.js')
-    const { RouteDockSignatureError: SigError } = await import('../errors.js')
+    const { KikisAppSignatureError: SigError } = await import('../errors.js')
 
     let threw = false
     try {
@@ -235,7 +235,7 @@ function startTestServer(
       threw = true
       assert.ok(
         err instanceof SigError,
-        `should throw RouteDockSignatureError, got ${String(err)}`,
+        `should throw KikisAppSignatureError, got ${String(err)}`,
       )
     }
     assert.ok(threw, 'should have thrown for unsigned manifest')
@@ -252,7 +252,7 @@ function startTestServer(
   // Use an in-memory store implementation to test monotonic invariant
   // without a real Supabase connection.
 
-  const { RouteDockVoucherMonotonicityError } = await import('../errors.js')
+  const { KikisAppVoucherMonotonicityError } = await import('../errors.js')
 
   // Build a minimal in-memory SessionStore-compatible implementation
   const sessions = new Map<string, import('../types.js').SessionState>()
@@ -266,7 +266,7 @@ function startTestServer(
         const prev = parseFloat(existing.cumulative_amount)
         const next = parseFloat(state.cumulative_amount)
         if (next <= prev) {
-          throw new RouteDockVoucherMonotonicityError(
+          throw new KikisAppVoucherMonotonicityError(
             `cumulative_amount must be strictly increasing: ${next} <= ${prev}`,
           )
         }
@@ -306,8 +306,8 @@ function startTestServer(
   } catch (err) {
     threw = true
     assert.ok(
-      err instanceof RouteDockVoucherMonotonicityError,
-      `should throw RouteDockVoucherMonotonicityError, got ${String(err)}`,
+      err instanceof KikisAppVoucherMonotonicityError,
+      `should throw KikisAppVoucherMonotonicityError, got ${String(err)}`,
     )
   }
   assert.ok(threw, 'equal cumulative amount should be rejected')
@@ -318,7 +318,7 @@ function startTestServer(
     await memStore.upsert('test-channel-1', { ...baseState, cumulative_amount: '0.0010000' })
   } catch (err) {
     threw = true
-    assert.ok(err instanceof RouteDockVoucherMonotonicityError)
+    assert.ok(err instanceof KikisAppVoucherMonotonicityError)
   }
   assert.ok(threw, 'lower cumulative amount should be rejected')
 
@@ -329,34 +329,34 @@ function startTestServer(
 
 {
   const {
-    RouteDockError,
-    RouteDockManifestError,
-    RouteDockNoSupportedModeError,
-    RouteDockFacilitatorError,
-    RouteDockNetworkError,
-    RouteDockVoucherMonotonicityError,
-    RouteDockPolicyRejectError,
+    KikisAppError,
+    KikisAppManifestError,
+    KikisAppNoSupportedModeError,
+    KikisAppFacilitatorError,
+    KikisAppNetworkError,
+    KikisAppVoucherMonotonicityError,
+    KikisAppPolicyRejectError,
   } = await import('../errors.js')
 
-  const errors: InstanceType<typeof RouteDockError>[] = [
-    new RouteDockManifestError('test'),
-    new RouteDockNoSupportedModeError('test'),
-    new RouteDockFacilitatorError('test', 503),
-    new RouteDockNetworkError('test'),
-    new RouteDockVoucherMonotonicityError('test'),
-    new RouteDockPolicyRejectError('local_daily_cap_exceeded'),
+  const errors: InstanceType<typeof KikisAppError>[] = [
+    new KikisAppManifestError('test'),
+    new KikisAppNoSupportedModeError('test'),
+    new KikisAppFacilitatorError('test', 503),
+    new KikisAppNetworkError('test'),
+    new KikisAppVoucherMonotonicityError('test'),
+    new KikisAppPolicyRejectError('local_daily_cap_exceeded'),
   ]
 
   for (const err of errors) {
-    assert.ok(err instanceof RouteDockError, `${err.name} should be instance of RouteDockError`)
+    assert.ok(err instanceof KikisAppError, `${err.name} should be instance of KikisAppError`)
     assert.ok(err instanceof Error, `${err.name} should be instance of Error`)
   }
 
-  assert.equal(new RouteDockManifestError('x').retryable, false)
-  assert.equal(new RouteDockFacilitatorError('x', 503).retryable, true)
-  assert.equal(new RouteDockNetworkError('x').retryable, true)
+  assert.equal(new KikisAppManifestError('x').retryable, false)
+  assert.equal(new KikisAppFacilitatorError('x', 503).retryable, true)
+  assert.equal(new KikisAppNetworkError('x').retryable, true)
 
-  const policyErr = new RouteDockPolicyRejectError('local_daily_cap_exceeded')
+  const policyErr = new KikisAppPolicyRejectError('local_daily_cap_exceeded')
   assert.equal(policyErr.reason, 'local_daily_cap_exceeded')
 
   console.log('✓ Test 4: Error subclass hierarchy PASSED')
@@ -365,7 +365,7 @@ function startTestServer(
 // ── Test 5: Per-endpoint spend cap enforcement ────────────────────────────────
 
 {
-  const { RouteDockPolicyRejectError: PolicyErr } = await import('../errors.js')
+  const { KikisAppPolicyRejectError: PolicyErr } = await import('../errors.js')
 
   /**
    * Directly exercise _checkAndRecordSpend via a minimal stand-in that exposes

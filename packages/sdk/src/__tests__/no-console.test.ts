@@ -1,5 +1,5 @@
 /**
- * Issue #286 guard: every SDK diagnostic must go through a `RouteDockLogger`
+ * Issue #286 guard: every SDK diagnostic must go through a `KikisAppLogger`
  * so consumers can silence, redirect, or structure it. The only module allowed
  * to touch `console` is the console-backed default logger itself.
  *
@@ -57,7 +57,7 @@ describe('SDK logging (#286)', () => {
     assert.deepEqual(
       offenders,
       [],
-      `Bare console usage found — route it through a RouteDockLogger instead:\n${offenders.join('\n')}`,
+      `Bare console usage found — route it through a KikisAppLogger instead:\n${offenders.join('\n')}`,
     )
   })
 })

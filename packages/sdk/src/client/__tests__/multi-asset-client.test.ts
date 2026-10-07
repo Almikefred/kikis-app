@@ -1,17 +1,17 @@
 import assert from 'node:assert/strict'
 import { describe, it, mock, afterEach } from 'node:test'
 import { Horizon, Keypair } from '@stellar/stellar-sdk'
-import { RouteDockClient } from '../RouteDockClient.js'
-import { RouteDockTrustlineError, RouteDockManifestError } from '../../errors.js'
+import { KikisAppClient } from '../KikisAppClient.js'
+import { KikisAppTrustlineError, KikisAppManifestError } from '../../errors.js'
 import { signManifest } from '../../manifest/sign.js'
-import type { RouteDockManifest } from '../../types.js'
+import type { KikisAppManifest } from '../../types.js'
 
 const TESTNET_USDC_ISSUER = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5'
 
-function makeMultiAssetManifest(payeeKeypair: Keypair): RouteDockManifest {
+function makeMultiAssetManifest(payeeKeypair: Keypair): KikisAppManifest {
   return signManifest(
     {
-      routedock: '1.0',
+      kikis-app: '1.0',
       name: 'Multi-Asset Client Test Service',
       description: 'Provider for client mode-to-asset testing',
       modes: ['x402', 'mpp-charge'],
@@ -47,7 +47,7 @@ function makeMultiAssetManifest(payeeKeypair: Keypair): RouteDockManifest {
   )
 }
 
-describe('RouteDockClient — multi-asset eligibility & trustline preflight', () => {
+describe('KikisAppClient — multi-asset eligibility & trustline preflight', () => {
   afterEach(() => {
     mock.restoreAll()
   })
@@ -68,7 +68,7 @@ describe('RouteDockClient — multi-asset eligibility & trustline preflight', ()
       ],
     }))
 
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       network: 'testnet',
       wallet: payerKeypair,
     })
@@ -93,7 +93,7 @@ describe('RouteDockClient — multi-asset eligibility & trustline preflight', ()
       ],
     }))
 
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       network: 'testnet',
       wallet: payerKeypair,
     })
@@ -103,7 +103,7 @@ describe('RouteDockClient — multi-asset eligibility & trustline preflight', ()
     assert.equal(result.asset, 'XLM')
   })
 
-  it('preflight for x402 throws RouteDockTrustlineError when account lacks USDC trustline', async () => {
+  it('preflight for x402 throws KikisAppTrustlineError when account lacks USDC trustline', async () => {
     const payeeKeypair = Keypair.random()
     const payerKeypair = Keypair.random()
     const manifest = makeMultiAssetManifest(payeeKeypair)
@@ -118,7 +118,7 @@ describe('RouteDockClient — multi-asset eligibility & trustline preflight', ()
       ],
     }))
 
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       network: 'testnet',
       wallet: payerKeypair,
     })
@@ -126,19 +126,19 @@ describe('RouteDockClient — multi-asset eligibility & trustline preflight', ()
     await assert.rejects(
       () => client.preflight(manifest, 'x402', '/infer'),
       (err: unknown) => {
-        assert.ok(err instanceof RouteDockTrustlineError)
+        assert.ok(err instanceof KikisAppTrustlineError)
         assert.equal(err.asset, 'USDC')
         return true
       },
     )
   })
 
-  it('throws RouteDockManifestError when no asset is eligible for the specified mode (no silent fallback to root asset)', async () => {
+  it('throws KikisAppManifestError when no asset is eligible for the specified mode (no silent fallback to root asset)', async () => {
     const payeeKeypair = Keypair.random()
     const payerKeypair = Keypair.random()
     const manifest = makeMultiAssetManifest(payeeKeypair)
 
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       network: 'testnet',
       wallet: payerKeypair,
     })
@@ -146,19 +146,19 @@ describe('RouteDockClient — multi-asset eligibility & trustline preflight', ()
     await assert.rejects(
       () => client.preflight(manifest, 'mpp-session'),
       (err: unknown) => {
-        assert.ok(err instanceof RouteDockManifestError)
+        assert.ok(err instanceof KikisAppManifestError)
         assert.match((err as Error).message, /No eligible assets found for mode 'mpp-session'/)
         return true
       },
     )
   })
 
-  it('throws RouteDockManifestError when asset is restricted to a different endpoint', async () => {
+  it('throws KikisAppManifestError when asset is restricted to a different endpoint', async () => {
     const payeeKeypair = Keypair.random()
     const payerKeypair = Keypair.random()
     const manifest = makeMultiAssetManifest(payeeKeypair)
 
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       network: 'testnet',
       wallet: payerKeypair,
     })
@@ -167,7 +167,7 @@ describe('RouteDockClient — multi-asset eligibility & trustline preflight', ()
     await assert.rejects(
       () => client.preflight(manifest, 'x402', '/lookup'),
       (err: unknown) => {
-        assert.ok(err instanceof RouteDockManifestError)
+        assert.ok(err instanceof KikisAppManifestError)
         assert.match((err as Error).message, /No eligible assets found for mode 'x402' for endpoint '\/lookup'/)
         return true
       },
@@ -179,7 +179,7 @@ describe('RouteDockClient — multi-asset eligibility & trustline preflight', ()
     const payerKeypair = Keypair.random()
     const legacyManifest = signManifest(
       {
-        routedock: '1.0',
+        kikis-app: '1.0',
         name: 'Legacy Single-Asset Test Service',
         description: 'Provider without assets array',
         modes: ['x402'],
@@ -207,7 +207,7 @@ describe('RouteDockClient — multi-asset eligibility & trustline preflight', ()
       ],
     }))
 
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       network: 'testnet',
       wallet: payerKeypair,
     })

@@ -8,18 +8,18 @@
  *   (d) Rollback of reservation when payment fails
  *   (e) Endpoint caps are enforced
  *
- * Run with: pnpm --filter @routedock/routedock test
+ * Run with: pnpm --filter @kikis-app/kikis-app test
  */
 
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import assert from 'node:assert/strict'
 import { Keypair } from '@stellar/stellar-sdk'
-import { RouteDockClient, usdcToMicros } from '../RouteDockClient.js'
+import { KikisAppClient, usdcToMicros } from '../KikisAppClient.js'
 import { InMemorySpendStore, FileSpendStore } from '../../store/SpendStore.js'
-import { RouteDockPolicyRejectError, RouteDockManifestError } from '../../errors.js'
+import { KikisAppPolicyRejectError, KikisAppManifestError } from '../../errors.js'
 import { signManifest } from '../../manifest/sign.js'
-import type { RouteDockManifest, PaymentResult } from '../../types.js'
+import type { KikisAppManifest, PaymentResult } from '../../types.js'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { rmSync } from 'node:fs'
@@ -49,9 +49,9 @@ function makeManifest(
     mppChargeAmount: string
     sessionRate: string
   }> = {},
-): { manifest: RouteDockManifest; url: string } {
+): { manifest: KikisAppManifest; url: string } {
   const modes = opts.modes ?? ['x402', 'mpp-charge']
-  const pricing: RouteDockManifest['pricing'] = {}
+  const pricing: KikisAppManifest['pricing'] = {}
 
   if (modes.includes('x402')) {
     pricing.x402 = { amount: '0.001', per: 'request', facilitator: 'https://channels.openzeppelin.com/x402/testnet' }
@@ -70,7 +70,7 @@ function makeManifest(
   }
 
   const manifest = signManifest({
-    routedock: '1.0',
+    kikis-app: '1.0',
     name: 'Spend Cap Test Provider',
     description: 'Provider for spend cap tests',
     modes,
@@ -86,9 +86,9 @@ function makeManifest(
   return { manifest, url: `http://test-${Keypair.random().publicKey().slice(0, 8)}.example.com` }
 }
 
-function makeManifestHandler(manifest: RouteDockManifest) {
+function makeManifestHandler(manifest: KikisAppManifest) {
   return (req: IncomingMessage, res: ServerResponse) => {
-    if (req.url === '/.well-known/routedock.json') {
+    if (req.url === '/.well-known/kikis-app.json') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(manifest))
     } else {
@@ -97,11 +97,11 @@ function makeManifestHandler(manifest: RouteDockManifest) {
   }
 }
 
-function stubTrustlineCache(client: RouteDockClient): void {
+function stubTrustlineCache(client: KikisAppClient): void {
   const keypair = (client as any).keypair as Keypair
   const network = (client as any).network as string
   const cacheKey = `${network}:${keypair.publicKey()}:USDC`
-  ;(RouteDockClient as any)._trustlineCache.set(cacheKey, {
+  ;(KikisAppClient as any)._trustlineCache.set(cacheKey, {
     exists: true,
     expiresAt: Date.now() + 300_000,
   })
@@ -125,7 +125,7 @@ function fakeResult(mode: string, amount: string): PaymentResult {
 
   try {
     const store = new InMemorySpendStore({ warn: false })
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       wallet: Keypair.random(),
       network: 'testnet',
       spendCap: { daily: '0.0015', asset: 'USDC' },
@@ -148,7 +148,7 @@ function fakeResult(mode: string, amount: string): PaymentResult {
       await client.pay(`${server.url}/test`)
     } catch (err) {
       threw = true
-      assert.ok(err instanceof RouteDockPolicyRejectError)
+      assert.ok(err instanceof KikisAppPolicyRejectError)
     }
     assert.ok(threw, 'second pay() should throw when over cap')
     assert.equal(chargePayCalled, false, 'charge.pay must NOT be called when cap is exceeded')
@@ -172,7 +172,7 @@ function fakeResult(mode: string, amount: string): PaymentResult {
 
   try {
     const store = new InMemorySpendStore({ warn: false })
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       wallet: Keypair.random(),
       network: 'testnet',
       spendCap: { daily: '0.0015', asset: 'USDC' },
@@ -224,7 +224,7 @@ function fakeResult(mode: string, amount: string): PaymentResult {
 
   try {
     const store = new InMemorySpendStore({ warn: false })
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       wallet: Keypair.random(),
       network: 'testnet',
       spendCap: { daily: '0.002', asset: 'USDC' },
@@ -272,7 +272,7 @@ function fakeResult(mode: string, amount: string): PaymentResult {
 
   try {
     const store = new InMemorySpendStore({ warn: false })
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       wallet: Keypair.random(),
       network: 'testnet',
       spendCap: {
@@ -298,8 +298,8 @@ function fakeResult(mode: string, amount: string): PaymentResult {
       await client.pay(`${server.url}/test`)
     } catch (err) {
       threw = true
-      assert.ok(err instanceof RouteDockPolicyRejectError)
-      assert.equal((err as RouteDockPolicyRejectError).reason, 'local_endpoint_cap_exceeded')
+      assert.ok(err instanceof KikisAppPolicyRejectError)
+      assert.equal((err as KikisAppPolicyRejectError).reason, 'local_endpoint_cap_exceeded')
     }
     assert.ok(threw, 'should throw on endpoint cap exceeded')
     assert.equal(chargePayCalled, false, 'charge.pay must NOT be called when endpoint cap is exceeded')
@@ -322,7 +322,7 @@ function fakeResult(mode: string, amount: string): PaymentResult {
 
   try {
     const store = new InMemorySpendStore({ warn: false })
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       wallet: Keypair.random(),
       network: 'testnet',
       spendCap: {
@@ -335,7 +335,7 @@ function fakeResult(mode: string, amount: string): PaymentResult {
     stubTrustlineCache(client)
 
     // x402 price is 0.001 (10000 microUSDC); the cap is 0.0015, so a leaked
-    // reservation fails the second call with RouteDockPolicyRejectError.
+    // reservation fails the second call with KikisAppPolicyRejectError.
     ;(client as any).x402.pay = async () => ({
       data: { free: true },
       txHash: null,
@@ -375,7 +375,7 @@ function fakeResult(mode: string, amount: string): PaymentResult {
 
   try {
     const store = new InMemorySpendStore({ warn: false })
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       wallet: Keypair.random(),
       network: 'testnet',
       spendCap: { daily: '1.00', asset: 'USDC' },
@@ -405,14 +405,14 @@ function fakeResult(mode: string, amount: string): PaymentResult {
 
 // ── Test 5: MPP session voucher spend consults the cap ────────────────────────
 
-// Test 5a: RouteDockClient passes onSpend to MppSessionClient when spendCap is set
+// Test 5a: KikisAppClient passes onSpend to MppSessionClient when spendCap is set
 {
   const { manifest } = makeManifest({ modes: ['mpp-session'], sessionRate: '0.0001' })
   const server = await startTestServer(makeManifestHandler(manifest))
 
   try {
     const store = new InMemorySpendStore({ warn: false })
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       wallet: Keypair.random(),
       network: 'testnet',
       spendCap: { daily: '0.001', asset: 'USDC' },
@@ -432,7 +432,7 @@ function fakeResult(mode: string, amount: string): PaymentResult {
     assert.ok(onSpendPassed, 'onSpend callback should be passed when spendCap is set')
     assert.equal(handle.channelId, manifest.pricing['mpp-session']!.channel_factory)
 
-    console.log('✓ Test 5a: RouteDockClient passes onSpend to MppSessionClient when spendCap is set')
+    console.log('✓ Test 5a: KikisAppClient passes onSpend to MppSessionClient when spendCap is set')
   } finally {
     await server.close()
   }
@@ -441,7 +441,7 @@ function fakeResult(mode: string, amount: string): PaymentResult {
 // Test 5b: _recordSessionSpend enforces cap (called by onSpend before each voucher)
 {
   const store = new InMemorySpendStore({ warn: false })
-  const client = new RouteDockClient({
+  const client = new KikisAppClient({
     wallet: Keypair.random(),
     network: 'testnet',
     spendCap: { daily: '0.0005', asset: 'USDC' },
@@ -466,7 +466,7 @@ function fakeResult(mode: string, amount: string): PaymentResult {
     await record('0.0001')
   } catch (err) {
     threw = true
-    assert.ok(err instanceof RouteDockPolicyRejectError)
+    assert.ok(err instanceof KikisAppPolicyRejectError)
   }
   assert.ok(threw, '6th voucher should exceed daily cap')
 
@@ -480,7 +480,7 @@ function fakeResult(mode: string, amount: string): PaymentResult {
   const server = await startTestServer(makeManifestHandler(manifest))
 
   try {
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       wallet: Keypair.random(),
       network: 'testnet',
       // No spendCap
@@ -510,7 +510,7 @@ function fakeResult(mode: string, amount: string): PaymentResult {
 
   try {
     const store = new InMemorySpendStore({ warn: false })
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       wallet: Keypair.random(),
       network: 'testnet',
       spendCap: {
@@ -581,7 +581,7 @@ function fakeResult(mode: string, amount: string): PaymentResult {
 // ── Test 9: FileSpendStore durability ────────────────────────────────────────
 
 {
-  const tmpPath = join(tmpdir(), `routedock-test-spend-${Date.now()}.json`)
+  const tmpPath = join(tmpdir(), `kikis-app-test-spend-${Date.now()}.json`)
   try {
     const store = new FileSpendStore(tmpPath)
     assert.equal(await store.read(), null, 'non-existent store should return null')
@@ -623,7 +623,7 @@ function fakeResult(mode: string, amount: string): PaymentResult {
     const trailingSlashKey = `${server.url}/`
 
     const store = new InMemorySpendStore({ warn: false })
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       wallet: Keypair.random(),
       network: 'testnet',
       spendCap: {
@@ -643,8 +643,8 @@ function fakeResult(mode: string, amount: string): PaymentResult {
       await client.pay(`${server.url}/test`)
     } catch (err) {
       threw = true
-      assert.ok(err instanceof RouteDockPolicyRejectError)
-      assert.equal((err as RouteDockPolicyRejectError).reason, 'local_endpoint_cap_exceeded')
+      assert.ok(err instanceof KikisAppPolicyRejectError)
+      assert.equal((err as KikisAppPolicyRejectError).reason, 'local_endpoint_cap_exceeded')
     }
     assert.ok(threw, `endpoint cap keyed "${trailingSlashKey}" should still be enforced against ${server.url}`)
 
@@ -657,7 +657,7 @@ function fakeResult(mode: string, amount: string): PaymentResult {
     for (const variant of ['https://API.example.com', 'https://api.example.com:443']) {
       assert.throws(
         () =>
-          new RouteDockClient({
+          new KikisAppClient({
             wallet: Keypair.random(),
             network: 'testnet',
             spendCap: {
@@ -667,7 +667,7 @@ function fakeResult(mode: string, amount: string): PaymentResult {
             },
           }),
         (err: unknown) =>
-          err instanceof RouteDockManifestError && err.message.includes('"https://api.example.com"'),
+          err instanceof KikisAppManifestError && err.message.includes('"https://api.example.com"'),
         `"${variant}" should normalize to the same origin as "https://api.example.com"`,
       )
     }
@@ -683,21 +683,21 @@ function fakeResult(mode: string, amount: string): PaymentResult {
 {
   const invalidUrlThrew = (() => {
     try {
-      new RouteDockClient({
+      new KikisAppClient({
         wallet: Keypair.random(),
         network: 'testnet',
         spendCap: { daily: '1.00', asset: 'USDC', endpointCaps: { 'not a url': '0.10' } },
       })
       return false
     } catch (err) {
-      return err instanceof RouteDockManifestError && (err as Error).message.includes('not a url')
+      return err instanceof KikisAppManifestError && (err as Error).message.includes('not a url')
     }
   })()
   assert.ok(invalidUrlThrew, 'an unparseable endpointCaps key should throw a typed error naming the key')
 
   const pathThrew = (() => {
     try {
-      new RouteDockClient({
+      new KikisAppClient({
         wallet: Keypair.random(),
         network: 'testnet',
         spendCap: {
@@ -708,14 +708,14 @@ function fakeResult(mode: string, amount: string): PaymentResult {
       })
       return false
     } catch (err) {
-      return err instanceof RouteDockManifestError
+      return err instanceof KikisAppManifestError
     }
   })()
   assert.ok(pathThrew, 'an endpointCaps key with a path should throw')
 
   const duplicateThrew = (() => {
     try {
-      new RouteDockClient({
+      new KikisAppClient({
         wallet: Keypair.random(),
         network: 'testnet',
         spendCap: {
@@ -729,7 +729,7 @@ function fakeResult(mode: string, amount: string): PaymentResult {
       })
       return false
     } catch (err) {
-      return err instanceof RouteDockManifestError
+      return err instanceof KikisAppManifestError
     }
   })()
   assert.ok(duplicateThrew, 'two endpointCaps keys normalizing to the same origin should throw')

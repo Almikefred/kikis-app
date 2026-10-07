@@ -1,8 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { SessionState } from '../types.js'
 import {
-  RouteDockVoucherMonotonicityError,
-  RouteDockNetworkError,
+  KikisAppVoucherMonotonicityError,
+  KikisAppNetworkError,
 } from '../errors.js'
 
 // ── Interface ──────────────────────────────────────────────────────────────────
@@ -33,7 +33,7 @@ export class SupabaseSessionStore implements SessionStore {
       .maybeSingle()
 
     if (error) {
-      throw new RouteDockNetworkError(`SessionStore.get failed: ${error.message}`)
+      throw new KikisAppNetworkError(`SessionStore.get failed: ${error.message}`)
     }
     if (!data) return null
 
@@ -58,7 +58,7 @@ export class SupabaseSessionStore implements SessionStore {
       const prev = parseFloat(existing.cumulative_amount)
       const next = parseFloat(state.cumulative_amount)
       if (next <= prev) {
-        throw new RouteDockVoucherMonotonicityError(
+        throw new KikisAppVoucherMonotonicityError(
           `cumulative_amount must be strictly increasing: ${next} <= ${prev}`,
         )
       }
@@ -83,11 +83,11 @@ export class SupabaseSessionStore implements SessionStore {
 
     if (error) {
       if (error.message.includes('strictly increasing')) {
-        throw new RouteDockVoucherMonotonicityError(
+        throw new KikisAppVoucherMonotonicityError(
           `cumulative_amount must be strictly increasing (DB): ${error.message}`,
         )
       }
-      throw new RouteDockNetworkError(`SessionStore.upsert failed: ${error.message}`)
+      throw new KikisAppNetworkError(`SessionStore.upsert failed: ${error.message}`)
     }
   }
 
@@ -110,7 +110,7 @@ export class SupabaseSessionStore implements SessionStore {
       .eq('channel_id', channelId)
 
     if (error) {
-      throw new RouteDockNetworkError(`SessionStore.setStatus failed: ${error.message}`)
+      throw new KikisAppNetworkError(`SessionStore.setStatus failed: ${error.message}`)
     }
   }
 

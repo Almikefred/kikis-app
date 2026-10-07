@@ -1,6 +1,6 @@
 import type { PaymentRequirements } from '@x402/core/types'
-import type { RouteDockManifest } from '../types.js'
-import { RouteDockPolicyRejectError } from '../errors.js'
+import type { KikisAppManifest } from '../types.js'
+import { KikisAppPolicyRejectError } from '../errors.js'
 import { usdcToStroops } from '../internal/usdc.js'
 import { resolvePayee } from '../internal/payee.js'
 
@@ -34,18 +34,18 @@ function isPositiveIntegerString(value: unknown): value is string {
 function checkAmount(
   amount: unknown,
   maxAmount: string,
-): RouteDockPolicyRejectError | null {
+): KikisAppPolicyRejectError | null {
   if (!isPositiveIntegerString(amount)) {
-    return new RouteDockPolicyRejectError('challenge_amount_invalid')
+    return new KikisAppPolicyRejectError('challenge_amount_invalid')
   }
   let max: bigint
   try {
     max = usdcToStroops(maxAmount)
   } catch {
-    return new RouteDockPolicyRejectError('challenge_amount_invalid')
+    return new KikisAppPolicyRejectError('challenge_amount_invalid')
   }
   if (BigInt(amount) > max) {
-    return new RouteDockPolicyRejectError('challenge_amount_exceeds_manifest')
+    return new KikisAppPolicyRejectError('challenge_amount_exceeds_manifest')
   }
   return null
 }
@@ -60,18 +60,18 @@ function checkAmount(
  */
 export function checkX402Accept(
   accept: PaymentRequirements,
-  manifest: RouteDockManifest,
+  manifest: KikisAppManifest,
   network: Caip2Network,
   maxAmount: string,
-): RouteDockPolicyRejectError | null {
+): KikisAppPolicyRejectError | null {
   if (accept.network !== network) {
-    return new RouteDockPolicyRejectError('challenge_network_mismatch')
+    return new KikisAppPolicyRejectError('challenge_network_mismatch')
   }
   if (accept.payTo !== resolvePayee(manifest, 'x402')) {
-    return new RouteDockPolicyRejectError('challenge_payee_mismatch')
+    return new KikisAppPolicyRejectError('challenge_payee_mismatch')
   }
   if (accept.asset !== manifest.asset_contract) {
-    return new RouteDockPolicyRejectError('challenge_asset_mismatch')
+    return new KikisAppPolicyRejectError('challenge_asset_mismatch')
   }
   return checkAmount(accept.amount, maxAmount)
 }
@@ -82,7 +82,7 @@ export function checkX402Accept(
  */
 export function filterX402Accepts(
   accepts: readonly PaymentRequirements[],
-  manifest: RouteDockManifest,
+  manifest: KikisAppManifest,
   network: Caip2Network,
   maxAmount: string,
 ): PaymentRequirements[] {
@@ -98,25 +98,25 @@ export function filterX402Accepts(
  */
 export function checkChargeChallenge(
   request: Record<string, unknown>,
-  manifest: RouteDockManifest,
+  manifest: KikisAppManifest,
   network: Caip2Network,
   maxAmount: string,
-): RouteDockPolicyRejectError | null {
+): KikisAppPolicyRejectError | null {
   const methodDetails = request['methodDetails']
   const rawNetwork = isRecord(methodDetails) ? methodDetails['network'] : undefined
   const challengeNetwork = rawNetwork === undefined ? 'stellar:testnet' : rawNetwork
   if (challengeNetwork !== network) {
-    return new RouteDockPolicyRejectError('challenge_network_mismatch')
+    return new KikisAppPolicyRejectError('challenge_network_mismatch')
   }
 
   const recipient = request['recipient']
   if (typeof recipient !== 'string' || recipient !== resolvePayee(manifest, 'mpp-charge')) {
-    return new RouteDockPolicyRejectError('challenge_payee_mismatch')
+    return new KikisAppPolicyRejectError('challenge_payee_mismatch')
   }
 
   const currency = request['currency']
   if (typeof currency !== 'string' || currency !== manifest.asset_contract) {
-    return new RouteDockPolicyRejectError('challenge_asset_mismatch')
+    return new KikisAppPolicyRejectError('challenge_asset_mismatch')
   }
 
   return checkAmount(request['amount'], maxAmount)

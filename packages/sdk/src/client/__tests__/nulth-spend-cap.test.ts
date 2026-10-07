@@ -7,7 +7,7 @@
  * the x402 sub-client is replaced with a stub, so these tests exercise only the
  * client's spend accounting.
  *
- * Run with: pnpm --filter @routedock/routedock test
+ * Run with: pnpm --filter @kikis-app/kikis-app test
  */
 
 import assert from 'node:assert/strict'
@@ -16,14 +16,14 @@ import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { Keypair } from '@stellar/stellar-sdk'
 import { InMemorySpendStore } from '../../store/SpendStore.js'
-import { RouteDockPolicyRejectError, RouteDockManifestError } from '../../errors.js'
+import { KikisAppPolicyRejectError, KikisAppManifestError } from '../../errors.js'
 import { signManifest } from '../../manifest/sign.js'
-import type { RouteDockManifest, PaymentResult } from '../../types.js'
+import type { KikisAppManifest, PaymentResult } from '../../types.js'
 
 const PAYEE_KEYPAIR = Keypair.random()
 const NULTH = 'CAX5IDLC2XHGQSEA2YN3LPLZ7EXLMRXYX3HFJGKFXS6B7OQXBKWO44LT'
 
-/** Stand-in for the real class RouteDockClient maps from. */
+/** Stand-in for the real class KikisAppClient maps from. */
 class FakeNulthPolicyError extends Error {
   readonly code: string
   constructor(code: string, message: string) {
@@ -49,7 +49,7 @@ mock.module('../NulthVault.js', {
   },
 })
 
-const { RouteDockClient } = await import('../RouteDockClient.js')
+const { KikisAppClient } = await import('../KikisAppClient.js')
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -68,8 +68,8 @@ function startTestServer(
   })
 }
 
-function makeManifest(modes: Array<'x402' | 'mpp-charge'> = ['x402']): RouteDockManifest {
-  const pricing: RouteDockManifest['pricing'] = {}
+function makeManifest(modes: Array<'x402' | 'mpp-charge'> = ['x402']): KikisAppManifest {
+  const pricing: KikisAppManifest['pricing'] = {}
   if (modes.includes('x402')) {
     pricing.x402 = {
       amount: '0.001',
@@ -83,7 +83,7 @@ function makeManifest(modes: Array<'x402' | 'mpp-charge'> = ['x402']): RouteDock
 
   return signManifest(
     {
-      routedock: '1.0',
+      kikis-app: '1.0',
       name: 'Nulth Spend Cap Test',
       description: 'Nulth vault spend cap tests',
       modes,
@@ -99,9 +99,9 @@ function makeManifest(modes: Array<'x402' | 'mpp-charge'> = ['x402']): RouteDock
   )
 }
 
-function makeManifestHandler(manifest: RouteDockManifest) {
+function makeManifestHandler(manifest: KikisAppManifest) {
   return (req: IncomingMessage, res: ServerResponse) => {
-    if (req.url === '/.well-known/routedock.json') {
+    if (req.url === '/.well-known/kikis-app.json') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify(manifest))
     } else {
@@ -127,12 +127,12 @@ type ClientStatics = {
   _trustlineCache: Map<string, { exists: true; expiresAt: number }>
 }
 
-const internals = (client: InstanceType<typeof RouteDockClient>): ClientInternals =>
+const internals = (client: InstanceType<typeof KikisAppClient>): ClientInternals =>
   client as unknown as ClientInternals
 
-function stubTrustlineCache(client: InstanceType<typeof RouteDockClient>): void {
+function stubTrustlineCache(client: InstanceType<typeof KikisAppClient>): void {
   const { keypair, network } = internals(client)
-  ;(RouteDockClient as unknown as ClientStatics)._trustlineCache.set(
+  ;(KikisAppClient as unknown as ClientStatics)._trustlineCache.set(
     `${network}:${keypair.publicKey()}:USDC`,
     { exists: true, expiresAt: Date.now() + 300_000 },
   )
@@ -149,7 +149,7 @@ function fakeResult(mode: PaymentResult['mode'], amount: string): PaymentResult 
 }
 
 let x402PayCalls = 0
-function installFakeX402(client: InstanceType<typeof RouteDockClient>): void {
+function installFakeX402(client: InstanceType<typeof KikisAppClient>): void {
   const pay = async () => {
     x402PayCalls++
     return fakeResult('x402', '0.001')
@@ -162,8 +162,8 @@ function installFakeX402(client: InstanceType<typeof RouteDockClient>): void {
 
 function makeClient(opts: {
   spendCap: { daily: string; endpointCaps?: Record<string, string> }
-}): InstanceType<typeof RouteDockClient> {
-  return new RouteDockClient({
+}): InstanceType<typeof KikisAppClient> {
+  return new KikisAppClient({
     wallet: Keypair.random(),
     network: 'testnet',
     spendCap: { asset: 'USDC', ...opts.spendCap },
@@ -186,7 +186,7 @@ before(() => {
 
 // ── 1. Daily cap blocks the vault payment before it is attempted ──────────────
 
-describe('RouteDockClient — nulth vault spend cap (#396)', () => {
+describe('KikisAppClient — nulth vault spend cap (#396)', () => {
   it('rejects an over-cap vault payment without attempting it', async () => {
     const server = await startTestServer(makeManifestHandler(makeManifest()))
     try {
@@ -203,8 +203,8 @@ describe('RouteDockClient — nulth vault spend cap (#396)', () => {
         caught = err
       }
 
-      assert.ok(caught instanceof RouteDockPolicyRejectError)
-      assert.equal((caught as RouteDockPolicyRejectError).reason, 'local_daily_cap_exceeded')
+      assert.ok(caught instanceof KikisAppPolicyRejectError)
+      assert.equal((caught as KikisAppPolicyRejectError).reason, 'local_daily_cap_exceeded')
       assert.equal(prepareCalls, 0, 'the vault signer must not be prepared when over cap')
       assert.equal(x402PayCalls, 0, 'no x402 payment may be attempted when over cap')
     } finally {
@@ -232,8 +232,8 @@ describe('RouteDockClient — nulth vault spend cap (#396)', () => {
         caught = err
       }
 
-      assert.ok(caught instanceof RouteDockPolicyRejectError)
-      assert.equal((caught as RouteDockPolicyRejectError).reason, 'local_endpoint_cap_exceeded')
+      assert.ok(caught instanceof KikisAppPolicyRejectError)
+      assert.equal((caught as KikisAppPolicyRejectError).reason, 'local_endpoint_cap_exceeded')
       assert.equal(prepareCalls, 0)
       assert.equal(x402PayCalls, 0)
     } finally {
@@ -247,7 +247,7 @@ describe('RouteDockClient — nulth vault spend cap (#396)', () => {
     const server = await startTestServer(makeManifestHandler(makeManifest()))
     try {
       const store = new InMemorySpendStore({ warn: false })
-      const client = new RouteDockClient({
+      const client = new KikisAppClient({
         wallet: Keypair.random(),
         network: 'testnet',
         spendCap: { daily: '0.0015', asset: 'USDC' },
@@ -283,8 +283,8 @@ describe('RouteDockClient — nulth vault spend cap (#396)', () => {
       } catch (err) {
         caught = err
       }
-      assert.ok(caught instanceof RouteDockPolicyRejectError)
-      assert.equal((caught as RouteDockPolicyRejectError).reason, 'local_daily_cap_exceeded')
+      assert.ok(caught instanceof KikisAppPolicyRejectError)
+      assert.equal((caught as KikisAppPolicyRejectError).reason, 'local_daily_cap_exceeded')
     } finally {
       await server.close()
     }
@@ -296,7 +296,7 @@ describe('RouteDockClient — nulth vault spend cap (#396)', () => {
     const server = await startTestServer(makeManifestHandler(makeManifest()))
     try {
       const store = new InMemorySpendStore({ warn: false })
-      const client = new RouteDockClient({
+      const client = new KikisAppClient({
         wallet: Keypair.random(),
         network: 'testnet',
         spendCap: { daily: '0.002', asset: 'USDC' },
@@ -325,8 +325,8 @@ describe('RouteDockClient — nulth vault spend cap (#396)', () => {
         caught = err
       }
 
-      assert.ok(caught instanceof RouteDockPolicyRejectError)
-      assert.equal((caught as RouteDockPolicyRejectError).reason, 'daily_cap_exceeded')
+      assert.ok(caught instanceof KikisAppPolicyRejectError)
+      assert.equal((caught as KikisAppPolicyRejectError).reason, 'daily_cap_exceeded')
 
       const state = await store.read()
       assert.ok(state)
@@ -351,7 +351,7 @@ describe('RouteDockClient — nulth vault spend cap (#396)', () => {
     )
     try {
       const store = new InMemorySpendStore({ warn: false })
-      const client = new RouteDockClient({
+      const client = new KikisAppClient({
         wallet: Keypair.random(),
         network: 'testnet',
         spendCap: { daily: '0.002', asset: 'USDC' },
@@ -374,7 +374,7 @@ describe('RouteDockClient — nulth vault spend cap (#396)', () => {
         caught = err
       }
 
-      assert.ok(caught instanceof RouteDockManifestError)
+      assert.ok(caught instanceof KikisAppManifestError)
       const state = await store.read()
       assert.ok(state)
       assert.equal(state.totalMicros, '0', 'validation failure must release the reservation')

@@ -6,7 +6,7 @@
  *
  * Flow:
  *   1. Mock provider spins up at localhost:3100 (skipped if START_MOCK_PROVIDER=false).
- *   2. RouteDockClient fetches the provider manifest.
+ *   2. KikisAppClient fetches the provider manifest.
  *   3. For each prompt, client.pay() opens a mpp-charge 402 challenge, signs
  *      the pull-payment, and returns the model response.
  *   4. Each charge settles on-chain independently — no channel required.
@@ -19,9 +19,9 @@
 import { serve } from '@hono/node-server'
 import { Hono } from 'hono'
 import { Keypair } from '@stellar/stellar-sdk'
-import { routedockHono } from '@routedock/routedock/provider/hono'
-import { RouteDockClient } from '@routedock/routedock'
-import type { RouteDockManifest } from '@routedock/routedock'
+import { kikisAppHono } from '@kikis-app/kikis-app/provider/hono'
+import { KikisAppClient } from '@kikis-app/kikis-app'
+import type { KikisAppManifest } from '@kikis-app/kikis-app'
 
 // ---------------------------------------------------------------------------
 // Config
@@ -54,8 +54,8 @@ if (!USDC_CONTRACT) {
 // Mock inference provider (Hono)
 // ---------------------------------------------------------------------------
 
-const MANIFEST: RouteDockManifest = {
-    routedock: '1.0',
+const MANIFEST: KikisAppManifest = {
+    kikis-app: '1.0',
     name: 'Mock Inference Provider',
     description: 'Simulated LLM inference endpoint — returns canned responses',
     modes: ['mpp-charge'],
@@ -80,7 +80,7 @@ const CANNED_RESPONSES: Record<string, string> = {
 function buildMockServer(): Hono {
     const app = new Hono()
 
-    app.use(routedockHono({
+    app.use(kikisAppHono({
             modes: ['mpp-charge'],
             pricing: { 'mpp-charge': MANIFEST.pricing['mpp-charge']!.amount },
             asset: MANIFEST.asset,
@@ -136,7 +136,7 @@ async function main(): Promise<void> {
 
     const inferUrl = `${INFERENCE_PROVIDER_URL}/infer`
 
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
         wallet: AGENT_SECRET,
         network: STELLAR_NETWORK,
         spendCap: { daily: '0.10', asset: 'USDC' },

@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { OnChainRegistry, type OnChainProviderInfo } from './OnChainRegistry.js'
 import { fetchManifest } from '../client/ModeRouter.js'
-import type { RouteDockManifest } from '../types.js'
+import type { KikisAppManifest } from '../types.js'
 
 export interface ProviderRecord {
   name: string
@@ -127,11 +127,11 @@ export class ProviderRegistry {
    * Fetch a provider's manifest bound to the record's payee. The record's
    * `payee` (from supabase `verified` rows or the on-chain registry account)
    * is the out-of-band trust anchor: the fetched manifest's `payee` must
-   * equal it, otherwise `RouteDockSignatureError` is thrown. This closes the
+   * equal it, otherwise `KikisAppSignatureError` is thrown. This closes the
    * gap where the registry never cross-checked the on-chain payee against
    * the manifest payee.
    */
-  async fetchProviderManifest(record: ProviderRecord): Promise<RouteDockManifest> {
+  async fetchProviderManifest(record: ProviderRecord): Promise<KikisAppManifest> {
     const baseUrl = new URL(record.base_url).origin
     return fetchManifest(baseUrl, undefined, undefined, record.payee)
   }

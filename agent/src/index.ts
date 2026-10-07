@@ -1,8 +1,8 @@
 /**
- * RouteDock Reference Agent — Phase 4
+ * KikisApp Reference Agent — Phase 4
  *
  * Runs the full autonomous payment sequence from Section 10.1 of
- * ROUTEDOCK_MASTER.md against live provider services on Stellar testnet.
+ * KIKIS_APP_MASTER.md against live provider services on Stellar testnet.
  *
  * Run sequence:
  *   1. Initialize — derive keypair, log balance
@@ -21,7 +21,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { Keypair } from '@stellar/stellar-sdk'
 import { Horizon } from '@stellar/stellar-sdk'
-import { RouteDockClient, FileSpendStore, RouteDockPolicyRejectError, RouteDockTrustlineError } from '@routedock/routedock'
+import { KikisAppClient, FileSpendStore, KikisAppPolicyRejectError, KikisAppTrustlineError } from '@kikis-app/kikis-app'
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -33,8 +33,8 @@ const AGENT_DAILY_CAP_USDC = process.env['AGENT_DAILY_CAP_USDC'] ?? '0.002'
 const COMMITMENT_SECRET = process.env['COMMITMENT_SECRET'] ?? ''
 const AGENT_SPEND_STORE_PATH =
   process.env['AGENT_SPEND_STORE_PATH'] ??
-  process.env['ROUTEDOCK_SPEND_STORE_PATH'] ??
-  path.join(os.homedir(), '.routedock', 'spend.json')
+  process.env['KIKIS_APP_SPEND_STORE_PATH'] ??
+  path.join(os.homedir(), '.kikis-app', 'spend.json')
 
 const HORIZON_URL =
   STELLAR_NETWORK === 'testnet'
@@ -54,7 +54,7 @@ function explorerLink(txHash: string): string {
   return `${EXPLORER_BASE}/${txHash}`
 }
 
-type AgentSession = Awaited<ReturnType<RouteDockClient['openSession']>>
+type AgentSession = Awaited<ReturnType<KikisAppClient['openSession']>>
 type CloseResult = Awaited<ReturnType<AgentSession['close']>>
 
 let activeSession: AgentSession | null = null
@@ -99,7 +99,7 @@ async function main(): Promise<void> {
 
   const spendStore = new FileSpendStore(AGENT_SPEND_STORE_PATH)
 
-  const client = new RouteDockClient({
+  const client = new KikisAppClient({
     wallet: keypair,
     network: STELLAR_NETWORK,
     spendCap: { daily: AGENT_DAILY_CAP_USDC, asset: 'USDC' },
@@ -120,14 +120,14 @@ async function main(): Promise<void> {
       startingBalance = usdcBalance.balance
       trustlineFound = true
     } else {
-      log('Init', 'WARNING: No USDC trustline found — first payment will fail with RouteDockTrustlineError')
+      log('Init', 'WARNING: No USDC trustline found — first payment will fail with KikisAppTrustlineError')
       log('Init', '  Create one: stellar tx new --source <SECRET_KEY> --network mainnet change-trust --asset USDC:GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN --limit 100000')
     }
   } catch (err) {
     log('Init', 'Warning: could not fetch balance from Horizon — continuing')
   }
 
-  log('Init', `[RouteDock Agent] Started. Address: ${agentAddress} Balance: ${startingBalance} USDC`)
+  log('Init', `[KikisApp Agent] Started. Address: ${agentAddress} Balance: ${startingBalance} USDC`)
   log('Init', `Network: ${STELLAR_NETWORK}, DailyCap: ${AGENT_DAILY_CAP_USDC} USDC`)
   log('Init', `SpendStore: FileSpendStore (${AGENT_SPEND_STORE_PATH})`)
   log('Init', `Provider A: ${PROVIDER_A_URL}`)
@@ -226,7 +226,7 @@ async function main(): Promise<void> {
     await client.pay(`${PROVIDER_A_URL}/price`, { forceMode: 'x402' })
     log('policy', 'WARNING: payment succeeded when it should have been rejected!')
   } catch (err) {
-    if (err instanceof RouteDockPolicyRejectError) {
+    if (err instanceof KikisAppPolicyRejectError) {
       policyRejected = true
       log('policy', `[Policy] REJECTED — reason: ${err.reason}. No transaction broadcast.`)
       log('policy', 'Confirmed: spend cap enforced locally before any Stellar transaction.')
@@ -236,7 +236,7 @@ async function main(): Promise<void> {
   }
 
   if (!policyRejected) {
-    log('policy', 'WARNING: expected RouteDockPolicyRejectedError but payment succeeded')
+    log('policy', 'WARNING: expected KikisAppPolicyRejectedError but payment succeeded')
   }
 
   // ── Step 6: Summary ───────────────────────────────────────────────────────
@@ -266,7 +266,7 @@ function buildSummary(
   }
 
   return [
-    '# RouteDock Agent Run Results',
+    '# KikisApp Agent Run Results',
     '',
     `**Date:** ${new Date().toISOString()}`,
     `**Network:** ${STELLAR_NETWORK}`,
@@ -309,7 +309,7 @@ function buildSummary(
 }
 
 main().catch((err: unknown) => {
-  if (err instanceof RouteDockTrustlineError) {
+  if (err instanceof KikisAppTrustlineError) {
     console.error(`\n[Agent] Fatal: ${err.message}`)
     console.error(`[Agent]   Asset: ${err.asset}`)
     console.error(`[Agent]   Issuer: ${err.issuer}`)

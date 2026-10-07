@@ -1,7 +1,7 @@
 import { codeToHtml } from 'shiki'
 import { writeFileSync } from 'fs'
 
-const CODE = `const client = new RouteDockClient({ wallet, network: 'testnet' })
+const CODE = `const client = new KikisAppClient({ wallet, network: 'testnet' })
 const result = await client.pay('https://provider.stellar.app/price')
 // result.mode → 'x402' | 'mpp-charge' | 'mpp-session'`
 

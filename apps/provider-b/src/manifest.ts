@@ -1,4 +1,4 @@
-import type { RouteDockManifest } from '@routedock/routedock'
+import type { KikisAppManifest } from '@kikis-app/kikis-app'
 
 export const TESTNET_USDC_CONTRACT = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA'
 
@@ -38,9 +38,9 @@ export function buildManifest({
   payee,
   assetContract,
   channelContract,
-}: ManifestInput): RouteDockManifest {
+}: ManifestInput): KikisAppManifest {
   return {
-    routedock: '1.0',
+    kikis-app: '1.0',
     name: 'Stellar DEX Orderbook Stream',
     description: 'Voucher-metered USDC/XLM orderbook snapshots from Stellar Horizon',
     modes: ['mpp-session', 'mpp-session-ws'],

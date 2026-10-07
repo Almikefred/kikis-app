@@ -1,10 +1,10 @@
 import { Keypair } from '@stellar/stellar-sdk'
 import { stellar } from '@stellar/mpp/charge/client'
 import { Mppx } from 'mppx/client'
-import type { RouteDockManifest, PaymentResult } from '../types.js'
+import type { KikisAppManifest, PaymentResult } from '../types.js'
 import {
-  RouteDockManifestError,
-  RouteDockPolicyRejectError,
+  KikisAppManifestError,
+  KikisAppPolicyRejectError,
   httpStatusToError,
   wrapMppError,
 } from '../errors.js'
@@ -19,10 +19,10 @@ export class MppChargeClient {
     private readonly retryPolicy?: RetryPolicy,
   ) {}
 
-  async pay(url: string, manifest: RouteDockManifest): Promise<PaymentResult> {
+  async pay(url: string, manifest: KikisAppManifest): Promise<PaymentResult> {
     const pricing = manifest.pricing['mpp-charge']
     if (!pricing) {
-      throw new RouteDockManifestError('manifest.pricing.mpp-charge missing')
+      throw new KikisAppManifestError('manifest.pricing.mpp-charge missing')
     }
 
     const caip2: Caip2Network =
@@ -56,7 +56,7 @@ export class MppChargeClient {
 
         const amount = request['amount']
         if (typeof amount !== 'string') {
-          throw new RouteDockPolicyRejectError('challenge_amount_invalid')
+          throw new KikisAppPolicyRejectError('challenge_amount_invalid')
         }
         signedAmount = stroopsToUsdc(BigInt(amount))
         credential ??= await createCredential()
@@ -82,14 +82,14 @@ export class MppChargeClient {
             response,
           )
         }
-        throw new RouteDockManifestError(`MPP charge failed: HTTP ${response.status}`)
+        throw new KikisAppManifestError(`MPP charge failed: HTTP ${response.status}`)
       }
 
       let data: unknown
       try {
         data = await response.json()
       } catch (cause) {
-        throw new RouteDockManifestError(
+        throw new KikisAppManifestError(
           `Failed to parse JSON from response (HTTP ${response.status})`,
           { cause },
         )

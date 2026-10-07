@@ -6,7 +6,7 @@
 #   pnpm verify --fast   skip tests, keep build + typecheck
 #
 # The build steps are not optional. Several packages import
-# @routedock/routedock/schema, which resolves to the SDK's built dist/ rather
+# @kikis-app/kikis-app/schema, which resolves to the SDK's built dist/ rather
 # than its source, so typechecking against a stale or missing dist/ produces
 # failures that do not exist and hides ones that do.
 set -euo pipefail
@@ -35,8 +35,8 @@ pnpm install --frozen-lockfile --prefer-offline >/dev/null 2>&1 \
 echo "  ok"
 
 step "build sdk packages"
-pnpm --filter @routedock/nulth-sdk build >/dev/null || fail "@routedock/nulth-sdk failed to build"
-pnpm --filter @routedock/routedock build >/dev/null || fail "@routedock/routedock failed to build"
+pnpm --filter @kikis-app/nulth-sdk build >/dev/null || fail "@kikis-app/nulth-sdk failed to build"
+pnpm --filter @kikis-app/kikis-app build >/dev/null || fail "@kikis-app/kikis-app failed to build"
 echo "  ok"
 
 step "typecheck all packages"
@@ -48,8 +48,8 @@ if (( FAST )); then
 fi
 
 step "tests"
-pnpm --filter @routedock/routedock test
-pnpm --filter @routedock/mcp-server test
+pnpm --filter @kikis-app/kikis-app test
+pnpm --filter @kikis-app/mcp-server test
 pnpm --filter provider-a test
 pnpm --filter provider-b test
 
@@ -62,7 +62,7 @@ pnpm --filter provider-b build >/dev/null || fail "provider-b does not bundle fo
 echo "  ok"
 
 step "package pack hygiene"
-pnpm --filter @routedock/mcp-server build >/dev/null || fail "@routedock/mcp-server failed to build"
+pnpm --filter @kikis-app/mcp-server build >/dev/null || fail "@kikis-app/mcp-server failed to build"
 bash "$root/scripts/check-pack.sh" || fail "package pack check failed"
 
 printf '\n\033[32m✔ verify passed\033[0m\n'

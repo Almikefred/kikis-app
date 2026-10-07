@@ -32,16 +32,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install
       - name: Build nulth-sdk (required by sdk at runtime)
-        run: pnpm --filter @routedock/nulth-sdk build
+        run: pnpm --filter @kikis-app/nulth-sdk build
       - name: Run SDK tests
-        run: pnpm --filter @routedock/routedock test
+        run: pnpm --filter @kikis-app/kikis-app test
       - name: Run MCP server tests
-        run: pnpm --filter @routedock/mcp-server test
-      # The provider manifest tests import @routedock/routedock/schema, which
+        run: pnpm --filter @kikis-app/mcp-server test
+      # The provider manifest tests import @kikis-app/kikis-app/schema, which
       # resolves to the SDK's built dist/. The SDK's own tests run from source,
       # so nothing above this point builds it.
       - name: Build sdk (provider tests import its built schema)
-        run: pnpm --filter @routedock/routedock build
+        run: pnpm --filter @kikis-app/kikis-app build
       - name: Run provider-a tests
         run: pnpm --filter provider-a test
       - name: Run provider-b tests
@@ -61,11 +61,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install
       - name: Build nulth-sdk first (workspace dependency)
-        run: pnpm --filter @routedock/nulth-sdk build
+        run: pnpm --filter @kikis-app/nulth-sdk build
       - name: Build sdk (depends on nulth-sdk types)
-        run: pnpm --filter @routedock/routedock build
+        run: pnpm --filter @kikis-app/kikis-app build
       - name: Build remaining packages
-        run: pnpm -r --filter '!@routedock/nulth-sdk' --filter '!@routedock/routedock' build
+        run: pnpm -r --filter '!@kikis-app/nulth-sdk' --filter '!@kikis-app/kikis-app' build
       - name: Check package types (arethetypeswrong)
         run: |
           npx --yes @arethetypeswrong/cli@0.18.5 --pack packages/nulth-sdk
@@ -84,8 +84,8 @@ jobs:
         run: pnpm install
       - name: Build SDK packages first (required by downstream typechecks)
         run: |
-          pnpm --filter @routedock/nulth-sdk build
-          pnpm --filter @routedock/routedock build
+          pnpm --filter @kikis-app/nulth-sdk build
+          pnpm --filter @kikis-app/kikis-app build
       - name: Typecheck all packages
         run: pnpm -r typecheck
 

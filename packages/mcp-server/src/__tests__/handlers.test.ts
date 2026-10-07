@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { Keypair } from '@stellar/stellar-sdk'
-import type { RouteDockManifest, EstimateCostResult } from '@routedock/routedock'
+import type { KikisAppManifest, EstimateCostResult } from '@kikis-app/kikis-app'
 import {
   handlePayForData,
   handleOpenSession,
@@ -26,8 +26,8 @@ import { MAX_STREAM_MESSAGES, TOOLS } from '../tools.js'
 /** The canonical set of modes exported by the SDK. Kept as a const so any
  *  addition to PaymentMode surfaces here as a type error before the test runs. */
 const SDK_PAYMENT_MODES = ['x402', 'mpp-charge', 'mpp-session', 'mpp-session-ws'] as const
-type _AssertPaymentModes = (typeof SDK_PAYMENT_MODES)[number] extends import('@routedock/routedock').PaymentMode
-  ? import('@routedock/routedock').PaymentMode extends (typeof SDK_PAYMENT_MODES)[number]
+type _AssertPaymentModes = (typeof SDK_PAYMENT_MODES)[number] extends import('@kikis-app/kikis-app').PaymentMode
+  ? import('@kikis-app/kikis-app').PaymentMode extends (typeof SDK_PAYMENT_MODES)[number]
     ? true
     : never
   : never
@@ -74,9 +74,9 @@ function parseResult(result: ToolResult): unknown {
   return JSON.parse(result.content[0]!.text)
 }
 
-/** Minimal RouteDockManifest fixture required by EstimateCostResult. */
-const FAKE_MANIFEST: RouteDockManifest = {
-  routedock: '1.0',
+/** Minimal KikisAppManifest fixture required by EstimateCostResult. */
+const FAKE_MANIFEST: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Fake Provider',
   description: 'Test fixture provider',
   modes: ['x402'],
@@ -94,7 +94,7 @@ function estimate(amount: string): EstimateCostResult {
   return { amount, asset: 'USDC', mode: 'x402', manifest: FAKE_MANIFEST }
 }
 
-/** Minimal fake RouteDockClient */
+/** Minimal fake KikisAppClient */
 function makeClient(overrides: Partial<{
   estimateCost: HandlerDeps['client']['estimateCost']
   pay: HandlerDeps['client']['pay']

@@ -3,7 +3,7 @@
  *
  * The manifest cache must honor per-entry freshness from the provider's
  * response headers (`Cache-Control: max-age` / `Expires`) instead of a fixed
- * 60s TTL, and `RouteDockClient.invalidateManifest(url)` must evict a cached
+ * 60s TTL, and `KikisAppClient.invalidateManifest(url)` must evict a cached
  * entry before expiry so a provider's manifest change takes effect
  * immediately.
  *
@@ -11,22 +11,22 @@
  * manifest with configurable response headers, and Date.now is mocked to
  * advance time past TTL windows without sleeping.
  *
- * Run with: pnpm --filter @routedock/routedock test
+ * Run with: pnpm --filter @kikis-app/kikis-app test
  */
 
 import * as http from 'node:http'
 import assert from 'node:assert/strict'
 import { Keypair } from '@stellar/stellar-sdk'
 import { fetchManifest, invalidateManifest } from '../ModeRouter.js'
-import { RouteDockClient } from '../RouteDockClient.js'
+import { KikisAppClient } from '../KikisAppClient.js'
 import { signManifest } from '../../manifest/sign.js'
-import type { RouteDockManifest } from '../../types.js'
+import type { KikisAppManifest } from '../../types.js'
 
 const signingKey = Keypair.random()
 
-function createManifest(): RouteDockManifest {
+function createManifest(): KikisAppManifest {
   return {
-    routedock: '1.0',
+    kikis-app: '1.0',
     name: 'Cache Test Provider',
     description: 'Manifest used to verify cache invalidation behavior',
     modes: ['x402'],
@@ -266,12 +266,12 @@ function startManifestServer(
   }
 }
 
-// ── RouteDockClient.invalidateManifest() evicts by URL ──────────────────────
+// ── KikisAppClient.invalidateManifest() evicts by URL ──────────────────────
 
 {
   const server = await startManifestServer({ 'Cache-Control': 'max-age=3600' })
   try {
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       wallet: Keypair.random().secret(),
       network: 'testnet',
     })

@@ -22,7 +22,7 @@ Paste real output, not a claim. For payment-path changes, a curl against
 ## Checklist
 
 - [ ] `node --version` is v22 or newer
-- [ ] Built the SDK first (`pnpm --filter @routedock/nulth-sdk build && pnpm --filter @routedock/routedock build`) — several packages import its built `dist/`
+- [ ] Built the SDK first (`pnpm --filter @kikis-app/nulth-sdk build && pnpm --filter @kikis-app/kikis-app build`) — several packages import its built `dist/`
 - [ ] `pnpm -r typecheck` passes
 - [ ] Tests pass for every package I touched
 - [ ] `pnpm --filter provider-a build` / `provider-b build` pass if I touched a provider or added a dependency to one

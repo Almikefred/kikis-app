@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { fetchManifest } from '../ModeRouter.js'
-import { RouteDockManifestError, RouteDockNetworkError } from '../../errors.js'
+import { KikisAppManifestError, KikisAppNetworkError } from '../../errors.js'
 
 const originalFetch = globalThis.fetch
 
@@ -26,7 +26,7 @@ test('manifest - 200 non-JSON body rejects with non-retryable MANIFEST error and
     await assert.rejects(
       () => fetchManifest(baseUrl),
       (err: unknown) => {
-        assert.ok(err instanceof RouteDockManifestError, 'should be RouteDockManifestError')
+        assert.ok(err instanceof KikisAppManifestError, 'should be KikisAppManifestError')
         assert.equal(err.code, 'MANIFEST')
         assert.equal(err.retryable, false, 'deterministic manifest failures must not be retryable')
         assert.ok(err.message.includes(baseUrl), `message should contain the URL, got: ${err.message}`)
@@ -52,7 +52,7 @@ test('manifest - fetch rejection still surfaces as retryable NETWORK error', asy
     await assert.rejects(
       () => fetchManifest('http://provider-network-error.test'),
       (err: unknown) => {
-        assert.ok(err instanceof RouteDockNetworkError, 'should be RouteDockNetworkError')
+        assert.ok(err instanceof KikisAppNetworkError, 'should be KikisAppNetworkError')
         assert.equal(err.code, 'NETWORK')
         assert.equal(err.retryable, true, 'transport-level failures stay retryable')
         return true

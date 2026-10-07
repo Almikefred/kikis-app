@@ -4,7 +4,7 @@
  * The SDK used to write straight to `console` in a couple of dozen error
  * paths, which is unusable on structured-logging runtimes (Cloudflare Workers,
  * Datadog, …) and untestable without spying on `console`. Every internal
- * diagnostic now goes through a {@link RouteDockLogger}, so a consumer can
+ * diagnostic now goes through a {@link KikisAppLogger}, so a consumer can
  * silence it, redirect it, or attach correlation fields.
  *
  * The default implementation is console-backed, so behaviour is unchanged when
@@ -12,14 +12,14 @@
  */
 
 /** Severity of a log line. */
-export type RouteDockLogLevel = 'debug' | 'info' | 'warn' | 'error'
+export type KikisAppLogLevel = 'debug' | 'info' | 'warn' | 'error'
 
 /**
  * Structured context attached to a log line, typically `{ error: err }`. Sinks
  * receive the values unresolved, so a serialising sink must project non-JSON
  * values such as `Error` itself.
  */
-export type RouteDockLogFields = Record<string, unknown>
+export type KikisAppLogFields = Record<string, unknown>
 
 /**
  * Consumer-supplied log sink.
@@ -27,10 +27,10 @@ export type RouteDockLogFields = Record<string, unknown>
  * `fields` carries the structured payload (the error, the channel id, …) that
  * a bare string would drop at the boundary.
  */
-export type RouteDockLogger = (
-  level: RouteDockLogLevel,
+export type KikisAppLogger = (
+  level: KikisAppLogLevel,
   message: string,
-  fields?: RouteDockLogFields,
+  fields?: KikisAppLogFields,
 ) => void
 
 /**
@@ -38,7 +38,7 @@ export type RouteDockLogger = (
  * values are spread as additional console arguments so `console.error(msg, err)`
  * spies (and existing log shippers) keep seeing the raw error object.
  */
-export function createConsoleLogger(): RouteDockLogger {
+export function createConsoleLogger(): KikisAppLogger {
   return (level, message, fields) => {
     const values = fields ? Object.values(fields) : []
     if (values.length > 0) {
@@ -50,15 +50,15 @@ export function createConsoleLogger(): RouteDockLogger {
 }
 
 /** Shared console-backed logger — the default when none is configured. */
-export const consoleLogger: RouteDockLogger = createConsoleLogger()
+export const consoleLogger: KikisAppLogger = createConsoleLogger()
 
 /** Logger that discards every line. */
-export const noopLogger: RouteDockLogger = () => {}
+export const noopLogger: KikisAppLogger = () => {}
 
 /** Resolve an optional logger to a concrete sink, defaulting to `fallback`. */
 export function resolveLogger(
-  logger: RouteDockLogger | undefined,
-  fallback: RouteDockLogger = consoleLogger,
-): RouteDockLogger {
+  logger: KikisAppLogger | undefined,
+  fallback: KikisAppLogger = consoleLogger,
+): KikisAppLogger {
   return logger ?? fallback
 }

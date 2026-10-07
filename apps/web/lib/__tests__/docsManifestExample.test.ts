@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { Validator, type Schema } from '@cfworker/json-schema'
-import schema from '@routedock/routedock/schema'
+import schema from '@kikis-app/kikis-app/schema'
 import { DOCS_MANIFEST_EXAMPLE } from '../docsManifestExample'
 
 describe('DOCS_MANIFEST_EXAMPLE', () => {
   const validator = new Validator(schema as unknown as Schema, '7')
 
-  it('validates successfully against the RouteDock manifest schema', () => {
+  it('validates successfully against the KikisApp manifest schema', () => {
     const result = validator.validate(DOCS_MANIFEST_EXAMPLE)
     expect(result.valid).toBe(true)
     expect(result.errors).toEqual([])
@@ -14,7 +14,7 @@ describe('DOCS_MANIFEST_EXAMPLE', () => {
 
   it('fails validation for the legacy example (missing description and string endpoint)', () => {
     const legacyExample = {
-      routedock: '1.0',
+      kikis-app: '1.0',
       name: 'Stellar DEX Price Feed',
       modes: ['x402', 'mpp-charge'],
       network: 'testnet',

@@ -2,14 +2,14 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { Validator, type Schema } from '@cfworker/json-schema'
 import { assertManifestValid } from '../ModeRouter.js'
-import { RouteDockManifestError } from '../../errors.js'
-import type { RouteDockManifest } from '../../types.js'
-import schema from '../../schemas/routedock.schema.json' with { type: 'json' }
+import { KikisAppManifestError } from '../../errors.js'
+import type { KikisAppManifest } from '../../types.js'
+import schema from '../../schemas/kikis-app.schema.json' with { type: 'json' }
 
 const validator = new Validator(schema as unknown as Schema, '7')
 
-const validBaseManifest: RouteDockManifest = {
-  routedock: '1.0',
+const validBaseManifest: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Test Provider',
   description: 'Provider validation test',
   modes: ['x402', 'mpp-charge'],
@@ -35,7 +35,7 @@ describe('Manifest schema & semantic validation — assets support', () => {
   })
 
   it('validates a manifest with conforming assets successfully', () => {
-    const manifestWithAssets: RouteDockManifest = {
+    const manifestWithAssets: KikisAppManifest = {
       ...validBaseManifest,
       assets: [
         {
@@ -58,7 +58,7 @@ describe('Manifest schema & semantic validation — assets support', () => {
   })
 
   it('rejects a manifest when assets[0].asset mismatches root asset', () => {
-    const mismatched: RouteDockManifest = {
+    const mismatched: KikisAppManifest = {
       ...validBaseManifest,
       asset: 'USDC',
       asset_contract: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA',
@@ -73,13 +73,13 @@ describe('Manifest schema & semantic validation — assets support', () => {
     assert.throws(
       () => assertManifestValid(mismatched),
       (err) =>
-        err instanceof RouteDockManifestError &&
+        err instanceof KikisAppManifestError &&
         err.message.includes('assets[0] (XLM:CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA) must match root asset fields (USDC:CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA)'),
     )
   })
 
   it('rejects a manifest when assets[0].asset_contract mismatches root asset_contract', () => {
-    const mismatched: RouteDockManifest = {
+    const mismatched: KikisAppManifest = {
       ...validBaseManifest,
       asset: 'USDC',
       asset_contract: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA',
@@ -94,7 +94,7 @@ describe('Manifest schema & semantic validation — assets support', () => {
     assert.throws(
       () => assertManifestValid(mismatched),
       (err) =>
-        err instanceof RouteDockManifestError &&
+        err instanceof KikisAppManifestError &&
         err.message.includes('must match root asset fields'),
     )
   })
@@ -109,8 +109,8 @@ describe('Manifest schema & semantic validation — assets support', () => {
     assert.equal(result.valid, false, 'Schema should reject empty assets array (minItems: 1)')
 
     assert.throws(
-      () => assertManifestValid(emptyAssets as unknown as RouteDockManifest),
-      (err) => err instanceof RouteDockManifestError && err.message.includes('assets must be a non-empty array'),
+      () => assertManifestValid(emptyAssets as unknown as KikisAppManifest),
+      (err) => err instanceof KikisAppManifestError && err.message.includes('assets must be a non-empty array'),
     )
   })
 

@@ -28,7 +28,7 @@ import { Hono } from 'hono'
 import { Keypair } from '@stellar/stellar-sdk'
 import { Credential, Challenge } from 'mppx'
 import type { Method } from 'mppx'
-import type { RouteDockManifest } from '../../types.js'
+import type { KikisAppManifest } from '../../types.js'
 
 const payeeKeypair = Keypair.random()
 const commitKeypair = Keypair.random()
@@ -187,10 +187,10 @@ function createSharedMemoryStore(): { get(k: string): Promise<unknown>; put(k: s
   }
 }
 
-const { routedockHono } = await import('../hono.js')
+const { kikisAppHono } = await import('../hono.js')
 
-const manifest: RouteDockManifest = {
-  routedock: '1.0',
+const manifest: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Test Service',
   description: 'Unit test provider',
   modes: ['mpp-session'],
@@ -223,7 +223,7 @@ function buildApp(handlers: {
   const app = new Hono()
   app.use(
     '*',
-    routedockHono({
+    kikisAppHono({
       asset: 'USDC',
       assetContract: ASSET_CONTRACT,
       payee: payeeKeypair.publicKey(),
@@ -241,7 +241,7 @@ function buildApp(handlers: {
   return app
 }
 
-describe('routedockHono — real HTTP regression coverage for verified-only voucher state (#388)', () => {
+describe('kikisAppHono — real HTTP regression coverage for verified-only voucher state (#388)', () => {
   it('closes with the last genuinely verified voucher signature, not a signature from a crafted header in the old, pre-fix format', async () => {
     const voucherCalls: Array<{ amount: string; signature: string }> = []
     const sessionOpens: Array<string | null> = []

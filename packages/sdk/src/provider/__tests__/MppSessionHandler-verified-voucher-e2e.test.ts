@@ -1,7 +1,7 @@
 /**
  * Express mpp-session (issue #388, regression coverage requested in review):
  * mirrors hono-verified-voucher-e2e.test.ts against the Express handler
- * (MppSessionHandler.ts / routedockMiddleware.ts). The bookkeeping-level
+ * (MppSessionHandler.ts / kikisAppMiddleware.ts). The bookkeeping-level
  * tests in MppSessionHandler-verified-voucher.test.ts mock
  * '../mppCompatibility.js' and call the captured `commit` directly, so they
  * cannot catch a regression that reintroduces pre-verification header
@@ -28,7 +28,7 @@ import type { Request, Response as ExpressResponse } from 'express'
 import { Keypair } from '@stellar/stellar-sdk'
 import { Credential, Challenge } from 'mppx'
 import type { Method } from 'mppx'
-import type { RouteDockManifest } from '../../types.js'
+import type { KikisAppManifest } from '../../types.js'
 
 const payeeKeypair = Keypair.random()
 const commitKeypair = Keypair.random()
@@ -166,10 +166,10 @@ function buildCraftedHeader(json: Record<string, unknown>): string {
   return `Payment credential="${Buffer.from(JSON.stringify(json)).toString('base64')}"`
 }
 
-const { routedock } = await import('../routedockMiddleware.js')
+const { kikis-app } = await import('../kikisAppMiddleware.js')
 
-const manifest: RouteDockManifest = {
-  routedock: '1.0',
+const manifest: KikisAppManifest = {
+  kikis-app: '1.0',
   name: 'Express Verified Voucher E2E Test',
   description: 'Unit test provider',
   modes: ['mpp-session'],
@@ -200,7 +200,7 @@ async function makeServer(handlers: {
   closeCalls = []
   const app = express()
   app.use(
-    routedock({
+    kikis-app({
       asset: 'USDC',
       assetContract: ASSET_CONTRACT,
       payee: payeeKeypair.publicKey(),
@@ -211,7 +211,7 @@ async function makeServer(handlers: {
       modes: ['mpp-session'],
       pricing: { 'mpp-session': { rate: '0.0001', channelFactory: CHANNEL_CONTRACT } },
       ...handlers,
-    } as Parameters<typeof routedock>[0]),
+    } as Parameters<typeof kikis-app>[0]),
   )
   app.get('/price', async (_req: Request, res: ExpressResponse) => {
     res.json({ price: '42' })
@@ -230,7 +230,7 @@ async function makeServer(handlers: {
   })
 }
 
-describe('routedock (Express) — real HTTP regression coverage for verified-only voucher state (#388)', () => {
+describe('kikis-app (Express) — real HTTP regression coverage for verified-only voucher state (#388)', () => {
   it('closes with the last genuinely verified voucher signature, not a signature from a crafted header in the old, pre-fix format', async () => {
     const voucherCalls: Array<{ amount: string; signature: string }> = []
     const sessionOpens: Array<string | null> = []

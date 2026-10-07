@@ -1,7 +1,7 @@
 /**
  * agent/src/stress.ts
  *
- * RouteDock stress harness. Runs in three modes:
+ * KikisApp stress harness. Runs in three modes:
  *
  *   probe        — always. Unauthenticated GETs against both deployed providers:
  *                  the signed manifest, and an unpaid request to each paid route.
@@ -22,7 +22,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { Keypair } from '@stellar/stellar-sdk'
-import { RouteDockClient } from '@routedock/routedock'
+import { KikisAppClient } from '@kikis-app/kikis-app'
 
 // ── Paths ────────────────────────────────────────────────────────────────────
 // Resolve output paths from this file so a filtered pnpm run (cwd = agent/)
@@ -42,8 +42,8 @@ if (RAW_STELLAR_NETWORK !== 'testnet' && RAW_STELLAR_NETWORK !== 'mainnet') {
 const STELLAR_NETWORK: 'testnet' | 'mainnet' = RAW_STELLAR_NETWORK
 const AGENT_SECRET = process.env['AGENT_SECRET'] ?? ''
 const COMMITMENT_SECRET = process.env['COMMITMENT_SECRET'] ?? ''
-const PROVIDER_A_URL = (process.env['PROVIDER_A_URL'] ?? 'https://api-a.routedock.xyz').replace(/\/$/, '')
-const PROVIDER_B_URL = (process.env['PROVIDER_B_URL'] ?? 'https://api-b.routedock.xyz').replace(/\/$/, '')
+const PROVIDER_A_URL = (process.env['PROVIDER_A_URL'] ?? 'https://api-a.kikis-app.xyz').replace(/\/$/, '')
+const PROVIDER_B_URL = (process.env['PROVIDER_B_URL'] ?? 'https://api-b.kikis-app.xyz').replace(/\/$/, '')
 const CONCURRENT_AGENTS = parseInt(process.env['CONCURRENT_AGENTS'] ?? '50', 10)
 const PAYMENTS_PER_SESSION = parseInt(process.env['PAYMENTS_PER_SESSION'] ?? '10', 10)
 
@@ -137,7 +137,7 @@ async function probeAgent(): Promise<Sample[]> {
   const out: Sample[] = []
 
   {
-    const r = await get(`${PROVIDER_B_URL}/.well-known/routedock.json`)
+    const r = await get(`${PROVIDER_B_URL}/.well-known/kikis-app.json`)
     out.push(sample('manifest-get', r.ms, r.status === 200, r.status === 200 ? undefined : `HTTP ${r.status}`))
   }
 
@@ -157,7 +157,7 @@ async function probeAgent(): Promise<Sample[]> {
 
 // ── Paid mode ────────────────────────────────────────────────────────────────
 async function paidCall(
-  client: RouteDockClient,
+  client: KikisAppClient,
   url: string,
   forceMode: ForceMode,
   phase: Phase,
@@ -172,7 +172,7 @@ async function paidCall(
   }
 }
 
-async function runPaid(client: RouteDockClient): Promise<Sample[]> {
+async function runPaid(client: KikisAppClient): Promise<Sample[]> {
   const out: Sample[] = []
   for (let i = 0; i < PAYMENTS_PER_SESSION; i++) {
     out.push(await paidCall(client, `${PROVIDER_A_URL}/price`, 'x402', 'x402-paid'))
@@ -184,10 +184,10 @@ async function runPaid(client: RouteDockClient): Promise<Sample[]> {
 }
 
 // ── Session mode ─────────────────────────────────────────────────────────────
-async function runSession(client: RouteDockClient): Promise<Sample[]> {
+async function runSession(client: KikisAppClient): Promise<Sample[]> {
   const out: Sample[] = []
 
-  type Session = Awaited<ReturnType<RouteDockClient['openSession']>>
+  type Session = Awaited<ReturnType<KikisAppClient['openSession']>>
   let session: Session | undefined
 
   const tOpen = t()
@@ -236,7 +236,7 @@ async function main(): Promise<void> {
   const sessionEnabled = paidEnabled && COMMITMENT_SECRET !== ''
   const mode = sessionEnabled ? 'paid+session' : paidEnabled ? 'paid' : 'probe'
 
-  console.log(`\nRouteDock stress test — mode=${mode}, agents=${CONCURRENT_AGENTS}\n`)
+  console.log(`\nKikisApp stress test — mode=${mode}, agents=${CONCURRENT_AGENTS}\n`)
 
   const notRun: Array<{ phase: Phase; reason: string }> = []
   const all: Sample[] = []
@@ -252,7 +252,7 @@ async function main(): Promise<void> {
   }
 
   if (paidEnabled) {
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       wallet: Keypair.fromSecret(AGENT_SECRET),
       network: STELLAR_NETWORK,
       commitmentSecret: COMMITMENT_SECRET || undefined,
@@ -323,7 +323,7 @@ async function main(): Promise<void> {
   const healthLine = (h: { status: number; network?: string }) =>
     `HTTP ${h.status}${h.network ? ` (network: ${h.network})` : ''}`
 
-  const md = `# RouteDock Stress Test (${network})
+  const md = `# KikisApp Stress Test (${network})
 
 ## Run
 

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import Ajv from 'ajv'
 import addFormats from 'ajv-formats'
-import schema from '@routedock/routedock/schema'
+import schema from '@kikis-app/kikis-app/schema'
 import { buildManifest, TESTNET_USDC_CONTRACT } from '../manifest.js'
 
 /**

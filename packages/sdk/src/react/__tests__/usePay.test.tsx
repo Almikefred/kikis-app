@@ -6,19 +6,19 @@ import * as RTL from '@testing-library/react'
 const { renderHook, act, waitFor } = RTL
 import { Keypair } from '@stellar/stellar-sdk'
 import { createElement, type ReactNode } from 'react'
-import { RouteDockClient } from '../../client/RouteDockClient.js'
-import { RouteDockProvider } from '../context.js'
+import { KikisAppClient } from '../../client/KikisAppClient.js'
+import { KikisAppProvider } from '../context.js'
 import { usePay } from '../usePay.js'
 import type { PaymentResult } from '../../types.js'
 
-function wrapper(client: RouteDockClient) {
+function wrapper(client: KikisAppClient) {
   return ({ children }: { children: ReactNode }) =>
-    createElement(RouteDockProvider, { client, children })
+    createElement(KikisAppProvider, { client, children })
 }
 
 describe('usePay', () => {
   it('transitions loading → result on success', async () => {
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       wallet: Keypair.random().secret(),
       network: 'testnet',
     })
@@ -44,7 +44,7 @@ describe('usePay', () => {
   })
 
   it('captures errors', async () => {
-    const client = new RouteDockClient({
+    const client = new KikisAppClient({
       wallet: Keypair.random().secret(),
       network: 'testnet',
     })
