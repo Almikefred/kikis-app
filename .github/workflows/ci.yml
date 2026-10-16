@@ -15,10 +15,28 @@ jobs:
         # Pinned: Rust 1.97 rejects a transmute in the transitive ethnum crate
         # (E0512). 1.94.x compiles the soroban-sdk deps cleanly.
         uses: dtolnay/rust-toolchain@75be91dd2711b583df57c31d0873b4145c89f1d9 # branch 1.94.1
+        with:
+          targets: wasm32-unknown-unknown
       - name: Run contract tests
         run: cargo test --manifest-path contracts/agent-vault/Cargo.toml
       - name: Run contract proptest invariants
         run: cargo test --manifest-path contracts/agent-vault/Cargo.toml --features testutils
+      - name: Build contract Wasm
+        run: cargo build --manifest-path contracts/agent-vault/Cargo.toml --target wasm32-unknown-unknown --release
+      - name: Verify Wasm artifact size
+        run: |
+          WASM="contracts/agent-vault/target/wasm32-unknown-unknown/release/agent_vault.wasm"
+          if [ ! -f "$WASM" ]; then
+            echo "::error::Compiled Wasm artifact not found at $WASM"
+            exit 1
+          fi
+          SIZE=$(wc -c < "$WASM")
+          MAX_SIZE=65536
+          echo "Wasm artifact size: $SIZE bytes (limit: $MAX_SIZE bytes)"
+          if [ "$SIZE" -gt "$MAX_SIZE" ]; then
+            echo "::error::Wasm artifact size $SIZE bytes exceeds maximum permitted size of $MAX_SIZE bytes"
+            exit 1
+          fi
 
   sdk-tests:
     runs-on: ubuntu-latest

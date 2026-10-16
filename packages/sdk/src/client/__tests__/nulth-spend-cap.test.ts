@@ -83,7 +83,7 @@ function makeManifest(modes: Array<'x402' | 'mpp-charge'> = ['x402']): KikisAppM
 
   return signManifest(
     {
-      kikis-app: '1.0',
+      'kikis-app': '1.0',
       name: 'Nulth Spend Cap Test',
       description: 'Nulth vault spend cap tests',
       modes,
