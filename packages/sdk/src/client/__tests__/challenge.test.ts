@@ -113,6 +113,33 @@ describe('checkX402Accept', () => {
       'challenge_amount_exceeds_manifest',
     )
   })
+
+  it('rejects challenges with maxTimeoutSeconds exceeding 300s or non-positive with challenge_timeout_invalid', () => {
+    assert.equal(reason(check(accept({ maxTimeoutSeconds: 86400 }))), 'challenge_timeout_invalid')
+    assert.equal(reason(check(accept({ maxTimeoutSeconds: 301 }))), 'challenge_timeout_invalid')
+    assert.equal(reason(check(accept({ maxTimeoutSeconds: 0 }))), 'challenge_timeout_invalid')
+    assert.equal(reason(check(accept({ maxTimeoutSeconds: -1 }))), 'challenge_timeout_invalid')
+    assert.equal(reason(check(accept({ maxTimeoutSeconds: NaN as unknown as number }))), 'challenge_timeout_invalid')
+    assert.equal(reason(check(accept({ maxTimeoutSeconds: '60' as unknown as number }))), 'challenge_timeout_invalid')
+  })
+
+  it('accepts challenges with valid timeouts (<= 300s)', () => {
+    assert.equal(check(accept({ maxTimeoutSeconds: 300 })), null)
+    assert.equal(check(accept({ maxTimeoutSeconds: 60 })), null)
+    assert.equal(check(accept({ maxTimeoutSeconds: 1 })), null)
+  })
+
+  it('rejects challenges with past expiration timestamps', () => {
+    const pastTime = Math.floor((Date.now() - 10_000) / 1000)
+    assert.equal(
+      reason(check(accept({ extra: { areFeesSponsored: true, expiresAt: pastTime } }))),
+      'challenge_timeout_invalid',
+    )
+    assert.equal(
+      reason(check(accept({ ...({ expires_at: Date.now() - 5_000 } as any) }))),
+      'challenge_timeout_invalid',
+    )
+  })
 })
 
 describe('filterX402Accepts', () => {

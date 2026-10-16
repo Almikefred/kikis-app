@@ -14,6 +14,7 @@ import {
 } from '../errors.js'
 import { stroopsToUsdc } from '../internal/usdc.js'
 import { withRetry, type RetryPolicy } from '../internal/retry.js'
+import { prepareHttpRequestInit } from '../internal/http.js'
 import { checkX402Accept, filterX402Accepts, type Caip2Network } from './challenge.js'
 import type { ModeSelectOptions } from './ModeRouter.js'
 
@@ -82,7 +83,8 @@ export class X402Client {
     const probe = await withRetry(async (): Promise<ProbeOutcome> => {
       let init: Response
       try {
-        init = await fetch(url, { headers: { 'X-Preferred-Mode': 'x402' } })
+        const probeInit = prepareHttpRequestInit(options?.request, { 'X-Preferred-Mode': 'x402' })
+        init = await fetch(url, probeInit)
       } catch (err) {
         throw wrapFetchError(err, 'x402 initial request')
       }
@@ -179,7 +181,8 @@ export class X402Client {
     const settled = await withRetry(async (): Promise<Response> => {
       let response: Response
       try {
-        response = await fetch(url, { headers: paymentHeaders })
+        const settleInit = prepareHttpRequestInit(options?.request, paymentHeaders)
+        response = await fetch(url, settleInit)
       } catch (err) {
         throw wrapFetchError(err, 'x402 settlement request')
       }
