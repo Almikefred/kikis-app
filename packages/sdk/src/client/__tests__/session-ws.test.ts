@@ -297,6 +297,24 @@ describe('mpp-session-ws — success path', () => {
     assert.equal(closes.length, 1, 'socket.close should be called once on early return')
     assert.equal(closes[0], 1000)
   })
+
+  it('closes the socket when the consumer breaks out of a for-await loop', async () => {
+    mppxScript = {}
+    wsScript = { frames: ['{"a":1}', '{"a":2}', '{"a":3}'] }
+    const { factory, closes } = makeFakeWsFactory()
+
+    const handle = await openWsHandle(factory)
+    const items: unknown[] = []
+    for await (const item of handle.stream()) {
+      items.push(item)
+      break // early exit — the loop must close the iterator on its way out
+    }
+    await new Promise((resolve) => setImmediate(resolve))
+
+    assert.deepEqual(items, [{ a: 1 }])
+    assert.equal(closes.length, 1, 'socket.close should be called once on for-await break')
+    assert.equal(closes[0], 1000)
+  })
 })
 
 describe('mpp-session-ws — failure paths', () => {

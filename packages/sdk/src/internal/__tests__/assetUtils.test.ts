@@ -10,6 +10,9 @@ import {
 import { KikisAppManifestError } from '../../errors.js'
 import type { KikisAppManifest } from '../../types.js'
 
+/** A valid SAC contract address used as a deliberate developer pin (#45). */
+const PINNED_CONTRACT = 'CCK4XOW3YKQUEZFONUTINKMSNW7SNMRQZURME5U3UP7E6WNGK7UHUCAH'
+
 const legacyManifest: KikisAppManifest = {
   'kikis-app': '1.0',
   name: 'Legacy Service',
@@ -216,8 +219,34 @@ describe('resolveAssetContract', () => {
       'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA',
     )
     assert.equal(
-      resolveAssetContract(legacyManifest, 'x402', '/price', 'CUSTOM_OVERRIDE_CONTRACT'),
-      'CUSTOM_OVERRIDE_CONTRACT',
+      resolveAssetContract(legacyManifest, 'x402', '/price', PINNED_CONTRACT),
+      PINNED_CONTRACT,
+    )
+  })
+
+  it('prefers explicitContract over manifest.assets selection (#45)', () => {
+    // Even with a multi-asset manifest, a deliberate pin must win …
+    assert.equal(
+      resolveAssetContract(multiAssetManifest, 'x402', '/price', PINNED_CONTRACT),
+      PINNED_CONTRACT,
+    )
+    assert.equal(
+      resolveAssetContract(multiAssetManifest, 'mpp-charge', '/quote', PINNED_CONTRACT),
+      PINNED_CONTRACT,
+    )
+    // … and without it, standard manifest asset selection still applies.
+    assert.equal(
+      resolveAssetContract(multiAssetManifest, 'mpp-charge', '/quote'),
+      'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC',
+    )
+  })
+
+  it('rejects an explicitContract that is not a valid SAC address (#45)', () => {
+    assert.throws(
+      () => resolveAssetContract(multiAssetManifest, 'x402', '/price', 'NOT_A_CONTRACT'),
+      (err: unknown) =>
+        err instanceof KikisAppManifestError &&
+        err.message.includes('not a valid Stellar asset contract address'),
     )
   })
 })

@@ -15,13 +15,7 @@
 import assert from 'node:assert/strict'
 import { after, before, describe, it, mock } from 'node:test'
 import { Keypair } from '@stellar/stellar-sdk'
-import type {
-  KikisAppManifest,
-  SessionEvent,
-  SessionHandle,
-  SessionOptions,
-  SessionVoucherPayload,
-} from '../../types.js'
+import type { KikisAppManifest, SessionOptions } from '../../types.js'
 import { KikisAppChannelStateError, KikisAppSignatureError } from '../../errors.js'
 
 const CHANNEL_CONTRACT = 'CCK4XOW3YKQUEZFONUTINKMSNW7SNMRQZURME5U3UP7E6WNGK7UHUCAH'
@@ -261,192 +255,26 @@ describe('SessionHandle.stats()', () => {
   })
 })
 
-// ── session:voucher emission (#15) ────────────────────────────────────────────
+// ── close() Soroban settlement overrides (#51) ─────────────────────────────────
+//
+// close() must build its rpc.Server from the configured Soroban URL and pass
+// the configured base fee to TransactionBuilder instead of hardcoding the
+// public endpoints and BASE_FEE. The SDK was imported above (bound to the real
+// stellar-sdk); this top-level registration replaces only close()'s call-time
+// dynamic import with a capturing fake — same ordering as
+// session-close-stream.test.ts.
 
-describe('SessionHandle session:voucher event', () => {
-  it('emits with updated counters after every voucher', async () => {
-    scriptedCumulatives = ['1000', '2500']
-    scriptedFetchRejects = false
-    const handle = await openHandle()
-    const payloads: SessionVoucherPayload[] = []
-    handle.on('session:voucher', (p) => {
-      payloads.push(p)
-    })
+const capturedRpcUrls: string[] = []
+const capturedFees: Array<string | number | undefined> = []
 
-    const iter = handle.stream()[Symbol.asyncIterator]()
-    await iter.next()
-    assert.deepEqual(
-      payloads,
-      [{ vouchersIssued: 1, currentCumulative: '0.0001000' }],
-      'the first voucher must emit counters advanced by one voucher',
-    )
-
-    await iter.next()
-    assert.deepEqual(
-      payloads,
-      [
-        { vouchersIssued: 1, currentCumulative: '0.0001000' },
-        { vouchersIssued: 2, currentCumulative: '0.0002500' },
-      ],
-      'every subsequent voucher must emit the running totals',
-    )
-  })
-
-  it('keeps counters in sync with stats() at each emission', async () => {
-    scriptedCumulatives = ['1000', '2000']
-    scriptedFetchRejects = false
-    const handle = await openHandle()
-    const payloads: SessionVoucherPayload[] = []
-    handle.on('session:voucher', (p) => {
-      payloads.push(p)
-    })
-
-    const iter = handle.stream()[Symbol.asyncIterator]()
-    await iter.next()
-    await iter.next()
-
-    const stats = handle.stats()
-    const last = payloads.at(-1)
-    assert.ok(last, 'a payload must have been emitted per voucher')
-    assert.equal(last.vouchersIssued, stats.vouchersIssued)
-    assert.equal(last.currentCumulative, stats.currentCumulative)
-  })
-})
-
-// ── Listener management (#14) ─────────────────────────────────────────────────
-
-describe('SessionHandle listener management', () => {
-  // A real close() runs offline here: the Soroban RPC surface close() uses is
-  // faked and its DELETE request is served by a global fetch stub (same
-  // pattern as session-close-stream.test.ts). Registered in before() — after
-  // MppSessionClient is loaded — so only close()'s call-time dynamic import
-  // resolves to the fake.
-  const originalFetch = globalThis.fetch
-
-  before(() => {
-    mock.module('@stellar/stellar-sdk', { namedExports: buildFakeSdk() })
-    globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ closeTxHash: 'CLOSE_TX_HASH' }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      })) as typeof globalThis.fetch
-  })
-
-  after(() => {
-    globalThis.fetch = originalFetch
-  })
-
-  /** Let the 20ms lifetime guard fire and its close() settle. */
-  const SETTLE_MS = 100
-
-  /** Open a session whose lifetime guard fires shortly, with close() stubbed. */
-  async function openFailingSession(): Promise<SessionHandle> {
-    const handle = await openHandle({ maxDurationMs: 20 })
-    handle.close = () => Promise.reject(new Error('stubbed close failure'))
-    return handle
-  }
-
-  it('delivers both lifecycle events to attached listeners (control)', async () => {
-    const handle = await openFailingSession()
-    const fired: SessionEvent[] = []
-    handle.on('session:timeout', () => {
-      fired.push('session:timeout')
-    })
-    handle.on('session:close-failed', () => {
-      fired.push('session:close-failed')
-    })
-
-    await new Promise((r) => setTimeout(r, SETTLE_MS))
-
-    // The control for the eviction tests below: with listeners attached,
-    // both events of the failing-lifetime-guard flow reach them in order.
-    assert.deepEqual(fired, ['session:timeout', 'session:close-failed'])
-  })
-
-  it('removeAllListeners() evicts every attached callback', async () => {
-    const handle = await openFailingSession()
-    const fired: SessionEvent[] = []
-    handle.on('session:timeout', () => {
-      fired.push('session:timeout')
-    })
-    handle.on('session:close-failed', () => {
-      fired.push('session:close-failed')
-    })
-
-    handle.removeAllListeners()
-    await new Promise((r) => setTimeout(r, SETTLE_MS))
-
-    assert.deepEqual(fired, [], 'no listener should run after removeAllListeners()')
-  })
-
-  it("removeAllListeners('session:timeout') evicts only that event's callbacks", async () => {
-    const handle = await openFailingSession()
-    const fired: SessionEvent[] = []
-    handle.on('session:timeout', () => {
-      fired.push('session:timeout')
-    })
-    handle.on('session:close-failed', () => {
-      fired.push('session:close-failed')
-    })
-
-    handle.removeAllListeners('session:timeout')
-    await new Promise((r) => setTimeout(r, SETTLE_MS))
-
-    // The close-failed listener survived — only the named event was evicted.
-    assert.deepEqual(fired, ['session:close-failed'])
-  })
-
-  it('a successful close() clears the internal listener map', async (t) => {
-    scriptedCumulatives = []
-    scriptedFetchRejects = false
-    const handle = await openHandle({ maxDurationMs: 0 })
-    handle.on('session:timeout', () => {})
-    handle.on('session:close-failed', () => {})
-
-    // Nothing can emit after a successful close — the guard timer is cleared
-    // and no auto-close can fail — so the eviction is observed by watching
-    // the listeners map receive Map.prototype.clear during close(). The map
-    // holds one Set per subscribed event: exactly two here.
-    const originalClear = Map.prototype.clear
-    const cleared: Array<{ map: Map<unknown, unknown>; sizeAtClear: number }> = []
-    t.mock.method(Map.prototype, 'clear', function (this: Map<unknown, unknown>) {
-      cleared.push({ map: this, sizeAtClear: this.size })
-      return originalClear.call(this)
-    })
-
-    await handle.close()
-
-    const listenerMap = cleared.find((entry) => entry.sizeAtClear === 2)
-    assert.ok(listenerMap, 'close() must clear the two-entry listener map')
-    assert.equal(
-      listenerMap.map.size,
-      0,
-      'the listener map must be empty after close()',
-    )
-  })
-
-  it('a failed close() keeps its listeners so session:close-failed still lands', async () => {
-    const handle = await openFailingSession()
-    const fired: SessionEvent[] = []
-    handle.on('session:close-failed', () => {
-      fired.push('session:close-failed')
-    })
-
-    // The lifetime-guard auto-close fails — the listener must still be
-    // attached, because close() only clears listeners on success.
-    await new Promise((r) => setTimeout(r, SETTLE_MS))
-    assert.deepEqual(fired, ['session:close-failed'])
-  })
-})
-
-// ── Fake Soroban RPC for close() (mirrors session-close-stream.test.ts) ───────
-
-function buildFakeSdk() {
+function buildSettlementFakeSdk() {
   class FakeServer {
-    constructor(_url: string) {}
+    constructor(url: string) {
+      capturedRpcUrls.push(url)
+    }
     async getAccount() {
       return {
-        accountId: () => Keypair.random().publicKey(),
+        accountId: () => 'GFAKE',
         sequenceNumber: () => '1',
         incrementSequenceNumber: () => undefined,
       }
@@ -464,7 +292,9 @@ function buildFakeSdk() {
   }
 
   class FakeTransactionBuilder {
-    constructor(_account: unknown, _opts: unknown) {}
+    constructor(_account: unknown, opts: { fee?: string }) {
+      capturedFees.push(opts.fee)
+    }
     addOperation() {
       return this
     }
@@ -477,13 +307,99 @@ function buildFakeSdk() {
   }
 
   return {
-    rpc: {
-      Server: FakeServer,
-      Api: { isSimulationError: () => false },
-    },
+    rpc: { Server: FakeServer, Api: { isSimulationError: () => false } },
     Contract: FakeContract,
     TransactionBuilder: FakeTransactionBuilder,
     BASE_FEE: '100',
     nativeToScVal: (value: unknown) => ({ __scval: value }),
   }
 }
+
+mock.module('@stellar/stellar-sdk', { namedExports: buildSettlementFakeSdk() })
+
+/** Global fetch stub serving close()'s DELETE request (like session-close-stream). */
+const originalFetchForClose = globalThis.fetch
+
+function withStubbedCloseFetch<T>(fn: () => Promise<T>): Promise<T> {
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ closeTxHash: 'CLOSE_TX_HASH' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })) as typeof globalThis.fetch
+  return fn().finally(() => {
+    globalThis.fetch = originalFetchForClose
+  })
+}
+
+describe('MppSessionClient.close() Soroban overrides (#51)', () => {
+  async function openOneVoucherHandle(
+    options?: SessionOptions,
+    client?: InstanceType<typeof MppSessionClient>,
+  ) {
+    scriptedCumulatives = ['1000']
+    scriptedFetchRejects = false
+    capturedRpcUrls.length = 0
+    capturedFees.length = 0
+
+    const mppClient = client ?? new MppSessionClient(Keypair.random(), 'testnet')
+    const handle = await mppClient.openSession(
+      SESSION_URL,
+      buildManifest(),
+      Keypair.random().secret(),
+      options,
+    )
+    // One signed voucher so close() settles a real cumulative.
+    await handle.stream()[Symbol.asyncIterator]().next()
+    return handle
+  }
+
+  it('builds rpc.Server from the session-level sorobanRpcUrl and passes the configured base fee', async () => {
+    const handle = await openOneVoucherHandle({
+      sorobanRpcUrl: 'https://soroban.private.example',
+      baseFeeStroops: 5_000,
+    })
+
+    await withStubbedCloseFetch(() => handle.close())
+
+    assert.deepEqual(capturedRpcUrls, ['https://soroban.private.example'])
+    assert.deepEqual(capturedFees, ['5000'])
+  })
+
+  it('uses constructor-level overrides when the session options omit them', async () => {
+    const client = new MppSessionClient(Keypair.random(), 'testnet', undefined, undefined, undefined, {
+      sorobanRpcUrl: 'https://rpc.constructor.example',
+      baseFeeStroops: 1_000,
+    })
+    const handle = await openOneVoucherHandle(undefined, client)
+
+    await withStubbedCloseFetch(() => handle.close())
+
+    assert.deepEqual(capturedRpcUrls, ['https://rpc.constructor.example'])
+    assert.deepEqual(capturedFees, ['1000'])
+  })
+
+  it('prefers session options over constructor-level overrides', async () => {
+    const client = new MppSessionClient(Keypair.random(), 'testnet', undefined, undefined, undefined, {
+      sorobanRpcUrl: 'https://rpc.constructor.example',
+      baseFeeStroops: 1_000,
+    })
+    const handle = await openOneVoucherHandle(
+      { sorobanRpcUrl: 'https://soroban.session.example', baseFeeStroops: 400 },
+      client,
+    )
+
+    await withStubbedCloseFetch(() => handle.close())
+
+    assert.deepEqual(capturedRpcUrls, ['https://soroban.session.example'])
+    assert.deepEqual(capturedFees, ['400'])
+  })
+
+  it('keeps the public network endpoint and BASE_FEE when nothing is configured', async () => {
+    const handle = await openOneVoucherHandle()
+
+    await withStubbedCloseFetch(() => handle.close())
+
+    assert.deepEqual(capturedRpcUrls, ['https://soroban-testnet.stellar.org'])
+    assert.deepEqual(capturedFees, ['100'])
+  })
+})

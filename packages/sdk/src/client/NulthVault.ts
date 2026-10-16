@@ -1,370 +1,62 @@
 /**
- * NulthVault — self-contained Nulth ZK account support for KikisApp SDK.
+ * NulthVault — Nulth ZK account support for KikisApp SDK.
  *
- * @kikis-app/nulth-sdk is a workspace dependency, so usdcToStroops
- * is imported from @kikis-app/nulth-sdk via ../internal/usdc.js.
+ * Imports primitives, proof building, and signing from @kikis-app/nulth-sdk.
  */
-import { createHash } from 'node:crypto'
-import { Address, rpc, hash, scValToNative, xdr } from '@stellar/stellar-sdk'
+import { rpc } from '@stellar/stellar-sdk'
 import type { ClientStellarSigner } from '@x402/stellar'
-import type { SignAuthEntry } from '@stellar/stellar-sdk/contract'
 import type { KikisAppManifest, PaymentMode, VaultMode } from '../types.js'
-import { KikisAppManifestError } from '../errors.js'
-import { usdcToStroops } from '../internal/usdc.js'
-import { resolveLogger, type KikisAppLogger } from '../internal/logger.js'
+import { KikisAppManifestError, KikisAppVaultConfigError } from '../errors.js'
+import {
+  NulthClient,
+  NulthPolicyError,
+  NulthConfigError,
+  assertAuthEntryMatchesContext,
+  commitAllowlist,
+  commitDailyCap,
+  hashPayee,
+  dayBucket,
+  authDigestFromEntry,
+  insecureMockProof,
+  encodeAuthSignature,
+  decodeAuthSignature,
+  createNulthSigner,
+  setNulthPaymentContext,
+  paymentContextFromManifest,
+  createPolicyState,
+  type NulthPolicyState,
+  type PaymentAuthContext,
+  type NulthProof,
+  type NulthAuthSignature,
+  type NulthClientConfig,
+  type NulthStellarSigner,
+  type NulthSignerConfig,
+} from '@kikis-app/nulth-sdk'
 
-// ---------------------------------------------------------------------------
-// Inlined types (from @kikis-app/nulth-sdk/types)
-// ---------------------------------------------------------------------------
-
-export interface NulthPolicyState {
-  dailyCapStroops: bigint
-  allowlistCommitment: string
-  allowedPayees: readonly string[]
-  dailySpendStroops: bigint
-  dayBucket: number
-  witnessSecret: string
-  expiryLedger?: number
-}
-
-export interface PaymentAuthContext {
-  authEntry: string
-  payee: string
-  amountStroops: bigint
-  assetContract: string
-  ledgerSequence: number
-}
-
-export interface NulthProof {
-  version: 1
-  proof: string
-  publicInputs: {
-    authDigest: string
-    allowlistCommitment: string
-    capCommitment: string
-    payeeHash: string
-    amountStroops: string
-    dayBucket: string
-  }
-}
-
-export interface NulthAuthSignature {
-  nulth: 'zk-v1'
-  proof: NulthProof
-}
-
-export interface NulthClientConfig {
-  nulthAccount: string
-  network: 'testnet' | 'mainnet'
-  prover?: 'mock'
-  policy: NulthPolicyState
-  verifierContract?: string
-  /** Log sink for the mock-prover warning. Defaults to a console-backed logger. */
-  logger?: KikisAppLogger
-}
-
-export class NulthPolicyError extends Error {
-  readonly code: 'payee_not_allowed' | 'daily_cap_exceeded' | 'session_expired' | 'auth_entry_mismatch'
-  constructor(code: NulthPolicyError['code'], message: string) {
-    super(message)
-    this.name = 'NulthPolicyError'
-    this.code = code
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Inlined proof utilities (from @kikis-app/nulth-sdk/proof)
-// ---------------------------------------------------------------------------
-
-function sha256Hex(data: Buffer | string): string {
-  const buf = typeof data === 'string' ? Buffer.from(data, 'utf8') : data
-  return createHash('sha256').update(buf).digest('hex')
-}
-
-function commitDailyCap(dailyCapStroops: bigint, witnessSecret: string): string {
-  return sha256Hex(`${witnessSecret}:cap:${dailyCapStroops.toString()}`)
-}
-
-function commitAllowlist(payees: readonly string[], witnessSecret: string): string {
-  const sorted = [...payees].sort().join(',')
-  return sha256Hex(`${witnessSecret}:allowlist:${sorted}`)
-}
-
-function hashPayee(payee: string): string {
-  return sha256Hex(`payee:${payee}`)
-}
-
-function dayBucketFromLedger(ledgerSequence: number): number {
-  return Math.floor(ledgerSequence / 17280)
-}
-
-function authDigestFromEntry(authEntryBase64: string): string {
-  const entryHash = hash(Buffer.from(authEntryBase64, 'base64'))
-  return sha256Hex(entryHash)
-}
-
-/**
- * Verify that the Soroban auth entry actually being signed matches the
- * off-chain payment context the policy was checked against. Without this,
- * the policy (allowlist + daily cap) checks `context.payee` /
- * `context.amountStroops` while a completely different transfer — a
- * different recipient, amount, or asset — can be the one that actually
- * gets signed and submitted.
- *
- * Mirrors @kikis-app/nulth-sdk's assertAuthEntryMatchesContext. Kept inline
- * (see file header) rather than imported.
- */
-function assertAuthEntryMatchesContext(
-  authEntry: string,
-  from: string,
-  ctx: Omit<PaymentAuthContext, 'authEntry'>,
-): void {
-  let preimage: xdr.HashIdPreimage
-  try {
-    preimage = xdr.HashIdPreimage.fromXDR(authEntry, 'base64')
-  } catch {
-    throw new NulthPolicyError('auth_entry_mismatch', 'authEntry does not decode as a HashIdPreimage')
-  }
-
-  if (preimage.switch() !== xdr.EnvelopeType.envelopeTypeSorobanAuthorization()) {
-    throw new NulthPolicyError(
-      'auth_entry_mismatch',
-      'authEntry is not a Soroban authorization preimage',
-    )
-  }
-
-  const inv = preimage.sorobanAuthorization().invocation()
-
-  if (inv.subInvocations().length !== 0) {
-    throw new NulthPolicyError('auth_entry_mismatch', 'authEntry has unexpected sub-invocations')
-  }
-
-  if (
-    inv.function().switch() !== xdr.SorobanAuthorizedFunctionType.sorobanAuthorizedFunctionTypeContractFn()
-  ) {
-    throw new NulthPolicyError('auth_entry_mismatch', 'authEntry does not invoke a contract function')
-  }
-
-  const fn = inv.function().contractFn()
-
-  const contractAddress = Address.fromScAddress(fn.contractAddress()).toString()
-  if (contractAddress !== ctx.assetContract) {
-    throw new NulthPolicyError(
-      'auth_entry_mismatch',
-      `authEntry contract ${contractAddress} does not match assetContract ${ctx.assetContract}`,
-    )
-  }
-
-  const functionName = fn.functionName().toString()
-  if (functionName !== 'transfer') {
-    throw new NulthPolicyError(
-      'auth_entry_mismatch',
-      `authEntry function ${functionName} does not match expected transfer`,
-    )
-  }
-
-  const args = fn.args()
-  if (args.length !== 3) {
-    throw new NulthPolicyError('auth_entry_mismatch', `authEntry transfer has ${args.length} args, expected 3`)
-  }
-
-  const entryFrom = scValToNative(args[0]!) as string
-  if (entryFrom !== from) {
-    throw new NulthPolicyError(
-      'auth_entry_mismatch',
-      `authEntry from ${entryFrom} does not match nulthAccount ${from}`,
-    )
-  }
-
-  const entryTo = scValToNative(args[1]!) as string
-  if (entryTo !== ctx.payee) {
-    throw new NulthPolicyError(
-      'auth_entry_mismatch',
-      `authEntry to ${entryTo} does not match paymentContext.payee ${ctx.payee}`,
-    )
-  }
-
-  const entryAmount = scValToNative(args[2]!) as bigint
-  if (entryAmount !== ctx.amountStroops) {
-    throw new NulthPolicyError(
-      'auth_entry_mismatch',
-      `authEntry amount ${entryAmount} does not match paymentContext.amountStroops ${ctx.amountStroops}`,
-    )
-  }
-}
-
-function insecureMockProof(preimage: string): string {
-  return createHash('sha512').update(`nulth:${preimage}`).digest('base64')
-}
-
-function encodeAuthSignature(proof: NulthProof): string {
-  const payload: NulthAuthSignature = { nulth: 'zk-v1', proof }
-  return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64')
-}
-
-// ---------------------------------------------------------------------------
-// Inlined NulthClient (from @kikis-app/nulth-sdk/NulthClient)
-// ---------------------------------------------------------------------------
-
-class NulthClient {
-  private policy: NulthPolicyState
-  private readonly prover: 'mock'
-
-  constructor(private readonly config: NulthClientConfig) {
-    this.policy = { ...config.policy }
-    this.prover = config.prover ?? 'mock'
-    if (this.prover !== 'mock') {
-      throw new KikisAppManifestError(
-        `NulthClient: unknown prover backend ${String(config.prover)}; only 'mock' is implemented`,
-      )
-    }
-    if (config.network !== 'testnet') {
-      throw new KikisAppManifestError(
-        `NulthClient cannot use the insecure mock prover on mainnet; a production prover is required (network must be 'testnet', got ${String(config.network)})`,
-      )
-    }
-    resolveLogger(config.logger)(
-      'warn',
-      'NulthClient is using the insecure mock prover; proofs are not cryptographically sound',
-    )
-  }
-
-  get proverBackend(): string { return this.prover }
-
-  get nulthAccount(): string { return this.config.nulthAccount }
-  get allowlistCommitment(): string { return this.policy.allowlistCommitment }
-  get capCommitment(): string {
-    return commitDailyCap(this.policy.dailyCapStroops, this.policy.witnessSecret)
-  }
-
-  buildPaymentAuthProof(context: PaymentAuthContext): NulthProof {
-    this.enforcePolicy(context)
-
-    const bucket = dayBucketFromLedger(context.ledgerSequence)
-    if (bucket !== this.policy.dayBucket) {
-      this.policy.dayBucket = bucket
-      this.policy.dailySpendStroops = 0n
-    }
-
-    const authDigest = authDigestFromEntry(context.authEntry)
-    const capCommitment = this.capCommitment
-    const payeeHash = hashPayee(context.payee)
-
-    const preimage = [
-      authDigest, this.policy.allowlistCommitment, capCommitment,
-      payeeHash, context.amountStroops.toString(), bucket.toString(),
-      this.config.nulthAccount,
-    ].join('|')
-
-    const proof: NulthProof = {
-      version: 1,
-      proof: insecureMockProof(preimage),
-      publicInputs: {
-        authDigest,
-        allowlistCommitment: this.policy.allowlistCommitment,
-        capCommitment,
-        payeeHash,
-        amountStroops: context.amountStroops.toString(),
-        dayBucket: bucket.toString(),
-      },
-    }
-
-    this.policy.dailySpendStroops += context.amountStroops
-    return proof
-  }
-
-  private enforcePolicy(context: PaymentAuthContext): void {
-    if (context.amountStroops < 0n) {
-      throw new RangeError(`Invalid amountStroops: ${context.amountStroops}`)
-    }
-    if (!Number.isSafeInteger(context.ledgerSequence) || context.ledgerSequence < 0) {
-      throw new RangeError(`Invalid ledgerSequence: ${context.ledgerSequence}`)
-    }
-    if (this.policy.expiryLedger !== undefined && context.ledgerSequence > this.policy.expiryLedger) {
-      throw new NulthPolicyError('session_expired', 'Nulth session expired')
-    }
-    if (!this.policy.allowedPayees.includes(context.payee)) {
-      throw new NulthPolicyError('payee_not_allowed', `Payee ${context.payee} not in off-chain allowlist`)
-    }
-    const bucket = dayBucketFromLedger(context.ledgerSequence)
-    const spend = bucket === this.policy.dayBucket ? this.policy.dailySpendStroops : 0n
-    if (spend + context.amountStroops > this.policy.dailyCapStroops) {
-      throw new NulthPolicyError('daily_cap_exceeded', 'Nulth daily cap exceeded')
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Inlined signer types & helpers (from @kikis-app/nulth-sdk/signer)
-// ---------------------------------------------------------------------------
-
-export interface NulthStellarSigner {
-  address: string
-  signAuthEntry: SignAuthEntry
-}
-
-export interface NulthSignerConfig extends NulthClientConfig {
-  paymentContext?: Omit<PaymentAuthContext, 'authEntry'>
-}
-
-export function createNulthSigner(config: NulthSignerConfig): NulthStellarSigner {
-  const client = new NulthClient(config)
-  const nulthAccount = config.nulthAccount
-  return {
-    address: nulthAccount,
-    signAuthEntry: async (authEntry) => {
-      const ctx = config.paymentContext
-      if (!ctx) throw new Error('Nulth paymentContext must be set before signing')
-      assertAuthEntryMatchesContext(authEntry, nulthAccount, ctx)
-      const proof = client.buildPaymentAuthProof({ authEntry, ...ctx })
-      return { signedAuthEntry: encodeAuthSignature(proof), signerAddress: nulthAccount }
-    },
-  }
-}
-
-export function setNulthPaymentContext(
-  config: NulthSignerConfig,
-  context: Omit<PaymentAuthContext, 'authEntry'>,
-): void {
-  config.paymentContext = context
-}
-
-export function paymentContextFromManifest(
-  manifest: {
-    payee: string
-    asset_contract: string
-    pricing: { x402?: { amount: string; payee?: string }; 'mpp-charge'?: { amount: string; payee?: string } }
-  },
-  mode: 'x402' | 'mpp-charge',
-  ledgerSequence: number,
-): Omit<PaymentAuthContext, 'authEntry'> {
-  const pricing = manifest.pricing[mode]
-  if (!pricing) throw new Error(`manifest.pricing.${mode} missing`)
-  return {
-    payee: pricing.payee ?? manifest.payee,
-    amountStroops: usdcToStroops(pricing.amount),
-    assetContract: manifest.asset_contract,
-    ledgerSequence,
-  }
-}
-
-export function createPolicyState(input: {
-  dailyCapUsdc: string
-  allowedPayees: readonly string[]
-  witnessSecret: string
-  expiryLedger?: number
-  ledgerSequence?: number
-}): NulthPolicyState {
-  const dailyCapStroops = usdcToStroops(input.dailyCapUsdc)
-  return {
-    dailyCapStroops,
-    allowlistCommitment: commitAllowlist(input.allowedPayees, input.witnessSecret),
-    allowedPayees: input.allowedPayees,
-    dailySpendStroops: 0n,
-    dayBucket: dayBucketFromLedger(input.ledgerSequence ?? 0),
-    witnessSecret: input.witnessSecret,
-    ...(input.expiryLedger !== undefined ? { expiryLedger: input.expiryLedger } : {}),
-  }
+export {
+  NulthClient,
+  NulthPolicyError,
+  assertAuthEntryMatchesContext,
+  commitAllowlist,
+  commitDailyCap,
+  hashPayee,
+  dayBucket,
+  dayBucket as dayBucketFromLedger,
+  authDigestFromEntry,
+  insecureMockProof,
+  encodeAuthSignature,
+  decodeAuthSignature,
+  createNulthSigner,
+  setNulthPaymentContext,
+  paymentContextFromManifest,
+  createPolicyState,
+  type NulthPolicyState,
+  type PaymentAuthContext,
+  type NulthProof,
+  type NulthAuthSignature,
+  type NulthClientConfig,
+  type NulthStellarSigner,
+  type NulthSignerConfig,
 }
 
 // ---------------------------------------------------------------------------
@@ -410,9 +102,9 @@ export async function prepareNulthSigner(
   assertNulthVaultManifest(manifest, vault.nulthAccount)
 
   const prover = vault.prover ?? 'mock'
-  if (network === "mainnet" && prover === "mock") {
-    throw new KikisAppManifestError(
-      'nulth vault uses the insecure mock prover and cannot be used on mainnet'
+  if (network === 'mainnet' && prover === 'mock') {
+    throw new KikisAppVaultConfigError(
+      'nulth vault uses the insecure mock prover and cannot be used on mainnet',
     )
   }
 
@@ -436,19 +128,25 @@ export async function prepareNulthSigner(
   if (mode === 'x402' || mode === 'mpp-charge') {
     setNulthPaymentContext(config, paymentContextFromManifest(manifest, mode, ledgerSequence))
   } else {
-    throw new KikisAppManifestError(`Nulth ZK vault does not support payment mode: ${mode}`)
+    throw new KikisAppVaultConfigError(`Nulth ZK vault does not support payment mode: ${mode}`)
   }
 
-  const signer = createNulthSigner(config)
-  return { signer: signer as ClientStellarSigner, config }
+  try {
+    const signer = createNulthSigner(config)
+    return { signer: signer as ClientStellarSigner, config }
+  } catch (err: unknown) {
+    if (err instanceof KikisAppVaultConfigError) {
+      throw err
+    }
+    if (
+      err instanceof NulthConfigError ||
+      (typeof err === 'object' && err !== null && (err as { code?: string }).code === 'VAULT_CONFIG') ||
+      (err instanceof Error && /mock prover|unknown prover|network must be/i.test(err.message))
+    ) {
+      throw new KikisAppVaultConfigError((err as Error).message, { cause: err })
+    }
+    throw err
+  }
 }
 
 export type { VaultMode }
-
-export function decodeAuthSignature(encoded: string): NulthAuthSignature {
-  const raw = JSON.parse(Buffer.from(encoded, 'base64').toString('utf8')) as unknown
-  if (typeof raw !== 'object' || raw === null || (raw as { nulth?: string }).nulth !== 'zk-v1') {
-    throw new Error('Invalid Nulth ZK auth signature')
-  }
-  return raw as NulthAuthSignature
-}

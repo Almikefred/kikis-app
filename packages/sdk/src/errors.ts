@@ -14,6 +14,7 @@ export type KikisAppErrorCode =
   | 'REFUND_WINDOW'
   | 'CLIENT_VERSION_TOO_OLD'
   | 'TRUSTLINE'
+  | 'FEE'
 
 export interface KikisAppErrorOptions {
   cause?: unknown
@@ -112,6 +113,30 @@ export class KikisAppTrustlineError extends KikisAppError {
   }
 }
 
+/** Vault configuration parameter is invalid (e.g. mock prover on mainnet, unknown prover, unsupported payment mode). */
+export class KikisAppVaultConfigError extends KikisAppError {
+  constructor(message: string, options: KikisAppErrorOptions = {}) {
+    super(message, 'VAULT_CONFIG', false, options)
+    this.name = 'KikisAppVaultConfigError'
+  }
+
+  static [Symbol.hasInstance](instance: unknown): boolean {
+    return (
+      (instance instanceof KikisAppError && instance.code === 'VAULT_CONFIG') ||
+      (typeof instance === 'object' &&
+        instance !== null &&
+        'name' in instance &&
+        ((instance as { name?: string }).name === 'KikisAppVaultConfigError' ||
+          (instance as { name?: string }).name === 'NulthConfigError' ||
+          (instance as { code?: string }).code === 'VAULT_CONFIG'))
+    )
+  }
+}
+
+/** Alias for {@link KikisAppVaultConfigError} */
+export const NulthConfigError = KikisAppVaultConfigError
+export type NulthConfigError = KikisAppVaultConfigError
+
 /** x402 facilitator or provider returned a retryable HTTP failure (5xx, 429). */
 export class KikisAppFacilitatorError extends KikisAppError {
   readonly status: number
@@ -186,6 +211,22 @@ export class KikisAppRefundWindowError extends KikisAppError {
   }
 }
 
+/** Network fee exceeds max configured fee or base fee surge rejected. */
+export class KikisAppFeeError extends KikisAppError {
+  readonly fee?: number | string
+  readonly maxFee?: number | string
+
+  constructor(
+    message: string,
+    options: KikisAppErrorOptions & { fee?: number | string; maxFee?: number | string } = {},
+  ) {
+    super(message, 'FEE', false, options)
+    this.name = 'KikisAppFeeError'
+    this.fee = options.fee
+    this.maxFee = options.maxFee
+  }
+}
+
 /** @deprecated Use {@link KikisAppPolicyRejectError} */
 export const KikisAppPolicyRejectedError = KikisAppPolicyRejectError
 
@@ -246,7 +287,13 @@ export function wrapMppError(err: unknown, context: string): KikisAppError {
   if (err instanceof KikisAppError) return err
   if (
     err instanceof TypeError ||
-    (err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError'))
+    (err instanceof Error &&
+      (err.name === 'AbortError' ||
+        err.name === 'TimeoutError' ||
+        err.name === 'ConnectTimeoutError' ||
+        err.name === 'SocketError')) ||
+    (err as Record<string, unknown>)?.['code'] === 'ECONNRESET' ||
+    (err as Record<string, unknown>)?.['code'] === 'ETIMEDOUT'
   ) {
     return new KikisAppNetworkError(`${context}: ${String(err)}`, { cause: err })
   }

@@ -127,7 +127,7 @@ async function makeServer(handlers: {
   })
 }
 
-describe('kikis-app (Express) — voucher state only from verified credentials', () => {
+describe('kikisApp (Express) — voucher state only from verified credentials', () => {
   it('pairs each committed amount with its own signature (last onVoucher call reflects the latest pair)', async () => {
     const voucherCalls: Array<{ amount: string; signature: string }> = []
     const { commit, close } = await makeServer({
