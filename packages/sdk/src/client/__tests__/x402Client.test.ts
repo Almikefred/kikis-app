@@ -11,11 +11,12 @@ import {
   KikisAppFacilitatorError,
   KikisAppManifestError,
   KikisAppPolicyRejectError,
+  KikisAppSignatureError,
 } from '../../errors.js'
 
 const keypair = Keypair.random()
 const manifest: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Test Service',
   description: 'Test',
   modes: ['x402'],
@@ -526,6 +527,124 @@ test('X402Client - reports the amount actually signed, not the manifest price', 
   try {
     const result = await client.pay('https://api.test/paid', manifest)
     assert.equal(result.amount, '0.005')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('X402Client - rejects facilitator receipt with invalid/mismatched nonce', async (t) => {
+  const client = new X402Client(keypair.secret(), 'testnet')
+  t.mock.method(x402HTTPClient.prototype, 'createPaymentPayload', async () => ({
+    ...makePayload(),
+    payload: { nonce: 'nonce-req-123' },
+  }))
+  const originalFetch = globalThis.fetch
+
+  globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+    const headers = (init?.headers ?? {}) as Record<string, string>
+    if (headers['PAYMENT-SIGNATURE']) {
+      const receipt = {
+        transaction: '0x123',
+        nonce: 'nonce-attacker-999',
+        timestamp: Date.now(),
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Payment-Response': Buffer.from(JSON.stringify(receipt)).toString('base64'),
+        },
+      })
+    }
+    return paymentRequiredResponse()
+  }) as typeof fetch
+
+  try {
+    await assert.rejects(
+      () => client.pay('https://api.test/paid', manifest),
+      (err: unknown) => {
+        assert.ok(err instanceof KikisAppSignatureError)
+        assert.match((err as Error).message, /nonce mismatch/)
+        return true
+      },
+    )
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('X402Client - rejects facilitator receipt with stale timestamp (> 60s)', async (t) => {
+  const client = new X402Client(keypair.secret(), 'testnet')
+  t.mock.method(x402HTTPClient.prototype, 'createPaymentPayload', async () => ({
+    ...makePayload(),
+    payload: { nonce: 'nonce-fresh-123' },
+  }))
+  const originalFetch = globalThis.fetch
+
+  globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+    const headers = (init?.headers ?? {}) as Record<string, string>
+    if (headers['PAYMENT-SIGNATURE']) {
+      const receipt = {
+        transaction: '0x123',
+        nonce: 'nonce-fresh-123',
+        timestamp: Date.now() - 120_000,
+      }
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Payment-Response': Buffer.from(JSON.stringify(receipt)).toString('base64'),
+        },
+      })
+    }
+    return paymentRequiredResponse()
+  }) as typeof fetch
+
+  try {
+    await assert.rejects(
+      () => client.pay('https://api.test/paid', manifest),
+      (err: unknown) => {
+        assert.ok(err instanceof KikisAppSignatureError)
+        assert.match((err as Error).message, /outside acceptable drift/)
+        return true
+      },
+    )
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('X402Client - accepts valid facilitator receipt and returns verified txHash', async (t) => {
+  const client = new X402Client(keypair.secret(), 'testnet')
+  t.mock.method(x402HTTPClient.prototype, 'createPaymentPayload', async () => ({
+    ...makePayload(),
+    payload: { nonce: 'nonce-valid-789' },
+  }))
+  const originalFetch = globalThis.fetch
+
+  globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+    const headers = (init?.headers ?? {}) as Record<string, string>
+    if (headers['PAYMENT-SIGNATURE']) {
+      const receipt = {
+        transaction: '0xverifiedtx123456',
+        nonce: 'nonce-valid-789',
+        timestamp: Date.now(),
+      }
+      return new Response(JSON.stringify({ ok: true, data: 'hello' }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Payment-Response': Buffer.from(JSON.stringify(receipt)).toString('base64'),
+        },
+      })
+    }
+    return paymentRequiredResponse()
+  }) as typeof fetch
+
+  try {
+    const result = await client.pay('https://api.test/paid', manifest)
+    assert.equal(result.txHash, '0xverifiedtx123456')
+    assert.deepEqual(result.data, { ok: true, data: 'hello' })
   } finally {
     globalThis.fetch = originalFetch
   }

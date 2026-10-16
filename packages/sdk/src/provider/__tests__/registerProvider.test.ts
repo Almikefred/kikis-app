@@ -13,7 +13,7 @@ describe('registerProvider', () => {
   const secret = keypair.secret()
 
   const rawManifest: KikisAppManifest = {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Test DEX Provider',
     description: 'Test provider description',
     modes: ['x402', 'mpp-charge'],

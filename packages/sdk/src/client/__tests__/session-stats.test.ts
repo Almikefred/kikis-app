@@ -15,7 +15,7 @@
 import assert from 'node:assert/strict'
 import { describe, it, mock } from 'node:test'
 import { Keypair } from '@stellar/stellar-sdk'
-import type { KikisAppManifest } from '../../types.js'
+import type { KikisAppManifest, SessionOptions } from '../../types.js'
 import { KikisAppChannelStateError, KikisAppSignatureError } from '../../errors.js'
 
 const CHANNEL_CONTRACT = 'CCK4XOW3YKQUEZFONUTINKMSNW7SNMRQZURME5U3UP7E6WNGK7UHUCAH'
@@ -85,7 +85,7 @@ const { MppSessionClient } = await import('../MppSessionClient.js')
 
 function buildManifest(): KikisAppManifest {
   return {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Stats Test Provider',
     description: 'Provider exercised by session stats unit tests',
     modes: ['mpp-session'],
@@ -247,5 +247,154 @@ describe('SessionHandle.stats()', () => {
     } finally {
       scriptedFetchError = null
     }
+  })
+})
+
+// ── close() Soroban settlement overrides (#51) ─────────────────────────────────
+//
+// close() must build its rpc.Server from the configured Soroban URL and pass
+// the configured base fee to TransactionBuilder instead of hardcoding the
+// public endpoints and BASE_FEE. The SDK was imported above (bound to the real
+// stellar-sdk); this top-level registration replaces only close()'s call-time
+// dynamic import with a capturing fake — same ordering as
+// session-close-stream.test.ts.
+
+const capturedRpcUrls: string[] = []
+const capturedFees: Array<string | number | undefined> = []
+
+function buildSettlementFakeSdk() {
+  class FakeServer {
+    constructor(url: string) {
+      capturedRpcUrls.push(url)
+    }
+    async getAccount() {
+      return {
+        accountId: () => 'GFAKE',
+        sequenceNumber: () => '1',
+        incrementSequenceNumber: () => undefined,
+      }
+    }
+    async simulateTransaction() {
+      return { result: { retval: { bytes: () => Buffer.from([1, 2, 3, 4]) } } }
+    }
+  }
+
+  class FakeContract {
+    constructor(_address: string) {}
+    call(fn: string, ...args: unknown[]) {
+      return { __op: fn, args }
+    }
+  }
+
+  class FakeTransactionBuilder {
+    constructor(_account: unknown, opts: { fee?: string }) {
+      capturedFees.push(opts.fee)
+    }
+    addOperation() {
+      return this
+    }
+    setTimeout() {
+      return this
+    }
+    build() {
+      return { sign: (_kp: unknown) => undefined }
+    }
+  }
+
+  return {
+    rpc: { Server: FakeServer, Api: { isSimulationError: () => false } },
+    Contract: FakeContract,
+    TransactionBuilder: FakeTransactionBuilder,
+    BASE_FEE: '100',
+    nativeToScVal: (value: unknown) => ({ __scval: value }),
+  }
+}
+
+mock.module('@stellar/stellar-sdk', { namedExports: buildSettlementFakeSdk() })
+
+/** Global fetch stub serving close()'s DELETE request (like session-close-stream). */
+const originalFetchForClose = globalThis.fetch
+
+function withStubbedCloseFetch<T>(fn: () => Promise<T>): Promise<T> {
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ closeTxHash: 'CLOSE_TX_HASH' }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })) as typeof globalThis.fetch
+  return fn().finally(() => {
+    globalThis.fetch = originalFetchForClose
+  })
+}
+
+describe('MppSessionClient.close() Soroban overrides (#51)', () => {
+  async function openOneVoucherHandle(
+    options?: SessionOptions,
+    client?: InstanceType<typeof MppSessionClient>,
+  ) {
+    scriptedCumulatives = ['1000']
+    scriptedFetchRejects = false
+    capturedRpcUrls.length = 0
+    capturedFees.length = 0
+
+    const mppClient = client ?? new MppSessionClient(Keypair.random(), 'testnet')
+    const handle = await mppClient.openSession(
+      SESSION_URL,
+      buildManifest(),
+      Keypair.random().secret(),
+      options,
+    )
+    // One signed voucher so close() settles a real cumulative.
+    await handle.stream()[Symbol.asyncIterator]().next()
+    return handle
+  }
+
+  it('builds rpc.Server from the session-level sorobanRpcUrl and passes the configured base fee', async () => {
+    const handle = await openOneVoucherHandle({
+      sorobanRpcUrl: 'https://soroban.private.example',
+      baseFeeStroops: 5_000,
+    })
+
+    await withStubbedCloseFetch(() => handle.close())
+
+    assert.deepEqual(capturedRpcUrls, ['https://soroban.private.example'])
+    assert.deepEqual(capturedFees, ['5000'])
+  })
+
+  it('uses constructor-level overrides when the session options omit them', async () => {
+    const client = new MppSessionClient(Keypair.random(), 'testnet', undefined, undefined, undefined, {
+      sorobanRpcUrl: 'https://rpc.constructor.example',
+      baseFeeStroops: 1_000,
+    })
+    const handle = await openOneVoucherHandle(undefined, client)
+
+    await withStubbedCloseFetch(() => handle.close())
+
+    assert.deepEqual(capturedRpcUrls, ['https://rpc.constructor.example'])
+    assert.deepEqual(capturedFees, ['1000'])
+  })
+
+  it('prefers session options over constructor-level overrides', async () => {
+    const client = new MppSessionClient(Keypair.random(), 'testnet', undefined, undefined, undefined, {
+      sorobanRpcUrl: 'https://rpc.constructor.example',
+      baseFeeStroops: 1_000,
+    })
+    const handle = await openOneVoucherHandle(
+      { sorobanRpcUrl: 'https://soroban.session.example', baseFeeStroops: 400 },
+      client,
+    )
+
+    await withStubbedCloseFetch(() => handle.close())
+
+    assert.deepEqual(capturedRpcUrls, ['https://soroban.session.example'])
+    assert.deepEqual(capturedFees, ['400'])
+  })
+
+  it('keeps the public network endpoint and BASE_FEE when nothing is configured', async () => {
+    const handle = await openOneVoucherHandle()
+
+    await withStubbedCloseFetch(() => handle.close())
+
+    assert.deepEqual(capturedRpcUrls, ['https://soroban-testnet.stellar.org'])
+    assert.deepEqual(capturedFees, ['100'])
   })
 })

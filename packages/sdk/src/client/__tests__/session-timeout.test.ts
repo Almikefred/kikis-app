@@ -28,7 +28,7 @@ const SETTLE_MS = 80
 
 function manifest(): KikisAppManifest {
   return {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Test Provider',
     description: 'session-timeout fixture',
     modes: ['mpp-session'],

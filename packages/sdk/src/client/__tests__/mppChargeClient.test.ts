@@ -15,6 +15,7 @@ import {
   KikisAppNetworkError,
   KikisAppFacilitatorError,
   KikisAppPolicyRejectError,
+  KikisAppFeeError,
 } from '../../errors.js'
 
 // ── Scripted mppx layer ──────────────────────────────────────────────────────
@@ -58,6 +59,7 @@ let capturedOnChallenge:
 let createCalls = 0
 let createCredentialCalls = 0
 const rawFetchAuthHeaders: Array<string | undefined> = []
+let lastStellarChargeOptions: Record<string, unknown> | undefined
 
 function resetFakeState(): void {
   mppxScript = {}
@@ -66,6 +68,7 @@ function resetFakeState(): void {
   createCalls = 0
   createCredentialCalls = 0
   rawFetchAuthHeaders.length = 0
+  lastStellarChargeOptions = undefined
 }
 
 function response(body: unknown, status: number): Response {
@@ -132,11 +135,14 @@ mock.module('mppx/client', {
 mock.module('@stellar/mpp/charge/client', {
   namedExports: {
     stellar: {
-      charge: (opts: { onProgress?: (e: { type: string; hash?: string }) => void }) => ({
-        name: 'stellar/charge',
-        intent: 'charge',
-        onProgress: opts.onProgress,
-      }),
+      charge: (opts: Record<string, unknown>) => {
+        lastStellarChargeOptions = opts
+        return {
+          name: 'stellar/charge',
+          intent: 'charge',
+          onProgress: opts['onProgress'],
+        }
+      },
     },
   },
 })
@@ -150,7 +156,7 @@ const PAYEE = Keypair.random()
 
 function buildManifest(): KikisAppManifest {
   return {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Charge Test Provider',
     description: 'MppChargeClient unit test',
     modes: ['mpp-charge'],
@@ -467,5 +473,77 @@ describe('MppChargeClient — challenge validation', () => {
       },
     )
     assert.equal(createCredentialCalls, 0)
+  })
+
+  it('forwards fee configuration options to stellar charge method', async () => {
+    mppxScript = { fetchStatus: 200 }
+    const client = new MppChargeClient(Keypair.random(), 'testnet', undefined, {
+      maxFeeStroops: 500,
+    })
+    const result = await client.pay('https://provider.test/price', buildManifest())
+    assert.equal(result.mode, 'mpp-charge')
+    assert.ok(lastStellarChargeOptions)
+    assert.equal(lastStellarChargeOptions.fee, 500)
+    assert.equal(lastStellarChargeOptions.maxFee, 500)
+  })
+
+  it('adjusts base fee dynamically from Horizon /fee_stats during fee surge up to maxFeeStroops', async () => {
+    mppxScript = { fetchStatus: 200 }
+    const fakeFetch: typeof fetch = (async (url: string | URL | Request) => {
+      const urlStr = typeof url === 'string' ? url : url.toString()
+      if (urlStr.includes('/fee_stats')) {
+        return new Response(
+          JSON.stringify({
+            last_ledger_base_fee: '100',
+            fee_charged: { p90: '350', mode: '300' },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      return new Response('{}', { status: 200 })
+    }) as typeof fetch
+
+    const client = new MppChargeClient(Keypair.random(), 'testnet', undefined, {
+      dynamicFee: true,
+      maxFeeStroops: 500,
+      fetchFn: fakeFetch,
+    })
+    const result = await client.pay('https://provider.test/price', buildManifest())
+    assert.equal(result.mode, 'mpp-charge')
+    assert.ok(lastStellarChargeOptions)
+    assert.equal(lastStellarChargeOptions.fee, 350)
+  })
+
+  it('fails with typed KikisAppFeeError when fee surge exceeds maxFeeStroops', async () => {
+    mppxScript = { fetchStatus: 200 }
+    const fakeFetch: typeof fetch = (async (url: string | URL | Request) => {
+      const urlStr = typeof url === 'string' ? url : url.toString()
+      if (urlStr.includes('/fee_stats')) {
+        return new Response(
+          JSON.stringify({
+            last_ledger_base_fee: '100',
+            fee_charged: { p90: '800' },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+      return new Response('{}', { status: 200 })
+    }) as typeof fetch
+
+    const client = new MppChargeClient(Keypair.random(), 'testnet', undefined, {
+      dynamicFee: true,
+      maxFeeStroops: 500,
+      fetchFn: fakeFetch,
+    })
+    await assert.rejects(
+      () => client.pay('https://provider.test/price', buildManifest()),
+      (err: unknown) => {
+        assert.ok(err instanceof KikisAppFeeError)
+        assert.equal((err as KikisAppFeeError).fee, 800)
+        assert.equal((err as KikisAppFeeError).maxFee, 500)
+        assert.match((err as Error).message, /exceeds maxFeeStroops/)
+        return true
+      },
+    )
   })
 })

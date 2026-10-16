@@ -131,7 +131,7 @@ Filters assets for a given payment mode and optional endpoint (matched by endpoi
 Returns the first matching `AssetConfig` for the specified mode and endpoint. Throws `KikisAppManifestError` if no eligible assets exist.
 
 ### `resolveAssetContract(manifest, mode, endpoint?, explicitContract?)`
-Resolves the contract address for a given mode and endpoint. Uses `selectAsset` when `assets` is defined; falls back to `explicitContract` or the root `asset_contract`.
+Resolves the contract address for a given mode and endpoint. A developer-supplied `explicitContract` always takes precedence — even when the manifest defines a multi-asset `assets` array — so a specific SAC contract can be pinned deliberately (e.g. during migration or testing); it must be a valid Stellar contract address (`C...`), otherwise `KikisAppManifestError` is thrown. Without it, `selectAsset` picks the contract from `assets` (or the root `asset_contract` for legacy manifests).
 
 ### `isAssetEligible(manifest, assetIdentifier, mode, endpoint?)`
 Checks whether a given asset ticker or contract address is accepted for the specified mode and endpoint.
@@ -149,7 +149,7 @@ All three provider adapters resolve the correct asset contract dynamically at re
 - **Hono (`kikisAppHono`)**:
   Cloudflare Workers and edge runtimes resolve the contract at request time using `c.req.path`.
 
-In all adapters, `asset` and `assetContract` middleware options are optional when `manifest` is provided.
+In all adapters, the `asset` and `assetContract` middleware options are optional when `manifest` is provided. When `assetContract` is set, it pins the payment asset contract and overrides the manifest's automatic per-mode/endpoint asset selection.
 
 > [!NOTE]
 > `mpp-session` and `mpp-session-ws` always pay in the token held by the channel contract (`channelFactory`). Any `assets` entry scoped to those modes must use that same `asset_contract`, or the client will preflight a trustline the channel doesn't use.

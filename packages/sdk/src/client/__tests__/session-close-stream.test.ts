@@ -142,7 +142,7 @@ after(() => {
 
 function buildManifest(): KikisAppManifest {
   return {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Close Stream Test Provider',
     description: 'Provider exercised by session close stream tests',
     modes: ['mpp-session'],

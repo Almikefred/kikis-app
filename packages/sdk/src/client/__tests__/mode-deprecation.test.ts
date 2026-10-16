@@ -13,7 +13,7 @@ const signingKey = Keypair.random()
 
 function createManifest(overrides: Partial<KikisAppManifest> = {}): KikisAppManifest {
   return {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Deprecation Test Provider',
     description: 'Manifest used to verify deprecation and sunset enforcement',
     modes: ['x402', 'mpp-charge'],

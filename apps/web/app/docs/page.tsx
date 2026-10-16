@@ -93,7 +93,7 @@ export default function DocsPage() {
               </p>
               <Code>{`import { KikisAppClient } from '@kikis-app/kikis-app'               // types + client
 import { KikisAppClient } from '@kikis-app/kikis-app/client'        // client only
-import { kikis-app } from '@kikis-app/kikis-app/provider'             // Express middleware + handlers
+import { kikisApp } from '@kikis-app/kikis-app/provider'             // Express middleware + handlers
 import { kikisAppHono } from '@kikis-app/kikis-app/provider/hono'    // Hono middleware
 import { kikisAppFastify } from '@kikis-app/kikis-app/provider/fastify' // Fastify plugin
 import { useKikisAppClient, usePay } from '@kikis-app/kikis-app/react' // React hooks
@@ -145,7 +145,7 @@ const closeResult = await session.close()
               </p>
               <p><strong>Express:</strong></p>
               <Code>{`import express from 'express'
-import { kikis-app } from '@kikis-app/kikis-app/provider'
+import { kikisApp } from '@kikis-app/kikis-app/provider'
 
 const app = express()
 

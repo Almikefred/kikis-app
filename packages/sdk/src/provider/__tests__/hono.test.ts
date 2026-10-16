@@ -15,7 +15,7 @@ const ASSET_CONTRACT = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
 const CHANNEL_CONTRACT = 'CCK4XOW3YKQUEZFONUTINKMSNW7SNMRQZURME5U3UP7E6WNGK7UHUCAH'
 
 const manifest: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Test Service',
   description: 'Unit test provider',
   modes: ['x402', 'mpp-charge', 'mpp-session'],
@@ -373,6 +373,96 @@ describe('kikisAppHono — settlement idempotency', () => {
       headers: { authorization: 'Payment test-credential' },
     })
     assert.equal(second.status, 402)
+  })
+})
+
+describe('kikisAppHono — multi-mode routing (x402 + mpp-charge + mpp-session) (#43)', () => {
+  /** mppx wire-format Payment credential: `Payment <base64url JSON>`. */
+  function paymentCredential(credential: object): string {
+    return `Payment ${Buffer.from(JSON.stringify(credential)).toString('base64url')}`
+  }
+
+  it('routes x402 payment headers to the x402 handler', async () => {
+    const app = makeApp() // all three modes registered
+    const res = await app.request('/price', {
+      headers: { 'payment-signature': 'garbage-payload' },
+    })
+    // The x402 handler decodes and settles — an mpp challenge here would mean
+    // the request was misrouted to a charge/session handler.
+    assert.ok(
+      res.status === 401 || res.status === 500,
+      `expected the x402 handler to answer, got ${res.status}`,
+    )
+    const challenge = res.headers.get('www-authenticate') ?? ''
+    assert.ok(!challenge.includes('intent='), `must not answer with an mpp challenge: ${challenge}`)
+  })
+
+  it('routes x-preferred-mode: mpp-charge to the charge handler', async () => {
+    const app = makeApp()
+    const res = await app.request('/price', {
+      headers: { 'x-preferred-mode': 'mpp-charge' },
+    })
+    assert.equal(res.status, 402)
+    const challenge = res.headers.get('www-authenticate') ?? ''
+    assert.ok(
+      challenge.includes('intent="charge"'),
+      `expected a charge challenge, got: ${challenge}`,
+    )
+  })
+
+  it('routes an mpp-charge Payment credential to the charge handler, not the session handler', async () => {
+    const app = makeApp()
+    const res = await app.request('/price', {
+      headers: {
+        authorization: paymentCredential({
+          challenge: { id: 'c', realm: 'r', method: 'stellar', intent: 'charge', request: {} },
+          payload: { type: 'hash', hash: 'ab'.repeat(32) },
+        }),
+      },
+    })
+    // Before #43 every non-x402 request fell through to the mpp-session
+    // handler and received a channel challenge. The charge handler must
+    // answer instead — never a channel challenge.
+    const challenge = res.headers.get('www-authenticate') ?? ''
+    assert.ok(
+      !challenge.includes('intent="channel"'),
+      `charge credential must not fall through to the session handler: ${challenge}`,
+    )
+  })
+
+  it('routes an mpp-session Payment credential to the session handler', async () => {
+    const app = makeApp()
+    const res = await app.request('/price', {
+      headers: {
+        authorization: paymentCredential({
+          payload: { action: 'voucher', amount: '1', signature: 'ab'.repeat(64) },
+        }),
+      },
+    })
+    const challenge = res.headers.get('www-authenticate') ?? ''
+    assert.ok(
+      !challenge.includes('intent="charge"'),
+      `session credential must not reach the charge handler: ${challenge}`,
+    )
+  })
+
+  it('still answers unauthenticated requests with the default session challenge', async () => {
+    const app = makeApp()
+    const res = await app.request('/price')
+    assert.equal(res.status, 402)
+    const challenge = res.headers.get('www-authenticate') ?? ''
+    assert.ok(
+      challenge.includes('intent="channel"'),
+      `expected the default session challenge, got: ${challenge}`,
+    )
+  })
+
+  it('still routes DELETE close requests to the session handler', async () => {
+    const app = makeApp()
+    const res = await app.request('/price', { method: 'DELETE' })
+    assert.equal(res.status, 200)
+    const body = (await res.json()) as { closeTxHash: null }
+    assert.equal(body.closeTxHash, null)
   })
 })
 

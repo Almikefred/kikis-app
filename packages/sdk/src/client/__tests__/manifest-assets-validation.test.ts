@@ -9,7 +9,7 @@ import schema from '../../schemas/kikis-app.schema.json' with { type: 'json' }
 const validator = new Validator(schema as unknown as Schema, '7')
 
 const validBaseManifest: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Test Provider',
   description: 'Provider validation test',
   modes: ['x402', 'mpp-charge'],

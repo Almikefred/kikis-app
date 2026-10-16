@@ -13,8 +13,8 @@
  * const validate = new Ajv().compile(schema)
  * ```
  */
-import kikis-appSchema from './schemas/kikis-app.schema.json'
+import kikisAppSchema from './schemas/kikis-app.schema.json'
 
-export const schema: Record<string, unknown> = kikis-appSchema
+export const schema: Record<string, unknown> = kikisAppSchema
 
 export default schema
