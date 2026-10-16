@@ -82,7 +82,9 @@ export class SupabaseSeenTxStore implements SeenTxStore {
    * Atomically increment the settlement's replay counter through the
    * `claim_settlement_replay` Postgres function (migration 006). The UPDATE's
    * row lock gives concurrent claims distinct counts. Returns `Infinity` when
-   * the key no longer exists, so the caller treats it as spent.
+   * the claim is refused — the key no longer exists (`null`) or its
+   * database-level replay budget is exhausted (`-1`) — so the caller treats it
+   * as spent in both cases.
    */
   async claimReplay(key: string): Promise<number> {
     const { data, error } = await this.supabase.rpc('claim_settlement_replay', {
@@ -92,7 +94,9 @@ export class SupabaseSeenTxStore implements SeenTxStore {
     if (error) {
       throw new KikisAppNetworkError(`SupabaseSeenTxStore.claimReplay failed: ${error.message}`)
     }
-    if (data == null) return Number.POSITIVE_INFINITY
+    // `null` — unknown key; `-1` — `replay_count` already at `p_max_replays`
+    // and the database refused the increment. Neither may replay.
+    if (data == null || (data as number) < 0) return Number.POSITIVE_INFINITY
     return data as number
   }
 }
