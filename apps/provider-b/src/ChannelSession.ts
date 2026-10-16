@@ -33,6 +33,72 @@ interface OrderBookResponse {
 }
 
 /**
+ * Start the periodic orderbook push for a paid WebSocket connection.
+ *
+ * The interval is self-terminating. An abnormal disconnect — edge isolate
+ * eviction, client crash, a broken pipe on send — never fires onClose, so
+ * push() checks the socket's readyState on every tick and tears the timer
+ * down itself. Without that guard a phantom interval keeps polling Horizon
+ * every 5 seconds and burning Durable Object CPU time for as long as the
+ * object lives.
+ *
+ * `stop()` must also be called from the socket's onClose/onError handlers for
+ * clean teardown.
+ */
+export function startOrderbookPush(
+  socket: { send: (data: string) => void; readyState: number },
+  fetchSnapshot: () => Promise<unknown>,
+  intervalMs = 5_000,
+): { stop: () => void } {
+  let timer: ReturnType<typeof setInterval> | null = null
+  let stopped = false
+
+  const stop = (): void => {
+    if (stopped) return
+    stopped = true
+    if (timer) {
+      clearInterval(timer)
+      timer = null
+    }
+  }
+
+  const push = async (): Promise<void> => {
+    if (stopped) return
+    if (socket.readyState !== 1) {
+      // The socket is already gone (abnormal disconnect — onClose will not
+      // fire). Stop polling instead of querying Horizon forever.
+      stop()
+      return
+    }
+
+    let snapshot: unknown
+    try {
+      snapshot = await fetchSnapshot()
+    } catch (err) {
+      // Horizon blip — keep the interval alive; the next tick retries.
+      console.error('[horizon] orderbook ws error:', err)
+      return
+    }
+
+    if (stopped) return
+    try {
+      socket.send(JSON.stringify(snapshot))
+    } catch (err) {
+      console.error('[horizon] orderbook ws error:', err)
+      // send() throwing (broken pipe) means the client disappeared without a
+      // close frame — stop the interval rather than retrying every tick.
+      stop()
+    }
+  }
+
+  void push()
+  if (!stopped) {
+    timer = setInterval(() => void push(), intervalMs)
+  }
+  return { stop }
+}
+
+/**
  * The mpp-session provider, hosted inside a single Durable Object.
  *
  * This is not an optimisation, it is a correctness requirement. The SDK's
@@ -64,6 +130,15 @@ interface OrderBookResponse {
  */
 export class ChannelSession extends DurableObject<Env> {
   private app: Hono | null = null
+
+  /**
+   * True while a reconciliation cycle is running. Durable Object input gates
+   * only serialize storage operations — reconcileAbandonedSessions awaits
+   * Supabase and Soroban RPC calls, during which the next 15-minute cron tick
+   * can interleave. Overlapping runs would try to close the same channels
+   * on-chain twice (#28).
+   */
+  private isReconciling = false
 
   private buildApp(): Hono {
     const env = this.env
@@ -183,33 +258,25 @@ export class ChannelSession extends DurableObject<Env> {
           throw new Error('mpp-session-ws: refusing unverified WebSocket handshake')
         }
 
-        let timer: ReturnType<typeof setInterval> | null = null
-        let socket: { send: (data: string) => void } | null = null
-        const push = async () => {
-          try {
-            socket?.send(JSON.stringify(await fetchOrderbook()))
-          } catch (err) {
-            console.error('[horizon] orderbook ws error:', err)
-          }
-        }
+        let pusher: { stop: () => void } | null = null
 
         return {
           onMessage: (_evt, ws) => {
-            socket = ws
             // First message kicks off a periodic snapshot push. Cloudflare's
             // WebSocketPair has no onOpen, so a client message is the natural
             // trigger for the stream.
-            if (!timer) {
-              void push()
-              timer = setInterval(() => void push(), 5_000)
+            if (!pusher) {
+              pusher = startOrderbookPush(ws, fetchOrderbook)
             }
             void ws.send(JSON.stringify({ type: 'ack', at: new Date().toISOString() }))
           },
           onClose: () => {
-            if (timer) {
-              clearInterval(timer)
-              timer = null
-            }
+            pusher?.stop()
+          },
+          onError: () => {
+            // An unclean disconnect surfaces here when onClose never runs —
+            // guarantee the push interval is torn down either way (#27).
+            pusher?.stop()
           },
         }
       }),
@@ -228,6 +295,28 @@ export class ChannelSession extends DurableObject<Env> {
   }
 
   async reconcileSessions(): Promise<ReconciliationStats | null> {
+    // Skip if the previous cycle is still running — a duplicate run would
+    // attempt to close channels the in-flight one is already settling.
+    if (this.isReconciling) {
+      console.warn('[reconcile] Skipped: previous run still in progress')
+      return {
+        orphanedCount: 0,
+        recoveredCount: 0,
+        skippedCount: 0,
+        failedCount: 0,
+        alreadyClosedCount: 0,
+        errors: [],
+      }
+    }
+    this.isReconciling = true
+    try {
+      return await this.runReconciliation()
+    } finally {
+      this.isReconciling = false
+    }
+  }
+
+  private async runReconciliation(): Promise<ReconciliationStats | null> {
     const env = this.env
     if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY || !env.STELLAR_PAYEE_SECRET) {
       return null
