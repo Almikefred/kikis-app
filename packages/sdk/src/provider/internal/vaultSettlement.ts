@@ -18,7 +18,7 @@ export interface VaultSettlementAddresses {
  * knowingly attributing the provider as both sides of the settlement.
  */
 export function resolveVaultSettlementAddresses(
-  vault: string,
+  vault: string | null,
   payee: string,
 ): VaultSettlementAddresses | null {
   // The vault is the governed payer account: every settlement is attributed
