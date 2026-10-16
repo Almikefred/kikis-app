@@ -111,6 +111,20 @@ export interface KikisAppClientConfig {
   /** Structured logger for SDK events. Defaults to no-op (silent). */
   logger?: KikisAppLogger
   /**
+   * Soroban RPC endpoint used for mpp-session settlement (close()'s
+   * prepare_commitment simulation and transaction preparation). Defaults to
+   * the public Stellar endpoint for `network`. Point this at a private or
+   * self-hosted RPC when the public endpoint is unreachable or rate-limited
+   * from your runtime (#51).
+   */
+  sorobanRpcUrl?: string
+  /**
+   * Base fee in stroops for mpp-session settlement transactions. Defaults to
+   * BASE_FEE (100 stroops). Raise during fee surges so settlement simulation
+   * and submission are not rejected for an underpriced fee (#51).
+   */
+  baseFeeStroops?: number
+  /**
    * Timeout in milliseconds for manifest fetches. A provider that accepts the TCP
    * connection but never sends a response body will be aborted after this delay.
    * Default: 5000 ms.
@@ -231,7 +245,17 @@ export class KikisAppClient {
     const retryPolicy = this.logger ? { ...this.retryPolicy, logger: this.logger } : this.retryPolicy
     this.x402 = new X402Client(secretKey, this.network, retryPolicy)
     this.charge = new MppChargeClient(this.keypair, this.network, retryPolicy)
-    this.session = new MppSessionClient(this.keypair, this.network, retryPolicy, undefined, this.logger)
+    this.session = new MppSessionClient(
+      this.keypair,
+      this.network,
+      retryPolicy,
+      undefined,
+      this.logger,
+      {
+        ...(config.sorobanRpcUrl !== undefined && { sorobanRpcUrl: config.sorobanRpcUrl }),
+        ...(config.baseFeeStroops !== undefined && { baseFeeStroops: config.baseFeeStroops }),
+      },
+    )
   }
 
   /** Fetch manifest and select mode — shared by pay() and estimateCost(). */

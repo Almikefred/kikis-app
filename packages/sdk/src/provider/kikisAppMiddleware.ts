@@ -74,7 +74,7 @@ export interface KikisAppMiddlewareOptions {
  * ```ts
  * import { kikis-app } from '@kikis-app/sdk/provider'
  *
- * app.use('/price', kikis-app({
+ * app.use('/price', kikisApp({
  *   modes: ['x402', 'mpp-charge'],
  *   pricing: { x402: '0.001', 'mpp-charge': '0.0008' },
  *   ...

@@ -230,7 +230,7 @@ async function makeServer(handlers: {
   })
 }
 
-describe('kikis-app (Express) — real HTTP regression coverage for verified-only voucher state (#388)', () => {
+describe('kikisApp (Express) — real HTTP regression coverage for verified-only voucher state (#388)', () => {
   it('closes with the last genuinely verified voucher signature, not a signature from a crafted header in the old, pre-fix format', async () => {
     const voucherCalls: Array<{ amount: string; signature: string }> = []
     const sessionOpens: Array<string | null> = []

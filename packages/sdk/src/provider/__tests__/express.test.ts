@@ -83,7 +83,7 @@ async function makeServer(
   })
 }
 
-describe('kikis-app (Express) — manifest endpoint', () => {
+describe('kikisApp (Express) — manifest endpoint', () => {
   it('serves a signed /.well-known/kikis-app.json', async () => {
     const { url, close } = await makeServer({ modes: [] as ('x402' | 'mpp-charge' | 'mpp-session')[], pricing: {} })
     try {
@@ -110,7 +110,7 @@ describe('kikis-app (Express) — manifest endpoint', () => {
   })
 })
 
-describe('kikis-app (Express) — health endpoint', () => {
+describe('kikisApp (Express) — health endpoint', () => {
   it('returns ok with manifest metadata', async () => {
     const { url, close } = await makeServer()
     try {
@@ -124,7 +124,7 @@ describe('kikis-app (Express) — health endpoint', () => {
   })
 })
 
-describe('kikis-app (Express) — x402 flow', () => {
+describe('kikisApp (Express) — x402 flow', () => {
   it('returns 402 with X-Payment-Requirements when no payment header', async () => {
     const { url, close } = await makeServer({ modes: ['x402'], pricing: { x402: '0.001' } })
     try {
@@ -173,7 +173,7 @@ describe('kikis-app (Express) — x402 flow', () => {
   })
 })
 
-describe('kikis-app (Express) — mpp-charge flow', () => {
+describe('kikisApp (Express) — mpp-charge flow', () => {
   it('returns 402 challenge when no authorization header', async () => {
     const { url, close } = await makeServer({ modes: ['mpp-charge'], pricing: { 'mpp-charge': '0.0008' } })
     try {
@@ -185,7 +185,7 @@ describe('kikis-app (Express) — mpp-charge flow', () => {
   })
 })
 
-describe('kikis-app (Express) — mpp-session flow', () => {
+describe('kikisApp (Express) — mpp-session flow', () => {
   it('returns 402 challenge when no authorization header', async () => {
     const { url, close } = await makeServer({
       modes: ['mpp-session'],
@@ -215,7 +215,7 @@ describe('kikis-app (Express) — mpp-session flow', () => {
   })
 })
 
-describe('kikis-app (Express) — mode routing', () => {
+describe('kikisApp (Express) — mode routing', () => {
   it('routes x402 requests by payment-signature header', async () => {
     const { url, close } = await makeServer({
       modes: ['x402', 'mpp-charge'],
@@ -248,7 +248,7 @@ describe('kikis-app (Express) — mode routing', () => {
   })
 })
 
-describe('kikis-app (Express) — settlement idempotency', () => {
+describe('kikisApp (Express) — settlement idempotency', () => {
   it('replays cached settlement on duplicate payment-signature header', async () => {
     const seenStore = new InMemorySeenTxStore()
     const settled: string[] = []
@@ -463,7 +463,7 @@ describe('kikis-app (Express) — settlement idempotency', () => {
   })
 })
 
-describe('kikis-app (Express) — constructor validation', () => {
+describe('kikisApp (Express) — constructor validation', () => {
   it('throws when mpp-session mode is enabled without commitmentPublicKey', () => {
     assert.throws(
       () =>
@@ -478,7 +478,7 @@ describe('kikis-app (Express) — constructor validation', () => {
   })
 })
 
-describe('kikis-app (Express) — error propagation', () => {
+describe('kikisApp (Express) — error propagation', () => {
   it('catches handler errors and returns 500', async () => {
     const { url, close } = await makeServer({ modes: ['x402'], pricing: { x402: '0.001' } })
     try {
@@ -496,7 +496,7 @@ describe('kikis-app (Express) — error propagation', () => {
   })
 })
 
-describe('kikis-app (Express) — callback errors', () => {
+describe('kikisApp (Express) — callback errors', () => {
   it('onCallbackError is called when onSettled throws', async () => {
     const callbackErrors: Array<{ err: unknown; cbName: string }> = []
 
@@ -518,7 +518,7 @@ describe('kikis-app (Express) — callback errors', () => {
   })
 })
 
-describe('kikis-app (Express) — multiple modes', () => {
+describe('kikisApp (Express) — multiple modes', () => {
   it('serves manifest with all configured modes', async () => {
     const { url, close } = await makeServer()
     try {
@@ -534,7 +534,7 @@ describe('kikis-app (Express) — multiple modes', () => {
   })
 })
 
-describe('kikis-app (Express) — per-mode payee override', () => {
+describe('kikisApp (Express) — per-mode payee override', () => {
   it('resolves per-mode payee override in manifest signature', async () => {
     const overridePayee = Keypair.random()
     const manifestWithOverride: KikisAppManifest = {

@@ -315,6 +315,20 @@ export interface SessionOptions {
    * store to resume such a channel, or close it first.
    */
   store?: Store.Store
+  /**
+   * Soroban RPC endpoint used by close() for the settlement simulation
+   * (prepare_commitment) and transaction preparation. Defaults to the public
+   * Stellar endpoint for the session network. Set a private/self-hosted RPC
+   * here when the default endpoint is unreachable or rate-limited from the
+   * runtime the agent runs in (#51).
+   */
+  sorobanRpcUrl?: string
+  /**
+   * Base fee in stroops for close()'s settlement transaction. Defaults to the
+   * SDK BASE_FEE (100 stroops). Raise it during fee surges so settlement
+   * simulation and submission are not rejected for an underpriced fee (#51).
+   */
+  baseFeeStroops?: number
 }
 
 /**

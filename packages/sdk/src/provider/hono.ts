@@ -539,17 +539,22 @@ function createMppSessionHandlerState(
   // other host that can evict and recreate this closure between requests)
   // loses it even though `commit` persisted it to `innerStore` — so any path
   // that reads `record` must first try to reload it from the store. Never
-  // overwrites an in-memory record that is already set.
+  // overwrites an in-memory record that is already set. The persisted
+  // voucherCount is restored with it so eviction cannot reset the counters the
+  // DELETE close path and orphan reporting rely on (#52).
   async function loadPersistedRecord(): Promise<VerifiedVoucherRecord | null> {
     if (record) return record
     try {
       const stored = (await innerStore.get(voucherRecordKey)) as
-        | { amount?: string; signature?: string; payer?: string | null }
+        | { amount?: string; signature?: string; payer?: string | null; voucherCount?: number }
         | undefined
       if (!stored || typeof stored.amount !== 'string' || typeof stored.signature !== 'string') {
         return null
       }
       record = { amount: BigInt(stored.amount), signature: stored.signature, payer: stored.payer ?? null }
+      if (typeof stored.voucherCount === 'number' && stored.voucherCount > voucherCount) {
+        voucherCount = stored.voucherCount
+      }
     } catch {
       // Corrupt or unreadable persisted record — proceed as though there is none.
       return null
@@ -613,13 +618,17 @@ function createMppSessionHandlerState(
 
     const payer = record?.payer ?? extractPayerAddress(credential.source)
     record = { amount, signature: payload.signature, payer }
+    voucherCount++
+    // Persist the counters with the record: an isolate eviction between
+    // vouchers must not reset voucherCount (orphan info, onVoucher indexing)
+    // or strand the amount/signature the DELETE close path reads (#52).
     await innerStore.put(voucherRecordKey, {
       amount: record.amount.toString(),
       signature: record.signature,
       payer: record.payer,
+      voucherCount,
     })
 
-    voucherCount++
     // Voucher activity — this session is alive again.
     settledCleanly = false
     armIdleTimer()
@@ -668,31 +677,17 @@ function createMppSessionHandlerState(
     mppx,
 
     async handleDelete(c: DeleteContext): Promise<Response> {
+      // The persisted verified-voucher record is the only source of truth for
+      // settlement (#52). Reload it first so isolate eviction (Durable Object
+      // hibernation, cold start) cannot silently reset the provider's
+      // counters, and never fall back to the client-supplied body: it is
+      // untrusted input, and after an eviction the closure state it claims to
+      // supersede is exactly what must be recovered from storage. A close with
+      // no persisted record means this provider never verified a voucher — it
+      // must refuse to settle rather than trust a self-reported amount.
       await loadPersistedRecord()
-      let body: { amount?: string; signature?: string } | undefined
-      try {
-        body = await c.req.json() as { amount?: string; signature?: string }
-      } catch {
-        // empty or non-JSON body
-      }
-
-      const bodyAmount = body?.amount ? BigInt(body.amount) : 0n
-      const recordAmount = record?.amount ?? 0n
-      let closeAmount: bigint
-      let closeSig: string
-      if (bodyAmount > recordAmount) {
-        closeAmount = bodyAmount
-        closeSig = body?.signature ?? record?.signature ?? ''
-      } else {
-        closeAmount = recordAmount
-        // Prefer the provider's own verified-voucher signature. Fall back to
-        // the client's only when it signs the same amount and the provider
-        // never verified one — otherwise a close for a genuinely tracked
-        // amount no-ops and the session is never flagged for recovery.
-        closeSig =
-          record?.signature ||
-          (bodyAmount === recordAmount ? body?.signature ?? '' : '')
-      }
+      const closeAmount: bigint = record?.amount ?? 0n
+      const closeSig: string = record?.signature ?? ''
 
       if (closeAmount > 0n && closeSig) {
         const closeTxHash = await channelClose({
