@@ -17,7 +17,7 @@ const CHARGE_PRICE = '0.0008'
 
 function manifest(overrides: Partial<KikisAppManifest> = {}): KikisAppManifest {
   return {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Challenge Test',
     description: 'unit test',
     modes: ['x402', 'mpp-charge'],

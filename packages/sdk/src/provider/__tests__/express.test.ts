@@ -4,7 +4,7 @@ import { createServer } from 'node:http'
 import express from 'express'
 import type { Request, Response } from 'express'
 import { Keypair } from '@stellar/stellar-sdk'
-import { kikis-app, type KikisAppMiddlewareOptions } from '../kikisAppMiddleware.js'
+import { kikisApp, type KikisAppMiddlewareOptions } from '../kikisAppMiddleware.js'
 import type { KikisAppManifest } from '../../types.js'
 import { InMemorySeenTxStore, paymentIdempotencyKey } from '../SeenTxStore.js'
 import { usdcToStroops } from '../../internal/usdc.js'
@@ -16,7 +16,7 @@ const ASSET_CONTRACT = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
 const CHANNEL_CONTRACT = 'CCK4XOW3YKQUEZFONUTINKMSNW7SNMRQZURME5U3UP7E6WNGK7UHUCAH'
 
 const manifest: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Express Test Service',
   description: 'Unit test provider for Express adapter',
   modes: ['x402', 'mpp-charge', 'mpp-session'],
@@ -55,7 +55,7 @@ async function makeServer(
 ): Promise<{ url: string; close: () => Promise<void> }> {
   const app = express()
   app.use(
-    kikis-app({
+    kikisApp({
       ...BASE_OPTS,
       modes: ['x402', 'mpp-charge', 'mpp-session'],
       pricing: {
@@ -64,7 +64,7 @@ async function makeServer(
         'mpp-session': { rate: '0.0001', channelFactory: CHANNEL_CONTRACT },
       },
       ...overrides,
-    } as Parameters<typeof kikis-app>[0]),
+    } as Parameters<typeof kikisApp>[0]),
   )
   app.get('/price', (_req: Request, res: Response) => {
     res.json({ price: '42' })
@@ -344,12 +344,12 @@ describe('kikis-app (Express) — settlement idempotency', () => {
     const seenStore = new InMemorySeenTxStore({ warn: false })
     const app = express()
     app.use(
-      kikis-app({
+      kikisApp({
         ...BASE_OPTS,
         modes: ['x402'],
         pricing: { x402: '0.001' },
         seenTxStore: seenStore,
-      } as Parameters<typeof kikis-app>[0]),
+      } as Parameters<typeof kikisApp>[0]),
     )
     app.get('/price', (_req: Request, res: Response) => {
       handlerRuns++
@@ -411,21 +411,21 @@ describe('kikis-app (Express) — settlement idempotency', () => {
     const app = express()
     app.use(
       '/cheap',
-      kikis-app({
+      kikisApp({
         ...BASE_OPTS,
         modes: ['x402'],
         pricing: { x402: '0.001' },
         seenTxStore: seenStore,
-      } as Parameters<typeof kikis-app>[0]),
+      } as Parameters<typeof kikisApp>[0]),
     )
     app.use(
       '/expensive',
-      kikis-app({
+      kikisApp({
         ...BASE_OPTS,
         modes: ['x402'],
         pricing: { x402: '5.00' },
         seenTxStore: seenStore,
-      } as Parameters<typeof kikis-app>[0]),
+      } as Parameters<typeof kikisApp>[0]),
     )
     app.get('/cheap', (_req: Request, res: Response) => {
       runs.cheap++
@@ -467,12 +467,12 @@ describe('kikis-app (Express) — constructor validation', () => {
   it('throws when mpp-session mode is enabled without commitmentPublicKey', () => {
     assert.throws(
       () =>
-        kikis-app({
+        kikisApp({
           ...BASE_OPTS,
           commitmentPublicKey: undefined,
           modes: ['mpp-session'],
           pricing: { 'mpp-session': { rate: '0.0001', channelFactory: CHANNEL_CONTRACT } },
-        } as unknown as Parameters<typeof kikis-app>[0]),
+        } as unknown as Parameters<typeof kikisApp>[0]),
       /commitmentPublicKey/,
     )
   })
@@ -559,6 +559,96 @@ describe('kikis-app (Express) — per-mode payee override', () => {
       assert.equal(res.status, 200)
       const body = await res.json() as KikisAppManifest
       assert.equal(body.pricing.x402?.payee, overridePayee.publicKey())
+    } finally {
+      await close()
+    }
+  })
+})
+
+describe('kikis-app (Express) — dual-mode mpp-session + mpp-charge routing (#44)', () => {
+  const DUAL_MODE: Partial<KikisAppMiddlewareOptions> = {
+    modes: ['mpp-session', 'mpp-charge'],
+    pricing: {
+      'mpp-charge': '0.0008',
+      'mpp-session': { rate: '0.0001', channelFactory: CHANNEL_CONTRACT },
+    },
+  }
+
+  /** mppx wire-format Payment credential: `Payment <base64url JSON>`. */
+  function paymentCredential(credential: object): string {
+    return `Payment ${Buffer.from(JSON.stringify(credential)).toString('base64url')}`
+  }
+
+  it('x-preferred-mode: mpp-charge overrides the default session challenge', async () => {
+    const { url, close } = await makeServer(DUAL_MODE)
+    try {
+      const res = await fetch(`${url}/price`, {
+        headers: { 'x-preferred-mode': 'mpp-charge' },
+      })
+      assert.equal(res.status, 402)
+      const challenge = res.headers.get('www-authenticate') ?? ''
+      assert.ok(
+        challenge.includes('intent="charge"'),
+        `expected a charge challenge, got: ${challenge}`,
+      )
+    } finally {
+      await close()
+    }
+  })
+
+  it('dispatches an mpp-charge Payment credential to the charge handler', async () => {
+    const { url, close } = await makeServer(DUAL_MODE)
+    try {
+      const res = await fetch(`${url}/price`, {
+        headers: {
+          authorization: paymentCredential({
+            challenge: { id: 'c', realm: 'r', method: 'stellar', intent: 'charge', request: {} },
+            payload: { type: 'hash', hash: 'ab'.repeat(32) },
+          }),
+        },
+      })
+      // Before #44 this hit the mpp-session handler and received a channel
+      // challenge — a valid charge credential must never be answered with one.
+      const challenge = res.headers.get('www-authenticate') ?? ''
+      assert.ok(
+        !challenge.includes('intent="channel"'),
+        `charge credential must not fall through to the session handler: ${challenge}`,
+      )
+    } finally {
+      await close()
+    }
+  })
+
+  it('unauthenticated requests still receive the default session challenge', async () => {
+    const { url, close } = await makeServer(DUAL_MODE)
+    try {
+      const res = await fetch(`${url}/price`)
+      assert.equal(res.status, 402)
+      const challenge = res.headers.get('www-authenticate') ?? ''
+      assert.ok(
+        challenge.includes('intent="channel"'),
+        `expected the default session challenge, got: ${challenge}`,
+      )
+    } finally {
+      await close()
+    }
+  })
+
+  it('routes an mpp-session Payment credential to the session handler', async () => {
+    const { url, close } = await makeServer(DUAL_MODE)
+    try {
+      const res = await fetch(`${url}/price`, {
+        headers: {
+          authorization: paymentCredential({
+            payload: { action: 'voucher', amount: '1', signature: 'ab'.repeat(64) },
+          }),
+        },
+      })
+      const challenge = res.headers.get('www-authenticate') ?? ''
+      assert.ok(
+        !challenge.includes('intent="charge"'),
+        `session credential must not reach the charge handler: ${challenge}`,
+      )
     } finally {
       await close()
     }

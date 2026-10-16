@@ -28,7 +28,7 @@ test('missing-trustline remediation uses the canonical testnet USDC issuer', asy
 
   const payer = Keypair.random()
   const manifest: KikisAppManifest = {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Trustline Test Provider',
     description: 'Checks the testnet USDC trustline remediation',
     modes: ['x402'],

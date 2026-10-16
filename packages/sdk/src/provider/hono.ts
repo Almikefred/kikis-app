@@ -35,6 +35,7 @@ import {
   type SeenTxStore,
 } from './SeenTxStore.js'
 import { resolveAssetContract } from '../internal/assetUtils.js'
+import { resolvePaymentMode } from './internal/detectPaymentMode.js'
 import { KikisAppManifestError } from '../errors.js'
 import { readSettleResult } from './settleResult.js'
 
@@ -832,15 +833,18 @@ function isWebSocketUpgradeRequest(c: {
  * ```
  */
 export function kikisAppHono(opts: KikisAppHonoOptions): MiddlewareHandler {
-  const handlers: MiddlewareHandler[] = []
+  // Handlers keyed by the payment mode they speak — routing never depends on
+  // registration order, so an mpp-charge handler can no longer be skipped by
+  // an mpp-session handler occupying the last array slot (#43).
+  const handlers = new Map<PaymentMode, MiddlewareHandler>()
   const signedManifest = signManifest(opts.manifest, opts.payeeSecretKey)
 
   if (opts.modes.includes('x402') && opts.pricing.x402) {
-    handlers.push(createX402HonoHandler({ ...opts, manifest: signedManifest }))
+    handlers.set('x402', createX402HonoHandler({ ...opts, manifest: signedManifest }))
   }
 
   if (opts.modes.includes('mpp-charge') && opts.pricing['mpp-charge']) {
-    handlers.push(createMppChargeHonoHandler({ ...opts, manifest: signedManifest }))
+    handlers.set('mpp-charge', createMppChargeHonoHandler({ ...opts, manifest: signedManifest }))
   }
 
   // Session modes (mpp-session, mpp-session-ws) share one channel store so a
@@ -857,29 +861,36 @@ export function kikisAppHono(opts: KikisAppHonoOptions): MiddlewareHandler {
     const sessionPricing = opts.pricing[primarySessionMode]!
     const sharedState = createMppSessionHandlerState(opts, sessionPricing, primarySessionMode)
     for (const mode of sessionModes) {
-      handlers.push(
+      handlers.set(
+        mode,
         createMppSessionHonoHandler({ ...opts, manifest: signedManifest }, { mode }, sharedState),
       )
     }
   }
+
+  const availableModes = new Set(handlers.keys())
 
   return async (c, next) => {
     if (c.req.path === '/.well-known/kikis-app.json') {
       return c.json(signedManifest)
     }
 
-    if (handlers.length === 0) {
+    if (handlers.size === 0) {
       await next()
       return
     }
 
-    const hasX402Header = !!(
-      c.req.header('payment-signature') || c.req.header('x-payment')
+    // Route by the mode the request targets (#43): explicit x-preferred-mode,
+    // x402 payment headers, or the intent encoded in an mpp Payment
+    // credential — never by array position. Requests without a mode signal
+    // still receive the provider's default challenge (session, then charge,
+    // then x402).
+    const mode = resolvePaymentMode(
+      (name) => c.req.header(name),
+      availableModes,
+      { isWebSocketUpgrade: isWebSocketUpgradeRequest(c) },
     )
-    const prefersX402 = c.req.header('x-preferred-mode') === 'x402'
-
-    const handler =
-      hasX402Header || prefersX402 ? handlers[0] : handlers[handlers.length - 1]
+    const handler = mode ? handlers.get(mode) : undefined
 
     if (!handler) {
       await next()

@@ -59,10 +59,10 @@ mock.module('../mppCompatibility.js', {
   },
 })
 
-const { kikis-app } = await import('../kikisAppMiddleware.js')
+const { kikisApp } = await import('../kikisAppMiddleware.js')
 
 const manifest: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Express Verified Voucher Test',
   description: 'Unit test provider',
   modes: ['mpp-session'],
@@ -93,7 +93,7 @@ async function makeServer(handlers: {
   closeCalls = []
   const app = express()
   app.use(
-    kikis-app({
+    kikisApp({
       asset: 'USDC',
       assetContract: ASSET_CONTRACT,
       payee: payeeKeypair.publicKey(),
@@ -104,7 +104,7 @@ async function makeServer(handlers: {
       modes: ['mpp-session'],
       pricing: { 'mpp-session': { rate: '0.0001', channelFactory: CHANNEL_CONTRACT } },
       ...handlers,
-    } as Parameters<typeof kikis-app>[0]),
+    } as Parameters<typeof kikisApp>[0]),
   )
   app.get('/price', (_req: Request, res: Response) => {
     res.json({ price: '42' })

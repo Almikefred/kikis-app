@@ -377,6 +377,144 @@ describe('withRetry', () => {
   })
 })
 
+describe('withRetry — AbortSignal (#42)', () => {
+  it('aborting during backoff rejects immediately with AbortError and stops retrying', { timeout: 10_000 }, async () => {
+    const controller = new AbortController()
+    let calls = 0
+    const startedAt = Date.now()
+    const originalRandom = Math.random
+    Math.random = () => 1.0
+    try {
+      const retryPromise = withRetry(
+        async () => {
+          calls++
+          throw new KikisAppNetworkError('transient')
+        },
+        { maxAttempts: 5, baseDelayMs: 60_000, maxDelayMs: 60_000, signal: controller.signal },
+      )
+      // Abort while the loop is sleeping its first (minute-long) backoff.
+      setTimeout(() => controller.abort(), 10)
+      await assert.rejects(
+        retryPromise,
+        (err: unknown) => err instanceof DOMException && err.name === 'AbortError',
+      )
+      assert.equal(calls, 1, 'no further attempts after abort')
+      assert.ok(
+        Date.now() - startedAt < 5_000,
+        'abort must cut the backoff short, not wait out baseDelayMs',
+      )
+    } finally {
+      Math.random = originalRandom
+    }
+  })
+
+  it('rejects without calling fn when the signal is already aborted', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    let calls = 0
+    await assert.rejects(
+      () =>
+        withRetry(
+          async () => {
+            calls++
+            return 'ok'
+          },
+          { maxAttempts: 4, baseDelayMs: 1, signal: controller.signal },
+        ),
+      (err: unknown) => err instanceof DOMException && err.name === 'AbortError',
+    )
+    assert.equal(calls, 0)
+  })
+
+  it('clears the pending backoff timer on abort (no leaked timers)', { timeout: 10_000 }, async () => {
+    const controller = new AbortController()
+    const backoffTimers: Array<{ handle: unknown; ms: number }> = []
+    const cleared = new Set<unknown>()
+    const originalSetTimeout = globalThis.setTimeout
+    const originalClearTimeout = globalThis.clearTimeout
+    const originalRandom = Math.random
+    Math.random = () => 1.0
+    globalThis.setTimeout = ((fn: () => void, ms?: number) => {
+      const handle = originalSetTimeout(fn, ms)
+      backoffTimers.push({ handle, ms: ms ?? 0 })
+      return handle
+    }) as typeof setTimeout
+    globalThis.clearTimeout = ((handle: unknown) => {
+      cleared.add(handle)
+      ;(originalClearTimeout as (h: unknown) => void)(handle)
+    }) as typeof clearTimeout
+
+    try {
+      const retryPromise = withRetry(
+        async () => {
+          throw new KikisAppNetworkError('transient')
+        },
+        { maxAttempts: 3, baseDelayMs: 60_000, maxDelayMs: 60_000, signal: controller.signal },
+      )
+      setTimeout(() => controller.abort(), 10)
+      await assert.rejects(
+        retryPromise,
+        (err: unknown) => err instanceof DOMException && err.name === 'AbortError',
+      )
+
+      // Only the minute-long backoff timers belong to withRetry — the 10ms
+      // abort timer above is the test's own.
+      const withRetryTimers = backoffTimers.filter((t) => t.ms >= 60_000)
+      assert.ok(withRetryTimers.length >= 1, 'expected at least one backoff timer')
+      for (const timer of withRetryTimers) {
+        assert.ok(cleared.has(timer.handle), 'backoff timer must be cleared on abort')
+      }
+    } finally {
+      Math.random = originalRandom
+      globalThis.setTimeout = originalSetTimeout
+      globalThis.clearTimeout = originalClearTimeout
+    }
+  })
+
+  it('produces no unhandled rejections when abort fires during backoff', { timeout: 10_000 }, async () => {
+    const unhandled: unknown[] = []
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason)
+    }
+    process.on('unhandledRejection', onUnhandled)
+    const originalRandom = Math.random
+    Math.random = () => 1.0
+    try {
+      const controller = new AbortController()
+      const retryPromise = withRetry(
+        async () => {
+          throw new KikisAppNetworkError('transient')
+        },
+        { maxAttempts: 3, baseDelayMs: 60_000, maxDelayMs: 60_000, signal: controller.signal },
+      )
+      setTimeout(() => controller.abort(), 10)
+      await assert.rejects(
+        retryPromise,
+        (err: unknown) => err instanceof DOMException && err.name === 'AbortError',
+      )
+      // Give the microtask/macrotask queues a beat to surface stray rejections.
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      assert.deepEqual(unhandled, [])
+    } finally {
+      Math.random = originalRandom
+      process.off('unhandledRejection', onUnhandled)
+    }
+  })
+
+  it('ignores an abort that happens only after a successful run', async () => {
+    const controller = new AbortController()
+    const result = await withRetry(async () => 'ok', {
+      maxAttempts: 3,
+      baseDelayMs: 1,
+      signal: controller.signal,
+    })
+    assert.equal(result, 'ok')
+    // A late abort must not create unhandled rejections via a stale listener.
+    controller.abort()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  })
+})
+
 describe('parseRetryAfterMs', () => {
   it('parses Retry-After seconds', () => {
     const res = new Response(null, { headers: { 'Retry-After': '2' } })
