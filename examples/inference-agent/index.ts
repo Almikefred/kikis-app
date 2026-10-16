@@ -55,7 +55,7 @@ if (!USDC_CONTRACT) {
 // ---------------------------------------------------------------------------
 
 const MANIFEST: KikisAppManifest = {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Mock Inference Provider',
     description: 'Simulated LLM inference endpoint — returns canned responses',
     modes: ['mpp-charge'],

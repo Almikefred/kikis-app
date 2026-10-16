@@ -78,7 +78,7 @@ mock.module('@x402/core/http', {
 const { kikisAppHono } = await import('../hono.js')
 
 const manifest: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Settle Failure Test',
   description: 'Unit test provider',
   modes: ['x402'],

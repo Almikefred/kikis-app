@@ -71,7 +71,7 @@ export interface KikisAppMiddlewareOptions {
  *
  * @example
  * ```ts
- * import { kikis-app } from '@kikis-app/sdk/provider'
+ * import { kikisApp } from '@kikis-app/sdk/provider'
  *
  * app.use('/price', kikis-app({
  *   modes: ['x402', 'mpp-charge'],
@@ -83,7 +83,7 @@ export interface KikisAppMiddlewareOptions {
 /** MPP modes, in the priority order used to pick the default (non-x402) handler. */
 const MPP_MODES: readonly PaymentMode[] = ['mpp-session', 'mpp-charge']
 
-export function kikis-app(opts: KikisAppMiddlewareOptions): RequestHandler {
+export function kikisApp(opts: KikisAppMiddlewareOptions): RequestHandler {
   const startTime = Date.now()
   const signedManifest = signManifest(opts.manifest, opts.payeeSecretKey)
 
@@ -177,7 +177,7 @@ export function kikis-app(opts: KikisAppMiddlewareOptions): RequestHandler {
     if (req.path === '/health') {
       res.json({
         status: 'ok',
-        kikis-app: opts.manifest.kikis-app,
+        'kikis-app': opts.manifest['kikis-app'],
         network: opts.network,
         payee: opts.payee,
         modesActive: opts.modes,

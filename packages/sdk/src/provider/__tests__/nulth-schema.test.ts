@@ -12,7 +12,7 @@ const NULTH_ACCOUNT = 'CAX5IDLC2XHGQSEA2YN3LPLZ7EXLMRXYX3HFJGKFXS6B7OQXBKWO44LT'
 
 function baseManifest(): Record<string, unknown> {
   return {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Nulth Test Provider',
     description: 'Schema regression test for Nulth-enabled manifests',
     modes: ['x402'],

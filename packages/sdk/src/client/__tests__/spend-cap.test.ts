@@ -70,7 +70,7 @@ function makeManifest(
   }
 
   const manifest = signManifest({
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Spend Cap Test Provider',
     description: 'Provider for spend cap tests',
     modes,

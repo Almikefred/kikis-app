@@ -97,7 +97,7 @@ mock.module('mppx/server', {
 const { kikisAppHono, MPP_SESSION_WS_VERIFIED, mppSessionWsVerified } = await import('../hono.js')
 
 const manifest: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Test WS Service',
   description: 'Unit test provider',
   modes: ['mpp-session-ws'],

@@ -201,10 +201,10 @@ describe('createMockKikisAppMiddleware', () => {
     assert.equal(settledMode, 'x402')
   })
 
-  it('auto-pass attaches the synthetic settlement to req.kikis-app', async () => {
+  it("auto-pass attaches the synthetic settlement to req['kikis-app']", async () => {
     const handler = createMockKikisAppMiddleware({ mode: 'mpp-charge', payment: 'auto-pass' })
     const out = await drive(handler)
-    const record = out.req.kikis-app as MockSettlementRecord
+    const record = out.req['kikis-app'] as MockSettlementRecord
     assert.equal(record.mode, 'mpp-charge')
     assert.equal(record.amount, '0.001')
     assert.ok(record.txHash)

@@ -40,7 +40,7 @@ function startTestServer(
   const payeeKp = Keypair.random()
 
   const validManifest: import('../types.js').KikisAppManifest = {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Test Provider',
     description: 'Smoke test provider',
     modes: ['x402' as const, 'mpp-charge' as const],
@@ -71,7 +71,7 @@ function startTestServer(
     const { fetchManifest, selectMode } = await import('../client/ModeRouter.js')
 
     const manifest = await fetchManifest(server.url)
-    assert.equal(manifest.kikis-app, '1.0', 'manifest version should be 1.0')
+    assert.equal(manifest['kikis-app'], '1.0', 'manifest version should be 1.0')
     assert.equal(manifest.name, 'Test Provider', 'manifest name should match')
     assert.ok(manifest.modes.includes('x402'), 'manifest should include x402 mode')
 
@@ -113,7 +113,7 @@ function startTestServer(
   const payeeKp = Keypair.random()
 
   const validFactoryManifest = {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Factory Provider',
     description: 'Smoke test provider using channel_factory',
     modes: ['mpp-session'],
@@ -166,7 +166,7 @@ function startTestServer(
 // ── Test 3: ModeRouter — invalid manifest rejected ────────────────────────────
 
 {
-  const badManifest = { kikis-app: '2.0', name: 'bad' }
+  const badManifest = { 'kikis-app': '2.0', name: 'bad' }
 
   const server = await startTestServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -201,7 +201,7 @@ function startTestServer(
   const { Keypair: Kp } = await import('@stellar/stellar-sdk')
   const kp = Kp.random()
   const unsignedManifest = {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Unsigned Provider',
     description: 'Missing signature',
     modes: ['x402'],

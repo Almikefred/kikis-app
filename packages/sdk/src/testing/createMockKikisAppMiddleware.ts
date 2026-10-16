@@ -60,7 +60,7 @@ export interface MockKikisAppOptions extends MockKikisAppCallbacks {
   failStatus?: number
 }
 
-/** Synthetic settlement record attached to `req.kikis-app` for assertions. */
+/** Synthetic settlement record attached to `req['kikis-app']` for assertions. */
 export interface MockSettlementRecord {
   mode: PaymentMode
   txHash: string
@@ -186,7 +186,7 @@ export function createMockKikisAppMiddleware(opts: MockKikisAppOptions = {}): Re
 
     void runMockSettlement(opts)
       .then((record) => {
-        if (record) (req as Request & { kikis-app?: MockSettlementRecord }).kikis-app = record
+        if (record) (req as Request & { 'kikis-app'?: MockSettlementRecord })['kikis-app'] = record
         next()
       })
       .catch((err) => next(err))

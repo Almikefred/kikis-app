@@ -21,6 +21,7 @@ import type {
   SessionOptions,
   SessionEvent,
   SessionEventPayloadMap,
+  SessionVoucherPayload,
 } from '../types.js'
 import { DEFAULT_MAX_SESSION_DURATION_MS } from '../types.js'
 import {
@@ -393,6 +394,17 @@ export class MppSessionClient {
       }
     }
 
+    /**
+     * Snapshot for the 'session:voucher' event. Emitted only after both
+     * counters have advanced, so a subscriber sees the same values stats()
+     * would return for that voucher.
+     */
+    const voucherPayload = (): SessionVoucherPayload => ({
+      vouchersIssued,
+      // Same conversion as stats() so the event and stats() never disagree.
+      currentCumulative: (Number(currentCumulative) / 1e7).toFixed(7),
+    })
+
     const clearSessionTimer = (): void => {
       if (timeoutId !== undefined) {
         clearTimeout(timeoutId)
@@ -443,6 +455,7 @@ export class MppSessionClient {
           await checkSpend()
           const onSigned = (): void => {
             vouchersIssued++
+            emit('session:voucher', voucherPayload())
           }
           for await (const item of streamWs(url, mppx, createGuardedCredential, onSigned)) {
             yield item
@@ -513,6 +526,7 @@ export class MppSessionClient {
               await checkSpend()
               const data = await doFetch()
               vouchersIssued++
+              emit('session:voucher', voucherPayload())
               yield data
             }
           } finally {
@@ -545,6 +559,7 @@ export class MppSessionClient {
               p.catch(() => {})
               queue.push(p)
               vouchersIssued++
+              emit('session:voucher', voucherPayload())
               yield data
             }
           } finally {
@@ -684,6 +699,11 @@ export class MppSessionClient {
         }, retryPolicy)
 
         const totalPaid = (Number(currentCumulative) / 1e7).toFixed(7)
+        // The settlement succeeded — drop every registered listener so a
+        // long-lived handle cannot retain application callbacks once the
+        // session is over (#14). Deliberately success-only: a failed close
+        // keeps its listeners so 'session:close-failed' still reaches them.
+        listeners.clear()
         return {
           closeTxHash: closeData.closeTxHash,
           totalPaid,
@@ -841,6 +861,14 @@ export class MppSessionClient {
         set.add(stored)
         return () => {
           set?.delete(stored)
+        }
+      },
+
+      removeAllListeners(event?: SessionEvent): void {
+        if (event === undefined) {
+          listeners.clear()
+        } else {
+          listeners.delete(event)
         }
       },
     }

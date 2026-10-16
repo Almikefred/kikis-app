@@ -97,7 +97,7 @@ export interface EndpointDescriptor {
 /** Full KikisApp discovery manifest — served at /.well-known/kikis-app.json */
 export interface KikisAppManifest {
   /** Manifest schema version (major.minor), e.g. "1.0", "1.1", "2.0" */
-  kikis-app: string
+  'kikis-app': string
   /**
    * Minimum SDK client version (major.minor) required to use this manifest.
    * Clients below this version must refuse to pay.
@@ -324,8 +324,14 @@ export interface SessionOptions {
  * - 'session:close-failed' — that auto-close rejected. The channel may still
  *   hold collateral, so the caller should retry close() or fall back to
  *   requestRefund().
+ * - 'session:voucher' — a voucher was issued during streaming; carries the
+ *   live session stats so a subscriber can render real-time spend without
+ *   polling stats().
  */
-export type SessionEvent = 'session:timeout' | 'session:close-failed'
+export type SessionEvent =
+  | 'session:timeout'
+  | 'session:close-failed'
+  | 'session:voucher'
 
 /** Payload delivered with the 'session:timeout' event. */
 export interface SessionTimeoutPayload {
@@ -346,12 +352,30 @@ export interface SessionCloseFailedPayload {
 }
 
 /**
+ * Payload delivered with the 'session:voucher' event. Emitted once per issued
+ * voucher, after both counters have advanced, so the values always reflect
+ * everything signed so far (the same snapshot stats() would return).
+ */
+export interface SessionVoucherPayload {
+  /** Number of vouchers issued so far in this session */
+  vouchersIssued: number
+  /**
+   * Cumulative amount authorized across all signed vouchers so far, in
+   * payment-asset decimal units — the same units as
+   * {@link SessionStats.currentCumulative} and
+   * {@link SessionCloseResult.totalPaid}.
+   */
+  currentCumulative: string
+}
+
+/**
  * Maps each lifecycle event to the payload its listener receives, so on() can
  * narrow the callback argument per event.
  */
 export interface SessionEventPayloadMap {
   'session:timeout': SessionTimeoutPayload
   'session:close-failed': SessionCloseFailedPayload
+  'session:voucher': SessionVoucherPayload
 }
 
 /**
@@ -422,6 +446,14 @@ export interface SessionHandle {
     event: E,
     listener: (payload: SessionEventPayloadMap[E]) => void,
   ): () => void
+  /**
+   * Detach listeners registered through {@link SessionHandle.on}. With no
+   * `event`, every listener for every event is removed; with an `event`, only
+   * that event's listeners are removed. Idempotent — removing listeners from
+   * an event that has none is a no-op. A successful close() clears all
+   * listeners automatically, so long-lived handles cannot retain callbacks.
+   */
+  removeAllListeners(event?: SessionEvent): void
 }
 
 /**
