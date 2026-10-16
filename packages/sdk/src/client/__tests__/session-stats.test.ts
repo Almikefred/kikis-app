@@ -13,7 +13,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { describe, it, mock } from 'node:test'
+import { after, before, describe, it, mock } from 'node:test'
 import { Keypair } from '@stellar/stellar-sdk'
 import type { KikisAppManifest, SessionOptions } from '../../types.js'
 import { KikisAppChannelStateError, KikisAppSignatureError } from '../../errors.js'
@@ -107,9 +107,14 @@ function buildManifest(): KikisAppManifest {
   }
 }
 
-async function openHandle() {
+async function openHandle(options?: SessionOptions) {
   const client = new MppSessionClient(Keypair.random(), 'testnet')
-  return client.openSession(SESSION_URL, buildManifest(), Keypair.random().secret())
+  return client.openSession(
+    SESSION_URL,
+    buildManifest(),
+    Keypair.random().secret(),
+    options,
+  )
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
