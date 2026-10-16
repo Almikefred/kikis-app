@@ -1499,6 +1499,105 @@ mod tests {
         assert_eq!(data_tuple.2, voucher_count, "data[2] should be voucher_count");
     }
 
+
+    /// Test 18b: a settlement attributed to an arbitrary (non-vault) payer
+    /// is rejected with Error::PayerNotAllowed, even when the payee is
+    /// allowlisted and authorizes the call (#16).
+    #[test]
+    #[should_panic(expected = "Error(Contract, #17)")]
+    fn test_session_settlement_rejects_arbitrary_payer() {
+        let env = Env::default();
+        let (client, vault_id, _admin, payee) = setup_settlement(&env);
+
+        let channel_id = Address::generate(&env);
+        let stranger = Address::generate(&env);
+        let cumulative_amount: i128 = 500_000;
+        let voucher_count: u32 = 7;
+
+        // `stranger` is allowlisted and signs as the payee, but the vault is
+        // the governed payer account: only it may be attributed as payer.
+        env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+            address: &payee,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &vault_id,
+                fn_name: "record_session_settlement",
+                args: (
+                    channel_id.clone(),
+                    stranger.clone(),
+                    payee.clone(),
+                    cumulative_amount,
+                    voucher_count,
+                )
+                    .into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        client.record_session_settlement(
+            &channel_id,
+            &stranger,
+            &payee,
+            &cumulative_amount,
+            &voucher_count,
+        );
+    }
+
+    /// Test 18c: a settlement attributed to the vault instance itself is
+    /// recorded, and the event identifies the vault as payer (#16).
+    #[test]
+    fn test_session_settlement_attributes_payer_to_vault() {
+        let env = Env::default();
+        let (client, vault_id, _admin, payee) = setup_settlement(&env);
+
+        let channel_id = Address::generate(&env);
+        let cumulative_amount: i128 = 500_000;
+        let voucher_count: u32 = 7;
+
+        env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+            address: &payee,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &vault_id,
+                fn_name: "record_session_settlement",
+                args: (
+                    channel_id.clone(),
+                    vault_id.clone(),
+                    payee.clone(),
+                    cumulative_amount,
+                    voucher_count,
+                )
+                    .into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        client.record_session_settlement(
+            &channel_id,
+            &vault_id,
+            &payee,
+            &cumulative_amount,
+            &voucher_count,
+        );
+
+        let events = env.events().all();
+        let evt_name = Symbol::new(&env, "session_settled");
+        let matching: std::vec::Vec<_> = events
+            .iter()
+            .filter(|(addr, topics, _)| {
+                *addr == vault_id
+                    && topics
+                        .get(0)
+                        .map_or(false, |t| Symbol::from_val(&env, &t) == evt_name)
+            })
+            .collect();
+        assert_eq!(matching.len(), 1, "exactly one session_settled event expected");
+
+        let (_, topics, data) = &matching[0];
+        // topics: (session_settled, channel_id, payer, payee)
+        let topic_payer: Address = topics.get(2).unwrap().into_val(&env);
+        assert_eq!(topic_payer, vault_id, "event must identify this vault as payer");
+
+        let data_tuple: (Address, i128, u32) = data.clone().into_val(&env);
+        assert_eq!(data_tuple.0, vault_id, "event data must carry this vault as payer");
+    }
+
     /// Test 18b: the admin alone can no longer record a settlement.
     #[test]
     #[should_panic]
