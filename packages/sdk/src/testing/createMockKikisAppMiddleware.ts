@@ -186,7 +186,7 @@ export function createMockKikisAppMiddleware(opts: MockKikisAppOptions = {}): Re
 
     void runMockSettlement(opts)
       .then((record) => {
-        if (record) (req as Request & { kikis-app?: MockSettlementRecord }).kikis-app = record
+        if (record) (req as Request & { 'kikis-app'?: MockSettlementRecord })['kikis-app'] = record
         next()
       })
       .catch((err) => next(err))

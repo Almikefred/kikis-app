@@ -15,7 +15,7 @@ import {
 
 const keypair = Keypair.random()
 const manifest: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Test Service',
   description: 'Test',
   modes: ['x402'],

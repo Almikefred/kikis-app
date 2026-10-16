@@ -150,7 +150,7 @@ const PAYEE = Keypair.random()
 
 function buildManifest(): KikisAppManifest {
   return {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Charge Test Provider',
     description: 'MppChargeClient unit test',
     modes: ['mpp-charge'],

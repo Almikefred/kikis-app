@@ -11,7 +11,7 @@ import { KikisAppManifestError } from '../../errors.js'
 import type { KikisAppManifest } from '../../types.js'
 
 const legacyManifest: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Legacy Service',
   description: 'Single-asset provider',
   modes: ['x402', 'mpp-charge'],
@@ -31,7 +31,7 @@ const legacyManifest: KikisAppManifest = {
 }
 
 const multiAssetManifest: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Multi-Asset Service',
   description: 'Provider supporting USDC and XLM',
   modes: ['x402', 'mpp-charge', 'mpp-session'],

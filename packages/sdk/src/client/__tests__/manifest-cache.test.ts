@@ -26,7 +26,7 @@ const signingKey = Keypair.random()
 
 function createManifest(): KikisAppManifest {
   return {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Cache Test Provider',
     description: 'Manifest used to verify cache invalidation behavior',
     modes: ['x402'],

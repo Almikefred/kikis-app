@@ -16,7 +16,7 @@ const payeeKeypair = Keypair.random()
 const attackerKeypair = Keypair.random()
 
 const validManifest: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Test Provider',
   description: 'Unit test provider',
   modes: ['x402'],

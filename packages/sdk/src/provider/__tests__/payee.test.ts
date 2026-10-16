@@ -9,7 +9,7 @@ const CHARGE_PAYEE = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACHARGE'
 
 function makeManifest(pricing: KikisAppManifest['pricing']): KikisAppManifest {
   return {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Test Service',
     description: 'Unit test provider',
     modes: ['x402', 'mpp-charge'],

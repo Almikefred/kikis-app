@@ -40,7 +40,7 @@ export function buildManifest({
   channelContract,
 }: ManifestInput): KikisAppManifest {
   return {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Stellar DEX Orderbook Stream',
     description: 'Voucher-metered USDC/XLM orderbook snapshots from Stellar Horizon',
     modes: ['mpp-session', 'mpp-session-ws'],

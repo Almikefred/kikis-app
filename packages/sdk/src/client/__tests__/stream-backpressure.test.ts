@@ -9,7 +9,9 @@
  */
 
 import assert from 'node:assert/strict'
-import type { StreamOptions } from '../../types.js'
+import { mock } from 'node:test'
+import { Keypair } from '@stellar/stellar-sdk'
+import type { KikisAppManifest, StreamOptions } from '../../types.js'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -224,3 +226,140 @@ function buildMockStream(fetchFn: () => Promise<unknown>) {
 }
 
 console.log('\nAll stream backpressure tests passed.')
+
+// ── Test 7: early termination disposes the stream iterator (#54) ──────────────
+//
+// The mocks above only exercise queueing — cleanup on early exit is a property
+// of the REAL MppSessionClient.stream(): breaking out of consumption (or
+// calling iterator.return() directly) must reach the generator's finally block,
+// which aborts the AbortController handed to mppx.fetch — the transport the
+// mpp-session reader is wired through. mppx/client and the channel client are
+// mocked at the module boundary (same technique as session-stats.test.ts) so
+// the real stream() runs without the network, and the mocked fetch records
+// every AbortSignal it was handed.
+
+const CHANNEL_CONTRACT = 'CCK4XOW3YKQUEZFONUTINKMSNW7SNMRQZURME5U3UP7E6WNGK7UHUCAH'
+const ASSET_CONTRACT = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA'
+const SESSION_URL = 'https://provider.test/stream/orderbook'
+
+const capturedSignals: AbortSignal[] = []
+
+mock.module('@stellar/mpp/channel/client', {
+  namedExports: {
+    stellar: { channel: () => ({}) },
+  },
+})
+
+mock.module('mppx/client', {
+  namedExports: {
+    Mppx: {
+      create: () => ({
+        fetch: async (_url: string, init?: { signal?: AbortSignal }): Promise<Response> => {
+          if (init?.signal) capturedSignals.push(init.signal)
+          return new Response(JSON.stringify({ seq: capturedSignals.length }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          })
+        },
+      }),
+    },
+  },
+})
+
+const { MppSessionClient } = await import('../MppSessionClient.js')
+
+function buildCleanupManifest(): KikisAppManifest {
+  return {
+    'kikis-app': '1.0',
+    name: 'Cleanup Test Provider',
+    description: 'Provider exercised by iterator-cleanup tests',
+    modes: ['mpp-session'],
+    network: 'testnet',
+    asset: 'USDC',
+    asset_contract: ASSET_CONTRACT,
+    payee: Keypair.random().publicKey(),
+    pricing: {
+      'mpp-session': {
+        rate: '0.0001',
+        per: 'voucher',
+        channel_factory: CHANNEL_CONTRACT,
+        min_deposit: '0.10',
+        refund_waiting_period_ledgers: 17280,
+      },
+    },
+    endpoints: { stream: { method: 'GET', path: '/stream/orderbook' } },
+    tags: ['orderbook', 'stellar', 'test'],
+  }
+}
+
+async function openCleanupHandle() {
+  const client = new MppSessionClient(Keypair.random(), 'testnet')
+  return client.openSession(SESSION_URL, buildCleanupManifest(), Keypair.random().secret())
+}
+
+// ── Test 7a: explicit iterator.return() aborts the transport ─────────────────
+
+{
+  capturedSignals.length = 0
+  const handle = await openCleanupHandle()
+  const iter = handle.stream()[Symbol.asyncIterator]()
+
+  await iter.next()
+  assert.equal(capturedSignals.length, 1, 'first pull issues exactly one voucher fetch')
+  const signal = capturedSignals[0]!
+  assert.equal(signal.aborted, false, 'transport stays active while the consumer keeps iterating')
+
+  // The consumer walks away mid-stream — this must reach the stream's
+  // cleanup (generator finally → AbortController.abort()).
+  await iter.return?.()
+  assert.equal(signal.aborted, true, 'iterator.return() must abort the stream transport (#54)')
+
+  console.log('✓ Test 7a: explicit iterator.return() aborts the in-flight transport')
+}
+
+// ── Test 7b: breaking out of for-await disposes the iterator ─────────────────
+
+{
+  capturedSignals.length = 0
+  const handle = await openCleanupHandle()
+
+  let consumed = 0
+  for await (const _item of handle.stream()) {
+    consumed++
+    break // early exit — the loop must close the iterator on its way out
+  }
+
+  assert.equal(consumed, 1, 'exactly one item consumed before the break')
+  assert.equal(capturedSignals.length, 1)
+  assert.equal(
+    capturedSignals[0]!.aborted,
+    true,
+    'a for-await break must run the stream cleanup chain (#54)',
+  )
+
+  console.log('✓ Test 7b: for-await break triggers iterator cleanup')
+}
+
+// ── Test 7c: pipelined streams abort every queued fetch on early return ──────
+
+{
+  capturedSignals.length = 0
+  const handle = await openCleanupHandle()
+  const iter = handle.stream({ concurrency: 2 })[Symbol.asyncIterator]()
+
+  await iter.next()
+  assert.ok(
+    capturedSignals.length >= 2,
+    'concurrency:2 keeps the refill window in flight before cleanup',
+  )
+
+  await iter.return?.()
+  assert.ok(
+    capturedSignals.every((signal) => signal.aborted),
+    'every queued fetch shares the stream AbortController and must be aborted (#54)',
+  )
+
+  console.log('✓ Test 7c: pipelined stream aborts its whole window on early return')
+}
+
+console.log('\nAll stream iterator-cleanup tests passed.')
