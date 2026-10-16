@@ -7,6 +7,7 @@ import { signManifest } from '../manifest/sign.js'
 import type { SeenTxStore } from './SeenTxStore.js'
 import type { OrphanedSessionInfo } from './MppSessionHandler.js'
 import type { KikisAppLogger } from '../internal/logger.js'
+import { resolvePaymentMode } from './internal/detectPaymentMode.js'
 
 export interface KikisAppMiddlewareOptions {
   modes: PaymentMode[]
@@ -80,9 +81,6 @@ export interface KikisAppMiddlewareOptions {
  * }))
  * ```
  */
-/** MPP modes, in the priority order used to pick the default (non-x402) handler. */
-const MPP_MODES: readonly PaymentMode[] = ['mpp-session', 'mpp-charge']
-
 export function kikisApp(opts: KikisAppMiddlewareOptions): RequestHandler {
   const startTime = Date.now()
   const signedManifest = signManifest(opts.manifest, opts.payeeSecretKey)
@@ -160,11 +158,9 @@ export function kikisApp(opts: KikisAppMiddlewareOptions): RequestHandler {
     }
   }
 
-  // The default (non-x402) handler is the highest-priority MPP mode that is
-  // actually registered; if the provider speaks only x402, it defaults to that.
-  const defaultMode: PaymentMode | undefined =
-    MPP_MODES.find((mode) => handlerMap.has(mode)) ??
-    (handlerMap.has('x402') ? 'x402' : undefined)
+  // Modes this provider actually registered — routing resolves against this
+  // set, so a mode that was never configured can never be selected.
+  const availableModes = new Set(handlerMap.keys())
 
   return (req: Request, res: Response, next: NextFunction): void => {
     // Serve signed manifest at /.well-known/kikis-app.json
@@ -192,21 +188,22 @@ export function kikisApp(opts: KikisAppMiddlewareOptions): RequestHandler {
       return
     }
 
-    // Route by mode, not array position.
-    // x402 clients send `payment-signature` or `x-payment` headers (or opt in
-    // via `x-preferred-mode: x402`). Those go to the x402 handler — and only
-    // the x402 handler. Everything else (initial requests, mppx clients) goes
-    // to the default MPP handler, which returns the WWW-Authenticate challenge.
-    const hasX402Header = !!(req.headers['payment-signature'] || req.headers['x-payment'])
-    const prefersX402 = req.headers['x-preferred-mode'] === 'x402'
-
-    const x402Handler = handlerMap.get('x402')
-    const defaultHandler = defaultMode ? handlerMap.get(defaultMode) : undefined
-
-    // Prefer the x402 handler for x402 requests; if the provider doesn't offer
-    // x402, fall back to the default handler rather than misrouting.
-    const handler: RequestHandler | undefined =
-      hasX402Header || prefersX402 ? (x402Handler ?? defaultHandler) : defaultHandler
+    // Route by mode, not by priority (#44). An mpp-charge credential
+    // (`Authorization: Payment ...` issued for the charge intent) or an
+    // explicit `x-preferred-mode: mpp-charge` must reach the charge handler
+    // even when mpp-session is also enabled — otherwise every non-x402
+    // request was answered with a session challenge and charge clients could
+    // not pay dual-mode providers. x402 clients keep routing by
+    // `payment-signature` / `x-payment`; unauthenticated requests still
+    // receive the default challenge (session, then charge, then x402).
+    const mode = resolvePaymentMode(
+      (name) => {
+        const value = req.headers[name.toLowerCase()]
+        return Array.isArray(value) ? value[0] : value
+      },
+      availableModes,
+    )
+    const handler: RequestHandler | undefined = mode ? handlerMap.get(mode) : undefined
 
     if (!handler) {
       next()

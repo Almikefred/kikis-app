@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import { describe, it, mock, afterEach } from 'node:test'
 import { Horizon, Keypair } from '@stellar/stellar-sdk'
 import { KikisAppClient } from '../KikisAppClient.js'
-import { KikisAppTrustlineError, KikisAppManifestError } from '../../errors.js'
+import { KikisAppTrustlineError, KikisAppManifestError, KikisAppPolicyRejectError } from '../../errors.js'
+import { checkX402Accept, checkChargeChallenge } from '../challenge.js'
 import { signManifest } from '../../manifest/sign.js'
 import type { KikisAppManifest } from '../../types.js'
 
@@ -24,6 +25,12 @@ function makeMultiAssetManifest(payeeKeypair: Keypair): KikisAppManifest {
           asset_contract: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA',
           modes: ['x402'],
           endpoints: ['inference'],
+        },
+        {
+          asset: 'EURC',
+          asset_contract: 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEURC',
+          modes: ['x402'],
+          endpoints: ['eurc-inference'],
         },
         {
           asset: 'XLM',
@@ -215,5 +222,63 @@ describe('KikisAppClient — multi-asset eligibility & trustline preflight', () 
     const result = await client.preflight(legacyManifest, 'x402', '/test')
     assert.equal(result.hasTrustline, true)
     assert.equal(result.asset, 'USDC')
+  })
+})
+
+describe('Multi-asset challenge validation — checkX402Accept & checkChargeChallenge', () => {
+  const payeeKeypair = Keypair.random()
+  const manifest = makeMultiAssetManifest(payeeKeypair)
+  const EURC_CONTRACT = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEURC'
+  const XLM_CONTRACT = 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC'
+  const UNLISTED_CONTRACT = 'CUNKNOWNCONTRACT999999999999999999999999999999999999999'
+
+  it('x402 challenges for non-root assets declared in manifest.assets pass validation successfully', () => {
+    const accept = {
+      scheme: 'exact',
+      network: 'stellar:testnet',
+      asset: EURC_CONTRACT,
+      amount: '1000',
+      payTo: payeeKeypair.publicKey(),
+      maxTimeoutSeconds: 60,
+      extra: {},
+    }
+    const rejection = checkX402Accept(accept, manifest, 'stellar:testnet', '0.001')
+    assert.equal(rejection, null)
+  })
+
+  it('mpp-charge challenges for secondary assets pass validation', () => {
+    const request = {
+      amount: '800',
+      currency: XLM_CONTRACT,
+      recipient: payeeKeypair.publicKey(),
+      methodDetails: { network: 'stellar:testnet' },
+    }
+    const rejection = checkChargeChallenge(request, manifest, 'stellar:testnet', '0.0008')
+    assert.equal(rejection, null)
+  })
+
+  it('x402 and mpp-charge challenges referencing unlisted contracts are rejected with challenge_asset_mismatch', () => {
+    const x402Accept = {
+      scheme: 'exact',
+      network: 'stellar:testnet',
+      asset: UNLISTED_CONTRACT,
+      amount: '1000',
+      payTo: payeeKeypair.publicKey(),
+      maxTimeoutSeconds: 60,
+      extra: {},
+    }
+    const x402Rejection = checkX402Accept(x402Accept, manifest, 'stellar:testnet', '0.001')
+    assert.ok(x402Rejection instanceof KikisAppPolicyRejectError)
+    assert.equal(x402Rejection.reason, 'challenge_asset_mismatch')
+
+    const chargeRequest = {
+      amount: '800',
+      currency: UNLISTED_CONTRACT,
+      recipient: payeeKeypair.publicKey(),
+      methodDetails: { network: 'stellar:testnet' },
+    }
+    const chargeRejection = checkChargeChallenge(chargeRequest, manifest, 'stellar:testnet', '0.0008')
+    assert.ok(chargeRejection instanceof KikisAppPolicyRejectError)
+    assert.equal(chargeRejection.reason, 'challenge_asset_mismatch')
   })
 })

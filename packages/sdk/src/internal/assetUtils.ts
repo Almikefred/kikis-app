@@ -92,7 +92,12 @@ export function getEligibleAssets(
 
 /**
  * Resolves the asset contract for a mode and optional endpoint.
- * Honors manifest.assets when defined; falls back to explicitContract or root asset_contract.
+ *
+ * A developer-supplied `explicitContract` always wins — even when the
+ * manifest defines a multi-asset `assets` array — so a specific SAC contract
+ * can be pinned deliberately during migration or testing (#45). Without it,
+ * the contract comes from `selectAsset` (multi-asset `assets[]` when present,
+ * root `asset_contract` for legacy manifests).
  */
 export function resolveAssetContract(
   manifest: KikisAppManifest,
@@ -100,10 +105,23 @@ export function resolveAssetContract(
   endpoint?: string,
   explicitContract?: string,
 ): string {
-  if (manifest.assets && manifest.assets.length > 0) {
-    return selectAsset(manifest, mode, endpoint).asset_contract
+  if (explicitContract) {
+    if (!isSacContractAddress(explicitContract)) {
+      throw new KikisAppManifestError(
+        `explicitContract is not a valid Stellar asset contract address: '${explicitContract}'`,
+      )
+    }
+    return explicitContract
   }
-  return explicitContract ?? selectAsset(manifest, mode, endpoint).asset_contract
+  return selectAsset(manifest, mode, endpoint).asset_contract
+}
+
+/**
+ * SAC (Stellar Asset Contract) addresses are C-prefixed, 56-character
+ * base32 strkeys — e.g. `CBIELTK6...QDAMA`.
+ */
+function isSacContractAddress(value: string): boolean {
+  return /^C[A-Z2-7]{55}$/.test(value)
 }
 
 /**

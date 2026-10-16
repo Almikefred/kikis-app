@@ -564,3 +564,93 @@ describe('kikisApp (Express) — per-mode payee override', () => {
     }
   })
 })
+
+describe('kikis-app (Express) — dual-mode mpp-session + mpp-charge routing (#44)', () => {
+  const DUAL_MODE: Partial<KikisAppMiddlewareOptions> = {
+    modes: ['mpp-session', 'mpp-charge'],
+    pricing: {
+      'mpp-charge': '0.0008',
+      'mpp-session': { rate: '0.0001', channelFactory: CHANNEL_CONTRACT },
+    },
+  }
+
+  /** mppx wire-format Payment credential: `Payment <base64url JSON>`. */
+  function paymentCredential(credential: object): string {
+    return `Payment ${Buffer.from(JSON.stringify(credential)).toString('base64url')}`
+  }
+
+  it('x-preferred-mode: mpp-charge overrides the default session challenge', async () => {
+    const { url, close } = await makeServer(DUAL_MODE)
+    try {
+      const res = await fetch(`${url}/price`, {
+        headers: { 'x-preferred-mode': 'mpp-charge' },
+      })
+      assert.equal(res.status, 402)
+      const challenge = res.headers.get('www-authenticate') ?? ''
+      assert.ok(
+        challenge.includes('intent="charge"'),
+        `expected a charge challenge, got: ${challenge}`,
+      )
+    } finally {
+      await close()
+    }
+  })
+
+  it('dispatches an mpp-charge Payment credential to the charge handler', async () => {
+    const { url, close } = await makeServer(DUAL_MODE)
+    try {
+      const res = await fetch(`${url}/price`, {
+        headers: {
+          authorization: paymentCredential({
+            challenge: { id: 'c', realm: 'r', method: 'stellar', intent: 'charge', request: {} },
+            payload: { type: 'hash', hash: 'ab'.repeat(32) },
+          }),
+        },
+      })
+      // Before #44 this hit the mpp-session handler and received a channel
+      // challenge — a valid charge credential must never be answered with one.
+      const challenge = res.headers.get('www-authenticate') ?? ''
+      assert.ok(
+        !challenge.includes('intent="channel"'),
+        `charge credential must not fall through to the session handler: ${challenge}`,
+      )
+    } finally {
+      await close()
+    }
+  })
+
+  it('unauthenticated requests still receive the default session challenge', async () => {
+    const { url, close } = await makeServer(DUAL_MODE)
+    try {
+      const res = await fetch(`${url}/price`)
+      assert.equal(res.status, 402)
+      const challenge = res.headers.get('www-authenticate') ?? ''
+      assert.ok(
+        challenge.includes('intent="channel"'),
+        `expected the default session challenge, got: ${challenge}`,
+      )
+    } finally {
+      await close()
+    }
+  })
+
+  it('routes an mpp-session Payment credential to the session handler', async () => {
+    const { url, close } = await makeServer(DUAL_MODE)
+    try {
+      const res = await fetch(`${url}/price`, {
+        headers: {
+          authorization: paymentCredential({
+            payload: { action: 'voucher', amount: '1', signature: 'ab'.repeat(64) },
+          }),
+        },
+      })
+      const challenge = res.headers.get('www-authenticate') ?? ''
+      assert.ok(
+        !challenge.includes('intent="charge"'),
+        `session credential must not reach the charge handler: ${challenge}`,
+      )
+    } finally {
+      await close()
+    }
+  })
+})
