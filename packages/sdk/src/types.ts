@@ -203,6 +203,18 @@ export interface KikisAppManifest {
   categories?: string[]
 }
 
+/**
+ * Options for configuring the HTTP request performed during payment execution.
+ */
+export interface HttpRequestOptions {
+  /** HTTP request method. Defaults to 'GET'. */
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | string
+  /** Custom request headers to send with probe and settlement requests. */
+  headers?: Record<string, string>
+  /** Request body payload. Objects are serialized to JSON with Content-Type: application/json. */
+  body?: string | Uint8Array | Record<string, unknown> | unknown
+}
+
 /** Result returned by client.pay() for any payment mode */
 export interface PaymentResult {
   /** Parsed response body from the provider */
