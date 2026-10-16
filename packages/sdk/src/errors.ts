@@ -15,18 +15,19 @@ export type KikisAppErrorCode =
   | 'CLIENT_VERSION_TOO_OLD'
   | 'TRUSTLINE'
   | 'FEE'
+  | 'VAULT_CONFIG'
 
 export interface KikisAppErrorOptions {
   cause?: unknown
   /** Milliseconds to wait before retry (e.g. from Retry-After header). */
-  retryAfterMs?: number
+  retryAfterMs?: number | undefined
 }
 
 /** Base error for all KikisApp SDK failures. */
 export class KikisAppError extends Error {
   readonly code: KikisAppErrorCode
   readonly retryable: boolean
-  readonly retryAfterMs?: number
+  readonly retryAfterMs?: number | undefined
 
   constructor(
     message: string,
@@ -120,7 +121,7 @@ export class KikisAppVaultConfigError extends KikisAppError {
     this.name = 'KikisAppVaultConfigError'
   }
 
-  static [Symbol.hasInstance](instance: unknown): boolean {
+  static override [Symbol.hasInstance](instance: unknown): boolean {
     return (
       (instance instanceof KikisAppError && instance.code === 'VAULT_CONFIG') ||
       (typeof instance === 'object' &&
@@ -213,12 +214,12 @@ export class KikisAppRefundWindowError extends KikisAppError {
 
 /** Network fee exceeds max configured fee or base fee surge rejected. */
 export class KikisAppFeeError extends KikisAppError {
-  readonly fee?: number | string
-  readonly maxFee?: number | string
+  readonly fee?: number | string | undefined
+  readonly maxFee?: number | string | undefined
 
   constructor(
     message: string,
-    options: KikisAppErrorOptions & { fee?: number | string; maxFee?: number | string } = {},
+    options: KikisAppErrorOptions & { fee?: number | string | undefined; maxFee?: number | string | undefined } = {},
   ) {
     super(message, 'FEE', false, options)
     this.name = 'KikisAppFeeError'

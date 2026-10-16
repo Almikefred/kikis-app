@@ -497,3 +497,5 @@ export type MppChargeClientConfig = MppChargeClientOptions
 /** Dispute status of a channel */
 export type DisputeStatus = 'open' | 'in-refund-window' | 'refundable' | 'settled'
 
+export type { KikisAppClientConfig } from './client/KikisAppClient.js'
+

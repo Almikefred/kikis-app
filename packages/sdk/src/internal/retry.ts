@@ -99,7 +99,7 @@ export function isTransientNetworkError(err: unknown): boolean {
       return true
     }
   }
-  const anyErr = err as Record<string, unknown>
+  const anyErr = err as unknown as Record<string, unknown>
   const code = anyErr['code'] || (anyErr['cause'] as Record<string, unknown> | undefined)?.['code']
   if (
     code === 'ECONNRESET' ||

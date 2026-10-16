@@ -299,6 +299,12 @@ export interface ModeSelectOptions {
    * regardless of the Content-Type header.
    */
   responseType?: 'json' | 'text' | 'arrayBuffer' | 'blob' | 'auto'
+  /** HTTP method to use for the paid request. Defaults to 'GET'. */
+  method?: string
+  /** Additional HTTP headers to include with the request. */
+  headers?: HeadersInit
+  /** Request body to send with the paid request (e.g. for POST endpoints). */
+  body?: BodyInit | null
 }
 
 /**
