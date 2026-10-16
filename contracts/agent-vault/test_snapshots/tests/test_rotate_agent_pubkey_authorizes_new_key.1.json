@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 5,
+    "address": 4,
     "nonce": 1
   },
   "auth": [
@@ -16,7 +16,7 @@
               "function_name": "set_agent_pubkey",
               "args": [
                 {
-                  "bytes": "6be32a25a93476ac5a676748c10c97cfeff380214c3f5241dddae8f322f8780c"
+                  "bytes": "0b05fd608740e88d7cbedf0069fee99bc7d2db0d7c2aa77b1d4847a639a3ab07"
                 }
               ]
             }
@@ -240,7 +240,7 @@
                           "symbol": "agentpk"
                         },
                         "val": {
-                          "bytes": "6be32a25a93476ac5a676748c10c97cfeff380214c3f5241dddae8f322f8780c"
+                          "bytes": "0b05fd608740e88d7cbedf0069fee99bc7d2db0d7c2aa77b1d4847a639a3ab07"
                         }
                       },
                       {
@@ -311,6 +311,14 @@
                             "lo": 100000
                           }
                         }
+                      },
+                      {
+                        "key": {
+                          "symbol": "token"
+                        },
+                        "val": {
+                          "address": "CBPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF5AWC"
+                        }
                       }
                     ]
                   }
@@ -358,7 +366,7 @@
                 "symbol": "payment_authorized"
               },
               {
-                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
               },
               {
                 "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
@@ -373,7 +381,7 @@
                   }
                 },
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                  "address": "CBPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF5AWC"
                 },
                 {
                   "i128": {

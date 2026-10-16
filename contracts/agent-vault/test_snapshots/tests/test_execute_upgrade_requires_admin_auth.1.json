@@ -15,7 +15,7 @@
               "function_name": "propose_upgrade",
               "args": [
                 {
-                  "bytes": "f099b65e1dc63340a4761156c2259aba5c427ce6b2b780c7ee4b16c646d66a57"
+                  "bytes": "ebbda1edfc3dc2a4085138b94dfb6723598416a29f9dbcdef7a9fc9ce5f1022f"
                 }
               ]
             }
@@ -106,7 +106,7 @@
                           "symbol": "agentpk"
                         },
                         "val": {
-                          "bytes": "051e82ed605fe4118e89b8832138802476e773fc5548f50ef033a62e29b800ec"
+                          "bytes": "0e7f4db24afa6330667a22a5f30c4814103ceb7e558f15ed3a66afefdb9c6035"
                         }
                       },
                       {
@@ -173,12 +173,20 @@
                         "val": {
                           "vec": [
                             {
-                              "bytes": "f099b65e1dc63340a4761156c2259aba5c427ce6b2b780c7ee4b16c646d66a57"
+                              "bytes": "ebbda1edfc3dc2a4085138b94dfb6723598416a29f9dbcdef7a9fc9ce5f1022f"
                             },
                             {
                               "u32": 17280
                             }
                           ]
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "token"
+                        },
+                        "val": {
+                          "address": "CBPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF5AWC"
                         }
                       }
                     ]

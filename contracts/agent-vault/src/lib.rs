@@ -18,6 +18,10 @@ const LIST_KEY: Symbol = symbol_short!("allwlist");
 const EXPIRY_KEY: Symbol = symbol_short!("expiry");
 const INIT_KEY: Symbol = symbol_short!("init");
 const FROZEN_KEY: Symbol = symbol_short!("frozen");
+// Authorized SAC asset contract (e.g. the USDC SAC wrapper) that the daily and
+// lifetime spend caps are denominated in — only `transfer` on this contract is
+// evaluated against them (#62).
+const TOKEN_KEY: Symbol = symbol_short!("token");
 
 // Global day-spend key: (SPEND_PREFIX, day_bucket) where day_bucket = seq / 17280
 const SPEND_PREFIX: Symbol = symbol_short!("ds");
@@ -42,6 +46,7 @@ const EVT_UPGRADED: &str = "upgraded";
 const EVT_EXPIRY_UPDATED: &str = "expiry_updated";
 const EVT_AGENT_KEY_ROTATED: &str = "agent_key_rotated";
 const EVT_CAP_UPDATED: &str = "cap_updated";
+const EVT_TOKEN_UPDATED: &str = "token_updated";
 const EVT_ALLOWLIST_UPDATED: &str = "allowlist_updated";
 const EVT_ADMIN_TRANSFER_REQUESTED: &str = "admin_transfer_requested";
 const EVT_ADMIN_CHANGED: &str = "admin_changed";
@@ -71,6 +76,7 @@ pub enum Error {
     NoPendingUpgrade = 14,
     UpgradeNotReady = 15,
     UpgradeTimelockOverflow = 16,
+    UnauthorizedToken = 17,
 }
 
 fn validate_cap(env: &Env, cap: i128) {
@@ -81,18 +87,21 @@ fn validate_cap(env: &Env, cap: i128) {
 
 // ── Instance storage TTL ─────────────────────────────────────────────────────
 // Every piece of vault state (admin, caps, allowlist, expiry, frozen flag, agent
-// key) lives in instance storage, so the instance entry's TTL is the vault's own
+// key, authorized token) lives in instance storage, so the instance entry's TTL is the vault's own
 // lifetime. Soroban does not refresh an entry's TTL just because it was written,
-// and `__check_auth` is the only entrypoint agent traffic reaches — so a vault
-// that only receives admin calls (frozen, or past its expiry) would keep counting
-// down towards archival from the TTL `__constructor` left behind.
+// so every entrypoint legitimate traffic reaches — `__check_auth`,
+// `record_session_settlement` and the admin entrypoints — bumps it: a vault that
+// only receives admin calls (frozen, or past its expiry) would otherwise keep
+// counting down towards archival from the TTL `__constructor` left behind.
 const INSTANCE_TTL_THRESHOLD: u32 = 2_000_000;
 const INSTANCE_TTL_EXTEND_TO: u32 = 2_000_000;
 
-/// Refresh the instance entry's TTL. Called from `__constructor`, from `__check_auth`,
-/// and from every admin entrypoint after its auth check succeeds — so an
-/// unauthenticated caller cannot make the vault pay for a bump on someone else's
-/// behalf. Entries still above `INSTANCE_TTL_THRESHOLD` are left alone.
+/// Refresh the instance entry's TTL. Called from `__constructor`, from
+/// `record_session_settlement`, from `__check_auth`, and from every admin
+/// entrypoint after its auth check succeeds — so an unauthenticated caller
+/// cannot make the vault pay for a bump on someone else's behalf (a call that
+/// fails an auth check or a guard reverts anyway). Entries still above
+/// `INSTANCE_TTL_THRESHOLD` are left alone.
 fn bump_instance(env: &Env) {
     env.storage()
         .instance()
@@ -114,6 +123,8 @@ pub struct AgentVault;
 impl AgentVault {
     /// One-time constructor executed atomically upon contract deployment.
     /// `lifetime_cap`: total USDC (stroops) the vault may ever spend; 0 = unlimited.
+    /// `authorized_token`: SAC asset contract (e.g. USDC) whose `transfer` calls
+    /// are the only ones evaluated against the spend caps (#62).
     pub fn __constructor(
         env: Env,
         admin: Address,
@@ -122,6 +133,7 @@ impl AgentVault {
         allowlist: Map<Address, i128>,
         expiry_ledger: u32,
         lifetime_cap: i128,
+        authorized_token: Address,
     ) {
         validate_cap(&env, daily_cap);
         for (_, sub_cap) in allowlist.iter() {
@@ -135,6 +147,7 @@ impl AgentVault {
         storage.set(&EXPIRY_KEY, &expiry_ledger);
         storage.set(&LIFETIME_CAP_KEY, &lifetime_cap);
         storage.set(&LIFETIME_SPEND_KEY, &0_i128);
+        storage.set(&TOKEN_KEY, &authorized_token);
         storage.set(&INIT_KEY, &true);
         // Extend instance storage TTL to outlive any realistic session expiry
         bump_instance(&env);
@@ -209,6 +222,20 @@ impl AgentVault {
         cumulative_amount: i128,
         voucher_count: u32,
     ) {
+        // Settlement can be the only traffic a vault sees for long stretches
+        // (pure state-channel operation), so every call keeps the instance
+        // entry from counting down towards archival (#61).
+        bump_instance(&env);
+
+        // ── Emergency Stop Check (#60) ────────────────────────────────────────
+        // `freeze` halts payment authorizations in `__check_auth`; this
+        // entrypoint must honour the same flag, or a frozen vault would keep
+        // publishing `session_settled` events through its allowlisted payees.
+        let is_frozen: bool = env.storage().instance().get(&FROZEN_KEY).unwrap_or(false);
+        if is_frozen {
+            panic_with_error!(&env, Error::ContractFrozen);
+        }
+
         if cumulative_amount <= 0 {
             panic_with_error!(&env, Error::InvalidAmount);
         }
@@ -283,6 +310,26 @@ impl AgentVault {
         env.events().publish(
             (Symbol::new(&env, EVT_AGENT_KEY_ROTATED),),
             new_pk,
+        );
+    }
+
+    /// Rotate the authorized SAC asset contract (e.g. USDC) that the daily and
+    /// lifetime spend caps are denominated in. Admin only. A vault upgraded from
+    /// a build without TOKEN_KEY fails closed (Error::NotInitialized) until the
+    /// admin sets the asset explicitly.
+    pub fn set_token(env: Env, new_token: Address) {
+        let storage = env.storage().instance();
+        let admin: Address = storage
+            .get(&ADMIN_KEY)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized));
+        admin.require_auth();
+        bump_instance(&env);
+        storage.set(&TOKEN_KEY, &new_token);
+        // topics: (Symbol("token_updated"),)
+        // data:   new_token
+        env.events().publish(
+            (Symbol::new(&env, EVT_TOKEN_UPDATED),),
+            new_token,
         );
     }
 
@@ -453,6 +500,15 @@ impl AgentVault {
     pub fn agent_pubkey(env: Env) -> BytesN<32> {
         env.storage().instance().get(&AGENT_KEY).unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized))
     }
+
+    /// The configured SAC asset contract (e.g. USDC) whose `transfer` calls are
+    /// the only ones evaluated against the spend caps (#62). Read-only.
+    pub fn token(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&TOKEN_KEY)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NotInitialized))
+    }
 }
 
 // ── CustomAccountInterface ────────────────────────────────────────────────────
@@ -463,6 +519,10 @@ impl AgentVault {
 //   • Default-deny: any other authorization context (SAC approve/burn, non-
 //     contract host fns) is rejected with Error::UnauthorizedFunction — a
 //     stolen agent key cannot bypass the caps via a non-transfer call
+//   • Asset-scoped: only `transfer` on the configured TOKEN_KEY contract (e.g.
+//     USDC) is evaluated against the caps; another contract's `transfer` is
+//     rejected with Error::UnauthorizedToken (#62), so a foreign token can
+//     neither drain the vault nor inflate the USDC spend counters
 //   • Policy 1 — DailyCapPolicy:  keyed by (SPEND_PREFIX, seq / 17280) in
 //     temporary storage; resets automatically when the bucket rolls over
 //   • Policy 2 — EndpointAllowlistPolicy: recipient from args[1] checked
@@ -528,14 +588,27 @@ impl CustomAccountInterface for AgentVault {
             .unwrap_or(0);
 
         // ── Per-context policy checks ─────────────────────────────────────────
-        // Default-deny: the policies below only fire for SAC transfer calls, so
-        // ANY other authorization context must be rejected rather than silently
-        // skipped. Without this, a stolen agent key could sign an auth for the
-        // USDC SAC's approve()/burn() (or a create_contract host fn) and drain
-        // the vault via transfer_from without ever touching a cap.
+        // Default-deny: the policies below only fire for `transfer` on the
+        // configured asset (TOKEN_KEY), so ANY other authorization context must
+        // be rejected rather than silently skipped. Without this, a stolen agent
+        // key could sign an auth for the USDC SAC's approve()/burn() (or a
+        // create_contract host fn) and drain the vault via transfer_from without
+        // ever touching a cap — or burn the caps with a foreign token's cheap
+        // transfer.
         for context in auth_contexts.iter() {
             match context {
                 Context::Contract(ctx) if ctx.fn_name == Symbol::new(&env, "transfer") => {
+                    // Asset scoping (#62): only `transfer` on the configured
+                    // TOKEN_KEY contract is evaluated against the caps. Any
+                    // other contract's `transfer` is denied outright — a cheap
+                    // foreign token can neither drain the vault nor inflate
+                    // (or be charged against) the USDC spend counters.
+                    let authorized_token: Address =
+                        storage.get(&TOKEN_KEY).ok_or(Error::NotInitialized)?;
+                    if ctx.contract != authorized_token {
+                        return Err(Error::UnauthorizedToken);
+                    }
+
                     // SAC transfer(from: Address, to: Address, amount: i128)
                     if ctx.args.len() != 3 {
                         return Err(Error::MalformedAuthContext);
@@ -692,25 +765,46 @@ mod tests {
         let allowlist = Map::from_array(env, [(provider_a.clone(), 5_000_000_i128)]);
         let vault_id = env.register(
             AgentVault,
-            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128),
+            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128, authorized_token(env)),
         );
         let client = AgentVaultClient::new(env, &vault_id);
 
         (client, agent_sk, vault_id, provider_a)
     }
 
-    fn transfer_context(env: &Env, to: &Address, amount: i128) -> Context {
-        let token = Address::generate(env);
+    /// The deterministic asset contract every test vault is configured with
+    /// (#62). Keeping it deterministic lets `transfer_context` and
+    /// `malformed_transfer_context` build contexts for the authorized asset
+    /// without threading the address through every test; a foreign token is
+    /// always an `Address::generate`.
+    fn authorized_token(env: &Env) -> Address {
+        // Fixed test-time contract address: the C-strkey of contract id
+        // 0x5E…5E (`Address::from_contract_id` is crate-private,
+        // so the deterministic id enters through its string encoding).
+        Address::from_string(&soroban_sdk::String::from_str(
+            env,
+            "CBPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF5AWC",
+        ))
+    }
+
+    /// A SAC `transfer` context on an arbitrary `token` (used to build
+    /// foreign-asset contexts the vault must reject).
+    fn transfer_context_on(env: &Env, token: &Address, to: &Address, amount: i128) -> Context {
         let from = Address::generate(env);
         Context::Contract(ContractContext {
-            contract: token,
+            contract: token.clone(),
             fn_name: symbol_short!("transfer"),
             args: (from, to.clone(), amount).into_val(env),
         })
     }
 
+    /// A SAC `transfer` context on the vault's configured asset.
+    fn transfer_context(env: &Env, to: &Address, amount: i128) -> Context {
+        transfer_context_on(env, &authorized_token(env), to, amount)
+    }
+
     fn malformed_transfer_context(env: &Env, args: soroban_sdk::Vec<soroban_sdk::Val>) -> Context {
-        let token = Address::generate(env);
+        let token = authorized_token(env);
         Context::Contract(ContractContext {
             contract: token,
             fn_name: symbol_short!("transfer"),
@@ -1020,7 +1114,7 @@ mod tests {
         );
         let vault_id = env.register(
             AgentVault,
-            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128),
+            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128, authorized_token(&env)),
         );
 
         // Test payment to each allowlisted address
@@ -1125,7 +1219,7 @@ mod tests {
         let allowlist = Map::from_array(&env, [(provider_a.clone(), 5_000_000_i128)]);
         let vault_id = env.register(
             AgentVault,
-            (admin, agent_pk, 5_000_000_i128, allowlist, 500_000_u32, 0_i128),
+            (admin, agent_pk, 5_000_000_i128, allowlist, 500_000_u32, 0_i128, authorized_token(&env)),
         );
 
         // Day 0 (sequence 0): spend 4_000_000
@@ -1184,7 +1278,7 @@ mod tests {
         let env = Env::default();
         let (_, agent_sk, vault_id, provider_a) = setup(&env);
 
-        let token = Address::generate(&env);
+        let token = authorized_token(&env);
         let from = Address::generate(&env);
         let amount: i128 = 100_000;
         let ctx = Context::Contract(ContractContext {
@@ -1304,7 +1398,7 @@ mod tests {
         let allowlist = Map::from_array(&env, [(provider_a.clone(), 5_000_000_i128)]);
         let vault_id = env.register(
             AgentVault,
-            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128),
+            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128, authorized_token(&env)),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
 
@@ -1367,6 +1461,7 @@ mod tests {
                 allowlist,
                 10_000_u32,
                 0_i128,
+                authorized_token(env),
             ),
         );
         let client = AgentVaultClient::new(env, &vault_id);
@@ -1521,7 +1616,7 @@ mod tests {
         let allowlist = Map::from_array(&env, [(provider_a.clone(), 1_000_000_i128)]);
         let vault_id = env.register(
             AgentVault,
-            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128),
+            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128, authorized_token(&env)),
         );
 
         // 2_000_000 is within global cap but exceeds sub-cap of 1_000_000
@@ -1561,7 +1656,7 @@ mod tests {
         );
         let vault_id = env.register(
             AgentVault,
-            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128),
+            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128, authorized_token(&env)),
         );
 
         // Pay 2_000_000 to provider_a (hits their sub-cap exactly)
@@ -1607,7 +1702,7 @@ mod tests {
         let allowlist = Map::from_array(&env, [(provider_a.clone(), 1_000_000_i128)]);
         let vault_id = env.register(
             AgentVault,
-            (admin, agent_pk, 5_000_000_i128, allowlist, 500_000_u32, 0_i128),
+            (admin, agent_pk, 5_000_000_i128, allowlist, 500_000_u32, 0_i128, authorized_token(&env)),
         );
 
         // Day 0: spend exactly the sub-cap
@@ -1656,7 +1751,7 @@ mod tests {
         let allowlist = Map::from_array(env, [(provider_a.clone(), 5_000_000_i128)]);
         let vault_id = env.register(
             AgentVault,
-            (admin, agent_pk, 5_000_000_i128, allowlist, 500_000_u32, lifetime_cap),
+            (admin, agent_pk, 5_000_000_i128, allowlist, 500_000_u32, lifetime_cap, authorized_token(env)),
         );
         let client = AgentVaultClient::new(env, &vault_id);
         (client, agent_sk, vault_id, provider_a)
@@ -1840,7 +1935,7 @@ mod tests {
         let allowlist = soroban_sdk::Map::<Address, i128>::new(&env);
         let vault_id = env.register(
             AgentVault,
-            (admin.clone(), agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128),
+            (admin.clone(), agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128, authorized_token(&env)),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
 
@@ -1893,7 +1988,7 @@ mod tests {
         let allowlist = soroban_sdk::Map::<Address, i128>::new(&env);
         let vault_id = env.register(
             AgentVault,
-            (admin.clone(), agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128),
+            (admin.clone(), agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128, authorized_token(&env)),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
 
@@ -1944,7 +2039,7 @@ mod tests {
         let allowlist = soroban_sdk::Map::<Address, i128>::new(&env);
         let vault_id = env.register(
             AgentVault,
-            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128),
+            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128, authorized_token(&env)),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
 
@@ -1962,7 +2057,7 @@ mod tests {
         let allowlist = soroban_sdk::Map::<Address, i128>::new(&env);
         let vault_id = env.register(
             AgentVault,
-            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128),
+            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128, authorized_token(&env)),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
 
@@ -1991,7 +2086,7 @@ mod tests {
         let allowlist = soroban_sdk::Map::<Address, i128>::new(&env);
         let vault_id = env.register(
             AgentVault,
-            (admin.clone(), agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128),
+            (admin.clone(), agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128, authorized_token(&env)),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
 
@@ -2031,7 +2126,7 @@ mod tests {
         let allowlist = soroban_sdk::Map::from_array(&env, [(provider_a.clone(), 5_000_000_i128)]);
         let vault_id = env.register(
             AgentVault,
-            (admin.clone(), agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128),
+            (admin.clone(), agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128, authorized_token(&env)),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
 
@@ -2075,7 +2170,7 @@ mod tests {
         let allowlist = soroban_sdk::Map::from_array(&env, [(provider_a.clone(), 5_000_000_i128)]);
         let vault_id = env.register(
             AgentVault,
-            (admin.clone(), agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128),
+            (admin.clone(), agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128, authorized_token(&env)),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
 
@@ -2126,7 +2221,7 @@ mod tests {
         let (_, agent_pk) = gen_keypair(&env);
         let vault_id = env.register(
             AgentVault,
-            (admin, agent_pk, 5_000_000_i128, soroban_sdk::Map::<Address, i128>::new(&env), 10_000_u32, 0_i128),
+            (admin, agent_pk, 5_000_000_i128, soroban_sdk::Map::<Address, i128>::new(&env), 10_000_u32, 0_i128, authorized_token(&env)),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
 
@@ -2154,7 +2249,7 @@ mod tests {
         let allowlist = soroban_sdk::Map::from_array(&env, [(provider_a.clone(), 5_000_000_i128)]);
         let vault_id = env.register(
             AgentVault,
-            (admin.clone(), agent_pk.clone(), 5_000_000_i128, allowlist, 10_000_u32, 0_i128),
+            (admin.clone(), agent_pk.clone(), 5_000_000_i128, allowlist, 10_000_u32, 0_i128, authorized_token(&env)),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
 
@@ -2515,6 +2610,7 @@ mod tests {
                 Map::<Address, i128>::new(&env),
                 10_000_u32,
                 0_i128,
+                authorized_token(&env),
             ),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
@@ -2549,6 +2645,7 @@ mod tests {
                 Map::<Address, i128>::new(&env),
                 10_000_u32,
                 0_i128,
+                authorized_token(&env),
             ),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
@@ -2585,6 +2682,7 @@ mod tests {
                 Map::<Address, i128>::new(&env),
                 10_000_u32,
                 0_i128,
+                authorized_token(&env),
             ),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
@@ -2702,7 +2800,7 @@ mod tests {
         let allowlist = Map::from_array(&env, [(provider_a.clone(), 5_000_000_i128)]);
         let vault_id = env.register(
             AgentVault,
-            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128),
+            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128, authorized_token(&env)),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
 
@@ -2762,7 +2860,7 @@ mod tests {
         let (_, agent_pk) = gen_keypair(&env);
         let vault_id = env.register(
             AgentVault,
-            (admin, agent_pk, 5_000_000_i128, Map::<Address, i128>::new(&env), 10_000_u32, 0_i128),
+            (admin, agent_pk, 5_000_000_i128, Map::<Address, i128>::new(&env), 10_000_u32, 0_i128, authorized_token(&env)),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
 
@@ -2789,7 +2887,7 @@ mod tests {
         let allowlist = Map::from_array(&env, [(provider_a.clone(), 5_000_000_i128)]);
         let vault_id = env.register(
             AgentVault,
-            (admin.clone(), agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128),
+            (admin.clone(), agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128, authorized_token(&env)),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
 
@@ -2827,7 +2925,7 @@ mod tests {
         let allowlist = Map::from_array(&env, [(provider_a.clone(), 5_000_000_i128)]);
         let vault_id = env.register(
             AgentVault,
-            (admin.clone(), old_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128),
+            (admin.clone(), old_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128, authorized_token(&env)),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
 
@@ -2860,7 +2958,7 @@ mod tests {
         let (_, agent_pk) = gen_keypair(&env);
         let vault_id = env.register(
             AgentVault,
-            (admin, agent_pk, 5_000_000_i128, soroban_sdk::Map::<Address, i128>::new(&env), 10_000_u32, 0_i128),
+            (admin, agent_pk, 5_000_000_i128, soroban_sdk::Map::<Address, i128>::new(&env), 10_000_u32, 0_i128, authorized_token(&env)),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
 
@@ -2887,7 +2985,7 @@ mod tests {
         let allowlist = Map::from_array(&env, [(payee.clone(), 5_000_000_i128)]);
         let vault_id = env.register(
             AgentVault,
-            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128),
+            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128, authorized_token(&env)),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
 
@@ -2914,7 +3012,7 @@ mod tests {
         let allowlist = Map::from_array(&env, [(payee.clone(), 5_000_000_i128)]);
         let vault_id = env.register(
             AgentVault,
-            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128),
+            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128, authorized_token(&env)),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
 
@@ -2940,7 +3038,7 @@ mod tests {
         let (_, agent_pk) = gen_keypair(&env);
         let vault_id = env.register(
             AgentVault,
-            (admin.clone(), agent_pk, 5_000_000_i128, Map::<Address, i128>::new(&env), 10_000_u32, 9_000_000_i128),
+            (admin.clone(), agent_pk, 5_000_000_i128, Map::<Address, i128>::new(&env), 10_000_u32, 9_000_000_i128, authorized_token(&env)),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
         env.mock_all_auths();
@@ -3147,7 +3245,7 @@ mod tests {
 
         env.register(
             AgentVault,
-            (admin, agent_pk, -1_i128, allowlist, 10_000_u32, 0_i128),
+            (admin, agent_pk, -1_i128, allowlist, 10_000_u32, 0_i128, authorized_token(&env)),
         );
     }
 
@@ -3162,7 +3260,7 @@ mod tests {
 
         env.register(
             AgentVault,
-            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128),
+            (admin, agent_pk, 5_000_000_i128, allowlist, 10_000_u32, 0_i128, authorized_token(&env)),
         );
     }
 
@@ -3183,6 +3281,7 @@ mod tests {
                 allowlist.clone(),
                 12_345_u32,
                 10_000_000_i128,
+                authorized_token(&env),
             ),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
@@ -3191,6 +3290,7 @@ mod tests {
         assert_eq!(client.allowlist(), allowlist);
         assert_eq!(client.expiry_ledger(), 12_345_u32);
         assert_eq!(client.agent_pubkey(), agent_pk);
+        assert_eq!(client.token(), authorized_token(&env));
         assert_eq!(client.get_lifetime_spend(), 0_i128);
     }
 
@@ -3210,6 +3310,7 @@ mod tests {
                 allowlist,
                 10_000_u32,
                 0_i128,
+                authorized_token(&env),
             ),
         );
         let client = AgentVaultClient::new(&env, &vault_id);
@@ -3355,9 +3456,9 @@ mod tests {
         assert_refreshes_instance_ttl(&env, &vault_id, "remove_from_allowlist", || {
             client.remove_from_allowlist(&payee)
         });
-        // `record_session_settlement` is deliberately absent: since #530 the
-        // allowlisted payee signs it, it is not an admin entrypoint, and it only
-        // reads instance storage.
+        // `record_session_settlement` is not an admin entrypoint (the
+        // allowlisted payee signs it), so it keeps its own refresh test —
+        // Test 50 below — instead of living in this admin loop.
         assert_refreshes_instance_ttl(&env, &vault_id, "set_lifetime_cap", || {
             client.set_lifetime_cap(&9_000_000_i128)
         });
@@ -3412,7 +3513,7 @@ mod tests {
         // Expiry beyond the fast-forward below, so the payment is still in-session.
         let vault_id = env.register(
             AgentVault,
-            (admin, agent_pk, 5_000_000_i128, allowlist, 2_000_000_u32, 0_i128),
+            (admin, agent_pk, 5_000_000_i128, allowlist, 2_000_000_u32, 0_i128, authorized_token(&env)),
         );
 
         // #given a vault whose instance TTL has decayed inside the bump threshold
@@ -3458,6 +3559,202 @@ mod tests {
             instance_ttl(&env, &vault_id),
             before,
             "a rejected call must not refresh the instance TTL"
+        );
+    }
+
+    /// Test 49: an emergency-frozen vault rejects `record_session_settlement`
+    /// with `Error::ContractFrozen` (issue #60) — otherwise allowlisted payees
+    /// could keep publishing `session_settled` events after the admin hit the
+    /// freeze switch — and unfreezing restores the settlement flow.
+    #[test]
+    fn test_record_session_settlement_rejected_when_frozen() {
+        use soroban_sdk::testutils::Events;
+        let env = Env::default();
+        let (client, vault_id, _admin, payee) = setup_settlement(&env);
+        let channel_id = Address::generate(&env);
+        let payer = Address::generate(&env);
+        env.mock_all_auths();
+
+        // #given the vault is frozen by its admin
+        client.freeze();
+
+        // #when an allowlisted payee records a settlement
+        let args: Vec<soroban_sdk::Val> = (
+            channel_id.clone(),
+            payer.clone(),
+            payee.clone(),
+            500_000_i128,
+            10_u32,
+        )
+            .into_val(&env);
+        let result = env.try_invoke_contract::<(), Error>(
+            &vault_id,
+            &Symbol::new(&env, "record_session_settlement"),
+            args,
+        );
+
+        // #then the entrypoint aborts with Error::ContractFrozen
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            Error::ContractFrozen,
+            "a frozen vault must reject record_session_settlement"
+        );
+
+        // #when the admin unfreezes the vault
+        client.unfreeze();
+
+        // #then the settlement flow works again
+        client.record_session_settlement(&channel_id, &payer, &payee, &500_000_i128, &10_u32);
+        let (_, topics, _) = env.events().all().last().unwrap();
+        assert_eq!(
+            Symbol::from_val(&env, &topics.get(0).unwrap()),
+            Symbol::new(&env, "session_settled"),
+            "an unfrozen vault must record settlements again"
+        );
+    }
+
+    /// Test 50: `record_session_settlement` refreshes the instance TTL (issue
+    /// #61) — during a pure state-channel session it can be the only
+    /// entrypoint the vault sees, and without the bump the instance entry
+    /// would count down towards archival mid-stream.
+    #[test]
+    fn test_record_session_settlement_refreshes_instance_ttl() {
+        let env = Env::default();
+        let (client, vault_id, _admin, payee) = setup_settlement(&env);
+        let channel_id = Address::generate(&env);
+        let payer = Address::generate(&env);
+        env.mock_all_auths();
+
+        assert_refreshes_instance_ttl(&env, &vault_id, "record_session_settlement", || {
+            client.record_session_settlement(&channel_id, &payer, &payee, &500_000_i128, &10_u32);
+        });
+    }
+
+    /// Test 51: a `transfer` context on a foreign token contract is rejected
+    /// with `Error::UnauthorizedToken` and leaves the USDC spend counters
+    /// untouched (issue #62) — otherwise a cheap token's transfer could burn
+    /// through the vault's daily allowance, or move value out from under the
+    /// caps entirely.
+    #[test]
+    fn test_foreign_token_transfer_rejected_and_not_counted() {
+        let env = Env::default();
+        let (_, agent_sk, vault_id, provider_a) = setup(&env);
+        let foreign_token = Address::generate(&env);
+
+        // #when the agent signs a transfer on a token the vault never configured
+        let payload = BytesN::<32>::random(&env);
+        let sig = sign_payload(&env, &agent_sk, &payload);
+        let contexts = Vec::from_array(
+            &env,
+            [transfer_context_on(&env, &foreign_token, &provider_a, 5_000_000)],
+        );
+        let result = env.try_invoke_contract_check_auth::<Error>(
+            &vault_id,
+            &payload,
+            sig.into_val(&env),
+            &contexts,
+        );
+
+        // #then it is rejected before any policy runs
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            Error::UnauthorizedToken,
+            "a transfer on a foreign token must be rejected"
+        );
+
+        // #then no spend counter moved
+        assert_eq!(
+            read_spend_counters(&env, &vault_id, &provider_a),
+            (0, 0, 0),
+            "a rejected foreign-token transfer must not inflate the USDC caps"
+        );
+
+        // #and the configured asset still transfers and counts normally
+        let payload2 = BytesN::<32>::random(&env);
+        let sig2 = sign_payload(&env, &agent_sk, &payload2);
+        let contexts2 = Vec::from_array(&env, [transfer_context(&env, &provider_a, 100_000)]);
+        let result2 = env.try_invoke_contract_check_auth::<Error>(
+            &vault_id,
+            &payload2,
+            sig2.into_val(&env),
+            &contexts2,
+        );
+        assert!(
+            result2.is_ok(),
+            "configured-asset transfer should pass: {result2:?}"
+        );
+        assert_eq!(
+            read_spend_counters(&env, &vault_id, &provider_a),
+            (100_000, 100_000, 100_000),
+            "the configured asset must still count against the caps"
+        );
+    }
+
+    /// Test 52: the admin rotates the authorized asset with `set_token` (issue
+    /// #62): the getter reports the new contract, transfers on it count
+    /// against the caps, and the previously configured asset is no longer
+    /// authorized.
+    #[test]
+    fn test_set_token_rotates_authorized_asset() {
+        use soroban_sdk::testutils::Events;
+        let env = Env::default();
+        let (client, agent_sk, vault_id, provider_a) = setup(&env);
+        let old_token = client.token();
+        assert_eq!(old_token, authorized_token(&env));
+
+        // #when the admin rotates the authorized asset
+        let new_token = Address::generate(&env);
+        env.mock_all_auths();
+        client.set_token(&new_token);
+
+        // #then the rotation announces itself and the getter reports the new
+        // contract (event asserted first: it belongs to the `set_token`
+        // invocation, and any later call would replace the recorded buffer)
+        let (_, topics, data) = env.events().all().last().unwrap();
+        assert_eq!(
+            Symbol::from_val(&env, &topics.get(0).unwrap()),
+            Symbol::new(&env, "token_updated")
+        );
+        let event_token: Address = data.into_val(&env);
+        assert_eq!(event_token, new_token);
+        assert_eq!(client.token(), new_token);
+
+        // #and the previously configured asset is no longer authorized
+        let payload = BytesN::<32>::random(&env);
+        let sig = sign_payload(&env, &agent_sk, &payload);
+        let contexts =
+            Vec::from_array(&env, [transfer_context_on(&env, &old_token, &provider_a, 100_000)]);
+        let result = env.try_invoke_contract_check_auth::<Error>(
+            &vault_id,
+            &payload,
+            sig.into_val(&env),
+            &contexts,
+        );
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            Error::UnauthorizedToken,
+            "the rotated-out asset must no longer be authorized"
+        );
+
+        // #and a transfer on the new asset counts against the caps
+        let payload2 = BytesN::<32>::random(&env);
+        let sig2 = sign_payload(&env, &agent_sk, &payload2);
+        let contexts2 =
+            Vec::from_array(&env, [transfer_context_on(&env, &new_token, &provider_a, 100_000)]);
+        assert!(
+            env.try_invoke_contract_check_auth::<Error>(
+                &vault_id,
+                &payload2,
+                sig2.into_val(&env),
+                &contexts2
+            )
+            .is_ok(),
+            "the new asset must be authorized"
+        );
+        assert_eq!(
+            read_spend_counters(&env, &vault_id, &provider_a),
+            (100_000, 100_000, 100_000),
+            "the new asset must count against the caps"
         );
     }
 }

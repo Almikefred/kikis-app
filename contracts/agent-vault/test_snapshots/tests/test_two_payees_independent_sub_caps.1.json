@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 10,
+    "address": 7,
     "nonce": 0
   },
   "auth": [
@@ -211,7 +211,7 @@
                           "symbol": "agentpk"
                         },
                         "val": {
-                          "bytes": "ba5411a3f5de67310046882eb51951079d99a5510bf739400b38918667038c16"
+                          "bytes": "ab5a0cf8a961655234df6c4c63782c11b0ca76d6217267da3f7370a7f440a77b"
                         }
                       },
                       {
@@ -292,6 +292,14 @@
                             "hi": 0,
                             "lo": 4000000
                           }
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "token"
+                        },
+                        "val": {
+                          "address": "CBPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF5AWC"
                         }
                       }
                     ]

@@ -110,7 +110,7 @@
                           "symbol": "agentpk"
                         },
                         "val": {
-                          "bytes": "24f2de94db9082649318b371b93b37aba9c6f2ce4b62af093d84582e303e3d57"
+                          "bytes": "9175644b5ec37bb40530a9586c6aa8545f18be1b92f407653c2b10a2a7569d6a"
                         }
                       },
                       {
@@ -180,6 +180,14 @@
                             "hi": 0,
                             "lo": 0
                           }
+                        }
+                      },
+                      {
+                        "key": {
+                          "symbol": "token"
+                        },
+                        "val": {
+                          "address": "CBPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF5AWC"
                         }
                       }
                     ]
