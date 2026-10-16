@@ -71,6 +71,9 @@ pub enum Error {
     NoPendingUpgrade = 14,
     UpgradeNotReady = 15,
     UpgradeTimelockOverflow = 16,
+    /// The claimed settlement payer is not this vault instance. The vault is
+    /// the governed payer account, so only it may be attributed (#16).
+    PayerNotVault = 17,
 }
 
 fn validate_cap(env: &Env, cap: i128) {
@@ -202,6 +205,15 @@ impl AgentVault {
     /// and never holds the admin secret, which also guards `upgrade` and
     /// `set_agent_pubkey`.
     ///
+    /// The vault is the governed payer account, so `payer` must be this vault
+    /// instance's own address (#16): an unauthenticated caller parameter cannot
+    /// be trusted for audit attribution, and a malicious allowlisted provider
+    /// could otherwise emit settlement logs against arbitrary third-party
+    /// payer accounts. The contract is both the spend authority (`__check_auth`
+    /// debits its caps) and the settlement reporter, so `payer` is not a free
+    /// variable — it names this vault. The emitted event is therefore always
+    /// attributed to the vault instance that authorized it.
+    ///
     /// The settlement accrues to the vault's daily, per-payee, and lifetime
     /// spend counters through the same `record_spend()` policy a direct
     /// transfer runs — a settlement that would exceed any of those caps panics
@@ -217,6 +229,14 @@ impl AgentVault {
     ) {
         if cumulative_amount <= 0 {
             panic_with_error!(&env, Error::InvalidAmount);
+        }
+        // Payer attribution (#16): the vault governs its own spend, so the
+        // only payer it may ever attribute a settlement to is itself. Checked
+        // before auth so a spoofed attribution fails even with a valid payee
+        // signature — a payee signature authorizes the payee's report, never a
+        // third party's spend.
+        if payer != env.current_contract_address() {
+            panic_with_error!(&env, Error::PayerNotVault);
         }
         let allowlist: Map<Address, i128> = env
             .storage()
