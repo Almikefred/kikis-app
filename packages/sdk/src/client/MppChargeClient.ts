@@ -12,6 +12,7 @@ import {
 } from '../errors.js'
 import { stroopsToUsdc } from '../internal/usdc.js'
 import { withRetry, type RetryPolicy } from '../internal/retry.js'
+import { prepareHttpRequestInit } from '../internal/http.js'
 import { checkChargeChallenge, type Caip2Network } from './challenge.js'
 import type { ModeSelectOptions } from './ModeRouter.js'
 
@@ -158,12 +159,17 @@ export class MppChargeClient {
       },
     })
 
+    const reqInit = prepareHttpRequestInit(options?.request)
+
     return withRetry(async (): Promise<PaymentResult> => {
       let response: Response
       try {
         response = credential
-          ? await mppx.rawFetch(url, { headers: { Authorization: credential } })
-          : await mppx.fetch(url)
+          ? await mppx.rawFetch(url, {
+              ...reqInit,
+              headers: { ...reqInit.headers, Authorization: credential },
+            })
+          : await mppx.fetch(url, reqInit)
       } catch (err) {
         throw wrapMppError(err, 'MPP charge request')
       }

@@ -402,6 +402,9 @@ export class MppSessionClient {
     const listeners = new Map<SessionEvent, Set<SessionListener>>()
     let timeoutId: ReturnType<typeof setTimeout> | undefined
     let closed = false
+    let status: 'open' | 'closing' | 'closed' = 'open'
+    let activeClosePromise: Promise<SessionCloseResult> | null = null
+    let lastCloseResult: SessionCloseResult | null = null
 
     const emit = <E extends SessionEvent>(
       event: E,
@@ -504,7 +507,7 @@ export class MppSessionClient {
         // KikisAppChannelStateError('session closed') so the consumer can tell
         // why the stream ended.
         const assertOpen = (): void => {
-          if (closed) {
+          if (closed || status !== 'open') {
             throw new KikisAppChannelStateError('session closed')
           }
         }
@@ -615,132 +618,149 @@ export class MppSessionClient {
         }
       },
 
-      async close(): Promise<SessionCloseResult> {
-        // Manual close — cancel the lifetime guard so it can't fire later.
-        clearSessionTimer()
-        closed = true
-
-        const { rpc: rpcMod, Contract, nativeToScVal, TransactionBuilder, BASE_FEE } =
-          await import('@stellar/stellar-sdk')
-        // Settlement must honor caller-supplied Soroban endpoints and fees (#51):
-        // see the session-scope resolution above. The defaults are only a
-        // fallback for callers that configured neither.
-        const fee = baseFeeStroops !== undefined ? String(baseFeeStroops) : BASE_FEE
-        const server = new rpcMod.Server(sorobanRpcUrl)
-        const contract = new Contract(channelFactory)
-        const passphrase = network === 'mainnet' ? Networks.PUBLIC : Networks.TESTNET
-
-        const account = await withRetry(async () => {
-          try {
-            return await server.getAccount(agentPublicKey)
-          } catch (err) {
-            throw wrapFetchError(err, 'Horizon getAccount')
-          }
-        }, retryPolicy)
-
-        const simResult = await withRetry(async () => {
-          try {
-            const simTx = new TransactionBuilder(account, {
-              fee,
-              networkPassphrase: passphrase,
-            })
-              .addOperation(
-                contract.call(
-                  'prepare_commitment',
-                  nativeToScVal(currentCumulative, { type: 'i128' }),
-                ),
-              )
-              .setTimeout(30)
-              .build()
-            return await server.simulateTransaction(simTx)
-          } catch (err) {
-            throw wrapFetchError(err, 'prepare_commitment RPC')
-          }
-        }, retryPolicy)
-
-        if (rpcMod.Api.isSimulationError(simResult)) {
-          throw new KikisAppChannelStateError(
-            `prepare_commitment simulation failed: ${simResult.error}`,
-          )
+      close(): Promise<SessionCloseResult> {
+        if (status === 'closed' && lastCloseResult) {
+          return Promise.resolve(lastCloseResult)
+        }
+        if (status === 'closing' && activeClosePromise) {
+          return activeClosePromise
         }
 
-        const commitmentBytes = (
-          simResult as { result?: { retval?: { bytes: () => Buffer } } }
-        ).result?.retval?.bytes()
-        if (!commitmentBytes) {
-          throw new KikisAppChannelStateError('prepare_commitment returned no bytes')
-        }
+        status = 'closing'
 
-        let signature: Buffer
-        try {
-          signature = commitmentKey.sign(Buffer.from(commitmentBytes))
-        } catch (err) {
-          throw new KikisAppSignatureError('Channel close commitment signing failed', {
-            cause: err,
-          })
-        }
-
-        const closeData = await withRetry(async () => {
-          let closeResp: Response
+        activeClosePromise = (async () => {
           try {
-            closeResp = await fetch(url, {
-              method: 'DELETE',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                amount: currentCumulative.toString(),
-                signature: Buffer.from(signature).toString('hex'),
-              }),
-            })
-          } catch (err) {
-            throw wrapFetchError(err, 'Channel close request')
-          }
+            const { rpc: rpcMod, Contract, nativeToScVal, TransactionBuilder, BASE_FEE } =
+              await import('@stellar/stellar-sdk')
+            // Settlement must honor caller-supplied Soroban endpoints and fees (#51):
+            // see the session-scope resolution above. The defaults are only a
+            // fallback for callers that configured neither.
+            const fee = baseFeeStroops !== undefined ? String(baseFeeStroops) : BASE_FEE
+            const server = new rpcMod.Server(sorobanRpcUrl)
+            const contract = new Contract(channelFactory)
+            const passphrase = network === 'mainnet' ? Networks.PUBLIC : Networks.TESTNET
 
-          if (!closeResp.ok) {
-            if (
-              closeResp.status >= 500 ||
-              closeResp.status === 429 ||
-              closeResp.status === 503
-            ) {
-              throw httpStatusToError(
-                `Channel close failed: HTTP ${closeResp.status}`,
-                closeResp.status,
-                closeResp,
+            const account = await withRetry(async () => {
+              try {
+                return await server.getAccount(agentPublicKey)
+              } catch (err) {
+                throw wrapFetchError(err, 'Horizon getAccount')
+              }
+            }, retryPolicy)
+
+            const simResult = await withRetry(async () => {
+              try {
+                const simTx = new TransactionBuilder(account, {
+                  fee,
+                  networkPassphrase: passphrase,
+                })
+                  .addOperation(
+                    contract.call(
+                      'prepare_commitment',
+                      nativeToScVal(currentCumulative, { type: 'i128' }),
+                    ),
+                  )
+                  .setTimeout(30)
+                  .build()
+                return await server.simulateTransaction(simTx)
+              } catch (err) {
+                throw wrapFetchError(err, 'prepare_commitment RPC')
+              }
+            }, retryPolicy)
+
+            if (rpcMod.Api.isSimulationError(simResult)) {
+              throw new KikisAppChannelStateError(
+                `prepare_commitment simulation failed: ${simResult.error}`,
               )
             }
-            throw new KikisAppChannelStateError(
-              `Channel close failed: HTTP ${closeResp.status}`,
-            )
-          }
 
-          let body: { closeTxHash?: string }
-          try {
-            body = (await closeResp.json()) as { closeTxHash?: string }
-          } catch (cause) {
-            throw new KikisAppChannelStateError(
-              `Channel close response was not valid JSON (HTTP ${closeResp.status})`,
-              { cause },
-            )
-          }
-          const closeTxHash = body.closeTxHash ?? null
-          if (!closeTxHash) {
-            throw new KikisAppChannelStateError(
-              'Channel close response missing closeTxHash',
-            )
-          }
-          return { closeTxHash, body }
-        }, retryPolicy)
+            const commitmentBytes = (
+              simResult as { result?: { retval?: { bytes: () => Buffer } } }
+            ).result?.retval?.bytes()
+            if (!commitmentBytes) {
+              throw new KikisAppChannelStateError('prepare_commitment returned no bytes')
+            }
 
-        const totalPaid = (Number(currentCumulative) / 1e7).toFixed(7)
-        // The settlement succeeded — drop every registered listener so a
-        // long-lived handle cannot retain application callbacks once the
-        // session is over (#14). Deliberately success-only: a failed close
-        // keeps its listeners so 'session:close-failed' still reaches them.
-        listeners.clear()
-        return {
-          closeTxHash: closeData.closeTxHash,
-          totalPaid,
-          vouchersIssued,
-        }
+            let signature: Buffer
+            try {
+              signature = commitmentKey.sign(Buffer.from(commitmentBytes))
+            } catch (err) {
+              throw new KikisAppSignatureError('Channel close commitment signing failed', {
+                cause: err,
+              })
+            }
+
+            const closeData = await withRetry(async () => {
+              let closeResp: Response
+              try {
+                closeResp = await fetch(url, {
+                  method: 'DELETE',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    amount: currentCumulative.toString(),
+                    signature: Buffer.from(signature).toString('hex'),
+                  }),
+                })
+              } catch (err) {
+                throw wrapFetchError(err, 'Channel close request')
+              }
+
+              if (!closeResp.ok) {
+                if (
+                  closeResp.status >= 500 ||
+                  closeResp.status === 429 ||
+                  closeResp.status === 503
+                ) {
+                  throw httpStatusToError(
+                    `Channel close failed: HTTP ${closeResp.status}`,
+                    closeResp.status,
+                    closeResp,
+                  )
+                }
+                throw new KikisAppChannelStateError(
+                  `Channel close failed: HTTP ${closeResp.status}`,
+                )
+              }
+
+              let body: { closeTxHash?: string }
+              try {
+                body = (await closeResp.json()) as { closeTxHash?: string }
+              } catch (cause) {
+                throw new KikisAppChannelStateError(
+                  `Channel close response was not valid JSON (HTTP ${closeResp.status})`,
+                  { cause },
+                )
+              }
+              const closeTxHash = body.closeTxHash ?? null
+              if (!closeTxHash) {
+                throw new KikisAppChannelStateError(
+                  'Channel close response missing closeTxHash',
+                )
+              }
+              return { closeTxHash, body }
+            }, retryPolicy)
+
+            clearSessionTimer()
+            closed = true
+            status = 'closed'
+
+            const totalPaid = (Number(currentCumulative) / 1e7).toFixed(7)
+            const result: SessionCloseResult = {
+              closeTxHash: closeData.closeTxHash,
+              totalPaid,
+              vouchersIssued,
+            }
+            lastCloseResult = result
+            return result
+          } catch (err) {
+            status = 'open'
+            throw err
+          } finally {
+            activeClosePromise = null
+          }
+        })()
+
+        return activeClosePromise
       },
 
       async requestRefund(): Promise<string> {
@@ -909,7 +929,7 @@ export class MppSessionClient {
     // budget disables the guard (caller opted out).
     if (Number.isFinite(maxDurationMs) && maxDurationMs > 0) {
       timeoutId = setTimeout(() => {
-        if (closed) return
+        if (closed || status !== 'open') return
         emit('session:timeout', { maxDurationMs })
         // Best-effort auto-close. A rejection cannot be thrown into a timer
         // callback (nothing would catch it), so it is surfaced as a
