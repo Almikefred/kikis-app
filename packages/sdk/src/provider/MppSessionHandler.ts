@@ -309,8 +309,11 @@ export function createMppSessionHandler(opts: MppSessionHandlerOptions): Request
           // read, so a provider never holds the key that guards upgrade().
           const vaultContract = process.env.AGENT_VAULT_CONTRACT
           if (vaultContract) {
+            // The vault is the governed payer account, so the settlement is
+            // attributed to this vault instance, never to the agent or payee
+            // that opened the channel (#16).
             const settlementAddresses = resolveVaultSettlementAddresses(
-              closePayer,
+              vaultContract,
               payeeKeypair.publicKey(),
             )
             if (!settlementAddresses) {
