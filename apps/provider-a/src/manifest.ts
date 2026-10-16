@@ -25,7 +25,7 @@ export interface ManifestInput {
 
 export function buildManifest({ network, payee, assetContract }: ManifestInput): KikisAppManifest {
   return {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Stellar DEX Price Feed',
     description: 'Real-time USDC/XLM mid-price from Stellar DEX orderbook via Horizon',
     modes: ['x402', 'mpp-charge'],

@@ -15,7 +15,7 @@ function toBase64(value: string): string {
 }
 
 function makeHorizonMock(
-  accounts: Record<string, { kikis-app_endpoint?: string; kikis-app_tags?: string } | null>,
+  accounts: Record<string, { 'kikis-app_endpoint'?: string; 'kikis-app_tags'?: string } | null>,
 ) {
   return {
     loadAccount: async (accountId: string) => {
@@ -45,7 +45,7 @@ describe('OnChainRegistry.listProviders — endpoint decoding', () => {
   it('decodes a base64-encoded endpoint URL', async () => {
     const url = 'https://provider.example.com'
     const registry = new TestOnChainRegistry(
-      makeHorizonMock({ ACCT1: { kikis-app_endpoint: toBase64(url) } }),
+      makeHorizonMock({ ACCT1: { 'kikis-app_endpoint': toBase64(url) } }),
       ['ACCT1'],
     )
     const providers = await registry.listProviders()
@@ -57,7 +57,7 @@ describe('OnChainRegistry.listProviders — endpoint decoding', () => {
   it('returns a plain URL as-is without decoding', async () => {
     const url = 'https://plain-url.example.com'
     const registry = new TestOnChainRegistry(
-      makeHorizonMock({ ACCT2: { kikis-app_endpoint: url } }),
+      makeHorizonMock({ ACCT2: { 'kikis-app_endpoint': url } }),
       ['ACCT2'],
     )
     const providers = await registry.listProviders()
@@ -67,7 +67,7 @@ describe('OnChainRegistry.listProviders — endpoint decoding', () => {
 
   it('filters out non-http endpoints', async () => {
     const registry = new TestOnChainRegistry(
-      makeHorizonMock({ ACCT3: { kikis-app_endpoint: 'ftp://bad-endpoint.com' } }),
+      makeHorizonMock({ ACCT3: { 'kikis-app_endpoint': 'ftp://bad-endpoint.com' } }),
       ['ACCT3'],
     )
     const providers = await registry.listProviders()
@@ -99,8 +99,8 @@ describe('OnChainRegistry.listProviders — tag decoding', () => {
     const registry = new TestOnChainRegistry(
       makeHorizonMock({
         ACCT6: {
-          kikis-app_endpoint: 'https://provider.example.com',
-          kikis-app_tags: toBase64(tags),
+          'kikis-app_endpoint': 'https://provider.example.com',
+          'kikis-app_tags': toBase64(tags),
         },
       }),
       ['ACCT6'],
@@ -116,8 +116,8 @@ describe('OnChainRegistry.listProviders — tag decoding', () => {
     const registry = new TestOnChainRegistry(
       makeHorizonMock({
         ACCT7: {
-          kikis-app_endpoint: 'https://provider.example.com',
-          kikis-app_tags: toBase64('ai,stellar,dex'),
+          'kikis-app_endpoint': 'https://provider.example.com',
+          'kikis-app_tags': toBase64('ai,stellar,dex'),
         },
       }),
       ['ACCT7'],
@@ -129,7 +129,7 @@ describe('OnChainRegistry.listProviders — tag decoding', () => {
   it('returns empty tags when no kikis-app_tags entry', async () => {
     const registry = new TestOnChainRegistry(
       makeHorizonMock({
-        ACCT8: { kikis-app_endpoint: 'https://provider.example.com' },
+        ACCT8: { 'kikis-app_endpoint': 'https://provider.example.com' },
       }),
       ['ACCT8'],
     )
@@ -142,8 +142,8 @@ describe('OnChainRegistry.listProviders — multi-account', () => {
   it('returns providers for all valid accounts', async () => {
     const registry = new TestOnChainRegistry(
       makeHorizonMock({
-        ACCT9: { kikis-app_endpoint: 'https://a.example.com' },
-        ACCT10: { kikis-app_endpoint: 'https://b.example.com' },
+        ACCT9: { 'kikis-app_endpoint': 'https://a.example.com' },
+        ACCT10: { 'kikis-app_endpoint': 'https://b.example.com' },
         ACCT11: null, // fails to load
       }),
       ['ACCT9', 'ACCT10', 'ACCT11'],
@@ -163,7 +163,7 @@ function stalled(): Promise<never> {
 }
 
 function fakeAccount(endpoint: string) {
-  return { data_attr: { kikis-app_endpoint: endpoint } }
+  return { data_attr: { 'kikis-app_endpoint': endpoint } }
 }
 
 describe('OnChainRegistry.listProviders — timeout', () => {
@@ -323,7 +323,7 @@ const emptyOnChain = makeHorizonMock({
   ACCT9: null,
 })
 const oneOnChain = makeHorizonMock({
-  ACCT9: { kikis-app_endpoint: 'https://onchain.example.com' },
+  ACCT9: { 'kikis-app_endpoint': 'https://onchain.example.com' },
 })
 
 // ---------------------------------------------------------------------------

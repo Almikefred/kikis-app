@@ -78,10 +78,10 @@ mock.module('@x402/core/http', {
   },
 })
 
-const { kikis-app } = await import('../kikisAppMiddleware.js')
+const { kikisApp } = await import('../kikisAppMiddleware.js')
 
 const manifest: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Settle Failure Test',
   description: 'Unit test provider',
   modes: ['x402'],
@@ -123,7 +123,7 @@ async function makeHarness(
 
   const app = express()
   app.use(
-    kikis-app({
+    kikisApp({
       ...BASE_OPTS,
       seenTxStore: {
         get: () => undefined,

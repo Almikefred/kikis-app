@@ -55,11 +55,12 @@ interface OrderBookResponse {
  * The SDK receives a store backed by this object's persistent storage, so mppx
  * channel state survives isolate eviction.
  *
- * Not yet durable: kikisAppHono still tracks lastCumulativeAmount,
- * voucherCount, lastSignatureHex and sessionPayerAddress in closure scope, and
- * those are what the DELETE close path reads. If this object is evicted
- * mid-session they reset, and close falls back to the client-supplied amount
- * and signature. Moving them into the same store is the remaining half of #211.
+ * The session counters moved into that store as well (#52): every verified
+ * voucher commits its cumulative amount, signature, payer and voucher count to
+ * the persistent store, and the DELETE close path reloads them from storage
+ * before building the close transaction — it never falls back to
+ * client-supplied values. An eviction mid-session therefore cannot reset the
+ * counters or make the settlement trust a self-reported amount again.
  */
 export class ChannelSession extends DurableObject<Env> {
   private app: Hono | null = null

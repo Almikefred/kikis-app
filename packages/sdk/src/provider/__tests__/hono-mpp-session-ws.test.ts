@@ -16,6 +16,7 @@ import type { KikisAppManifest } from '../../types.js'
 
 const payeeKeypair = Keypair.random()
 const commitKeypair = Keypair.random()
+const providerPayerForClose = Keypair.random()
 
 const ASSET_CONTRACT = 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA'
 const CHANNEL_CONTRACT = 'CCK4XOW3YKQUEZFONUTINKMSNW7SNMRQZURME5U3UP7E6WNGK7UHUCAH'
@@ -97,7 +98,7 @@ mock.module('mppx/server', {
 const { kikisAppHono, MPP_SESSION_WS_VERIFIED, mppSessionWsVerified } = await import('../hono.js')
 
 const manifest: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Test WS Service',
   description: 'Unit test provider',
   modes: ['mpp-session-ws'],
@@ -193,16 +194,25 @@ describe('kikisAppHono — mpp-session-ws', () => {
     assert.equal(body.verified, false)
   })
 
-  it('closes the channel on DELETE and reports the mpp-session-ws mode', async () => {
+  it('closes the channel on DELETE using the persisted verified voucher, not the client body', async () => {
     settleCalls = []
     const app = makeApp()
     assert.ok(capturedStore, 'stellar mock should have captured the wrapped store')
-    await capturedStore!.put(`stellar:channel:cumulative:${CHANNEL_CONTRACT}`, { amount: '1000' })
+    // Simulate the provider having verified one voucher: the record the
+    // DELETE close path must settle from after any isolate eviction (#52).
+    await capturedStore!.put(`kikis-app:session:voucher:${CHANNEL_CONTRACT}`, {
+      amount: '1000',
+      signature: 'ab'.repeat(64),
+      payer: providerPayerForClose.publicKey(),
+      voucherCount: 1,
+    })
 
     const res = await app.request('/stream/orderbook', {
       method: 'DELETE',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ amount: '1000', signature: 'ab'.repeat(64) }),
+      // A self-reported body smaller than the verified record must not make
+      // the provider settle for less — it is ignored entirely.
+      body: JSON.stringify({ amount: '100', signature: 'cd'.repeat(64) }),
     })
     assert.equal(res.status, 200)
     const body = (await res.json()) as { closeTxHash: string }

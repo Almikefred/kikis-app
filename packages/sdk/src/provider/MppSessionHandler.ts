@@ -138,18 +138,23 @@ export function createMppSessionHandler(opts: MppSessionHandlerOptions): Request
   // `record` and `innerStore` disagreeing within a single handler's
   // lifetime, which the current code never lets happen (both are cleared
   // together on DELETE) — kept for parity with the Hono adapter and as a
-  // defensive read against future changes, not as a claim that it survives
-  // eviction. Never overwrites an in-memory record that is already set.
+  // defensive read against future changes (a process restart mid-session).
+  // Never overwrites an in-memory record that is already set. The persisted
+  // voucherCount is restored with it so the counters the DELETE close path and
+  // orphan reporting rely on survive the restart too (#52).
   async function loadPersistedRecord(): Promise<VerifiedVoucherRecord | null> {
     if (record) return record
     try {
       const stored = (await innerStore.get(voucherRecordKey)) as
-        | { amount?: string; signature?: string; payer?: string | null }
+        | { amount?: string; signature?: string; payer?: string | null; voucherCount?: number }
         | undefined
       if (!stored || typeof stored.amount !== 'string' || typeof stored.signature !== 'string') {
         return null
       }
       record = { amount: BigInt(stored.amount), signature: stored.signature, payer: stored.payer ?? null }
+      if (typeof stored.voucherCount === 'number' && stored.voucherCount > voucherCount) {
+        voucherCount = stored.voucherCount
+      }
     } catch {
       // Corrupt or unreadable persisted record — proceed as though there is none.
       return null
@@ -214,13 +219,17 @@ export function createMppSessionHandler(opts: MppSessionHandlerOptions): Request
 
     const payer = record?.payer ?? extractPayerAddress(credential.source)
     record = { amount, signature: payload.signature, payer }
+    voucherCount++
+    // Persist the counters with the record so a mid-session process restart
+    // cannot reset voucherCount or strand the amount/signature the DELETE
+    // close path reads (#52). Mirrors kikisAppHono's commit().
     await innerStore.put(voucherRecordKey, {
       amount: record.amount.toString(),
       signature: record.signature,
       payer: record.payer,
+      voucherCount,
     })
 
-    voucherCount++
     settledCleanly = false
     armIdleTimer()
 
@@ -266,19 +275,15 @@ export function createMppSessionHandler(opts: MppSessionHandlerOptions): Request
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       if (req.method === 'DELETE') {
+        // The persisted verified-voucher record is the only source of truth
+        // for settlement (#52) — mirrors kikisAppHono's handleDelete. Reload
+        // it after a mid-session restart, and never fall back to the
+        // client-supplied body: a close with no persisted record means this
+        // provider never verified a voucher, and it must refuse to settle
+        // rather than trust a self-reported amount and signature.
         await loadPersistedRecord()
-        const body = req.body as { amount?: string; signature?: string } | undefined
-        const bodyAmount = body?.amount ? BigInt(body.amount) : 0n
-        const recordAmount = record?.amount ?? 0n
-        let closeAmount: bigint
-        let closeSig: string
-        if (bodyAmount > recordAmount) {
-          closeAmount = bodyAmount
-          closeSig = body?.signature ?? record?.signature ?? ''
-        } else {
-          closeAmount = recordAmount
-          closeSig = record?.signature ?? ''
-        }
+        const closeAmount: bigint = record?.amount ?? 0n
+        const closeSig: string = record?.signature ?? ''
 
         if (closeAmount > 0n && closeSig) {
           const closePayer = record?.payer ?? null

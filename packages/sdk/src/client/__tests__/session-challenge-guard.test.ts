@@ -117,7 +117,7 @@ const { MppSessionClient } = await import('../MppSessionClient.js')
 
 function buildManifest(): KikisAppManifest {
   return {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Challenge Guard Test Provider',
     description: 'Provider exercised by session challenge guard unit tests',
     modes: ['mpp-session'],

@@ -124,7 +124,7 @@
     }
   },
   "scripts": {
-    "build": "tsup",
+    "build": "node -e \"import('fs').then(fs => fs.rmSync('dist', { recursive: true, force: true }))\" && tsup && node scripts/build-dts.js",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "test": "tsx --experimental-test-module-mocks --test $(find src -name '*.test.ts' -o -name '*.test.tsx' | sort)"

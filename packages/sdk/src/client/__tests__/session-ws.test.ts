@@ -127,7 +127,7 @@ const { MppSessionClient } = await import('../MppSessionClient.js')
 
 function buildManifest(): KikisAppManifest {
   return {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'WS Session Test Provider',
     description: 'Provider exercised by mpp-session-ws unit tests',
     modes: ['mpp-session', 'mpp-session-ws'],
@@ -295,6 +295,24 @@ describe('mpp-session-ws — success path', () => {
     await new Promise((resolve) => setImmediate(resolve))
 
     assert.equal(closes.length, 1, 'socket.close should be called once on early return')
+    assert.equal(closes[0], 1000)
+  })
+
+  it('closes the socket when the consumer breaks out of a for-await loop', async () => {
+    mppxScript = {}
+    wsScript = { frames: ['{"a":1}', '{"a":2}', '{"a":3}'] }
+    const { factory, closes } = makeFakeWsFactory()
+
+    const handle = await openWsHandle(factory)
+    const items: unknown[] = []
+    for await (const item of handle.stream()) {
+      items.push(item)
+      break // early exit — the loop must close the iterator on its way out
+    }
+    await new Promise((resolve) => setImmediate(resolve))
+
+    assert.deepEqual(items, [{ a: 1 }])
+    assert.equal(closes.length, 1, 'socket.close should be called once on for-await break')
     assert.equal(closes[0], 1000)
   })
 })

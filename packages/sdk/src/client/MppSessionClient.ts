@@ -143,6 +143,25 @@ function resolveStoreNetworkId(network: string | undefined): string {
   return network === STELLAR_PUBNET ? STELLAR_PUBNET : STELLAR_TESTNET
 }
 
+/**
+ * Settlement-time Soroban overrides carried from the client configuration.
+ * Used by close() so private RPC endpoints and surge-priced fees survive into
+ * session settlement instead of being clobbered by network defaults (#51).
+ */
+export interface MppSessionSettlementOverrides {
+  /** Soroban RPC endpoint for settlement simulation / preparation. */
+  sorobanRpcUrl?: string
+  /** Base fee in stroops for the settlement transaction. */
+  baseFeeStroops?: number
+}
+
+/** Default public Soroban RPC endpoint per network. */
+function defaultSorobanRpcUrl(network: 'testnet' | 'mainnet'): string {
+  return network === 'testnet'
+    ? 'https://soroban-testnet.stellar.org'
+    : 'https://soroban.stellar.org'
+}
+
 export class MppSessionClient {
   constructor(
     private readonly keypair: Keypair,
@@ -150,6 +169,7 @@ export class MppSessionClient {
     private readonly retryPolicy?: RetryPolicy,
     private readonly webSocketFactory: WebSocketFactory = defaultWebSocketFactory,
     private readonly logger: KikisAppLogger = consoleLogger,
+    private readonly settlement?: MppSessionSettlementOverrides,
   ) {}
 
   async openSession(
@@ -176,6 +196,17 @@ export class MppSessionClient {
     const channelFactory = pricing.channel_factory
     const agentPublicKey = this.keypair.publicKey()
     const agentKeypair = this.keypair
+    // Captured for close(): the handle's methods run with `this` bound to the
+    // handle, not this client instance. Soroban settlement resolution (#51):
+    // session options > client-level overrides > public network defaults.
+    // (`this.network` because the method-scope `network` alias is captured
+    // later in this function — this block runs first.)
+    const settlementOverrides = this.settlement
+    const sorobanRpcUrl =
+      options?.sorobanRpcUrl ??
+      settlementOverrides?.sorobanRpcUrl ??
+      defaultSorobanRpcUrl(this.network)
+    const baseFeeStroops = options?.baseFeeStroops ?? settlementOverrides?.baseFeeStroops
 
     let currentCumulative = 0n
     let vouchersIssued = 0
@@ -576,10 +607,11 @@ export class MppSessionClient {
 
         const { rpc: rpcMod, Contract, nativeToScVal, TransactionBuilder, BASE_FEE } =
           await import('@stellar/stellar-sdk')
-        const rpcUrl = network === 'testnet'
-          ? 'https://soroban-testnet.stellar.org'
-          : 'https://soroban.stellar.org'
-        const server = new rpcMod.Server(rpcUrl)
+        // Settlement must honor caller-supplied Soroban endpoints and fees (#51):
+        // see the session-scope resolution above. The defaults are only a
+        // fallback for callers that configured neither.
+        const fee = baseFeeStroops !== undefined ? String(baseFeeStroops) : BASE_FEE
+        const server = new rpcMod.Server(sorobanRpcUrl)
         const contract = new Contract(channelFactory)
         const passphrase = network === 'mainnet' ? Networks.PUBLIC : Networks.TESTNET
 
@@ -594,7 +626,7 @@ export class MppSessionClient {
         const simResult = await withRetry(async () => {
           try {
             const simTx = new TransactionBuilder(account, {
-              fee: BASE_FEE,
+              fee,
               networkPassphrase: passphrase,
             })
               .addOperation(
