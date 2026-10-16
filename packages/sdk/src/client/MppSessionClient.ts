@@ -51,6 +51,7 @@ const WS_OPEN = 1
 /** A WebSocket socket as consumed by the mpp-session-ws stream. */
 export interface WebSocketLike {
   readyState: number
+  send(data: string): void
   close(code?: number, reason?: string): void
 }
 
@@ -104,7 +105,13 @@ function defaultWebSocketFactory(
   }
   socket.onclose = (event) => handlers.onClose(event.code, event.reason)
   socket.onerror = () => handlers.onError()
-  return socket
+  return {
+    get readyState() {
+      return socket.readyState
+    },
+    send: (data: string) => socket.send(data),
+    close: (code?: number, reason?: string) => socket.close(code, reason),
+  }
 }
 
 /** The subset of the mppx client used by the WebSocket transport. */
@@ -161,6 +168,42 @@ function defaultSorobanRpcUrl(network: 'testnet' | 'mainnet'): string {
   return network === 'testnet'
     ? 'https://soroban-testnet.stellar.org'
     : 'https://soroban.stellar.org'
+}
+
+/**
+ * Polls for transaction inclusion in a closed ledger before returning.
+ * Polls server.getTransaction(hash) every pollIntervalMs (default: 1000ms) until
+ * status is 'SUCCESS' or 'FAILED' (timeout: timeoutMs, default 30000ms).
+ * Throws KikisAppDisputeError if the transaction fails on-chain or times out.
+ */
+export async function pollTransactionFinality(
+  server: { getTransaction: (hash: string) => Promise<any> },
+  hash: string,
+  timeoutMs: number = 30000,
+  pollIntervalMs: number = 1000,
+): Promise<any> {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    const tx = await server.getTransaction(hash)
+    if (tx?.status === 'SUCCESS') {
+      return tx
+    }
+    if (tx?.status === 'FAILED') {
+      const resultCode =
+        tx.resultCode ??
+        tx.result_code ??
+        (tx.resultXdr ? String(tx.resultXdr) : undefined) ??
+        (tx.result ? String(tx.result) : undefined) ??
+        (tx.errorResult ? JSON.stringify(tx.errorResult) : undefined)
+      const detail = resultCode ? `result code: ${resultCode}` : 'status FAILED'
+      throw new KikisAppDisputeError(`Transaction ${hash} failed on-chain: ${detail}`)
+    }
+    const elapsed = Date.now() - start
+    const remaining = timeoutMs - elapsed
+    if (remaining <= 0) break
+    await new Promise((resolve) => setTimeout(resolve, Math.min(pollIntervalMs, remaining)))
+  }
+  throw new KikisAppDisputeError(`Transaction ${hash} finality timeout after ${timeoutMs}ms`)
 }
 
 export class MppSessionClient {
@@ -796,6 +839,8 @@ export class MppSessionClient {
             throw new KikisAppDisputeError('Refund request transaction not sent')
           }
 
+          await pollTransactionFinality(server, result.hash)
+
           return result.hash
         } catch (err) {
           if (err instanceof KikisAppDisputeError) throw err
@@ -849,6 +894,8 @@ export class MppSessionClient {
           if (!settleResult.hash) {
             throw new KikisAppDisputeError('Settlement transaction not sent')
           }
+
+          await pollTransactionFinality(server, settleResult.hash)
 
           return settleResult.hash
         } catch (err) {
@@ -1073,6 +1120,9 @@ export class MppSessionClient {
         }
       }
 
+      // Send initiation frame immediately after connection opens to avoid handshake protocol deadlock
+      socket.send(JSON.stringify({ type: 'init' }))
+
       // Stream frames until the provider closes the socket.
       for (;;) {
         const event = await nextEvent()
@@ -1082,6 +1132,14 @@ export class MppSessionClient {
             parsed = JSON.parse(event.data)
           } catch {
             // Non-JSON frame — yield the raw payload.
+          }
+          if (
+            typeof parsed === 'object' &&
+            parsed !== null &&
+            'type' in parsed &&
+            (parsed as { type?: unknown }).type === 'ack'
+          ) {
+            continue
           }
           yield parsed
           continue
