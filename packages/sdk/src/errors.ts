@@ -14,6 +14,7 @@ export type KikisAppErrorCode =
   | 'REFUND_WINDOW'
   | 'CLIENT_VERSION_TOO_OLD'
   | 'TRUSTLINE'
+  | 'FEE'
 
 export interface KikisAppErrorOptions {
   cause?: unknown
@@ -186,6 +187,22 @@ export class KikisAppRefundWindowError extends KikisAppError {
   }
 }
 
+/** Network fee exceeds max configured fee or base fee surge rejected. */
+export class KikisAppFeeError extends KikisAppError {
+  readonly fee?: number | string
+  readonly maxFee?: number | string
+
+  constructor(
+    message: string,
+    options: KikisAppErrorOptions & { fee?: number | string; maxFee?: number | string } = {},
+  ) {
+    super(message, 'FEE', false, options)
+    this.name = 'KikisAppFeeError'
+    this.fee = options.fee
+    this.maxFee = options.maxFee
+  }
+}
+
 /** @deprecated Use {@link KikisAppPolicyRejectError} */
 export const KikisAppPolicyRejectedError = KikisAppPolicyRejectError
 
@@ -246,7 +263,13 @@ export function wrapMppError(err: unknown, context: string): KikisAppError {
   if (err instanceof KikisAppError) return err
   if (
     err instanceof TypeError ||
-    (err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError'))
+    (err instanceof Error &&
+      (err.name === 'AbortError' ||
+        err.name === 'TimeoutError' ||
+        err.name === 'ConnectTimeoutError' ||
+        err.name === 'SocketError')) ||
+    (err as Record<string, unknown>)?.['code'] === 'ECONNRESET' ||
+    (err as Record<string, unknown>)?.['code'] === 'ETIMEDOUT'
   ) {
     return new KikisAppNetworkError(`${context}: ${String(err)}`, { cause: err })
   }

@@ -315,6 +315,66 @@ describe('withRetry', () => {
     )
     assert.equal(calls, 1)
   })
+
+  it('retries on simulated TypeError: fetch failed and succeeds when back online', async () => {
+    let calls = 0
+    const result = await withRetry(
+      () => {
+        calls++
+        if (calls < 3) {
+          throw new TypeError('fetch failed')
+        }
+        return Promise.resolve('recovered')
+      },
+      { maxAttempts: 4, baseDelayMs: 1 },
+    )
+    assert.equal(result, 'recovered')
+    assert.equal(calls, 3)
+  })
+
+  it('retries on simulated TypeError: fetch failed up to maxAttempts before exhausting', async () => {
+    let calls = 0
+    await assert.rejects(
+      () =>
+        withRetry(
+          () => {
+            calls++
+            throw new TypeError('fetch failed')
+          },
+          { maxAttempts: 4, baseDelayMs: 1 },
+        ),
+      (err: unknown) => {
+        assert.ok(err instanceof TypeError)
+        assert.equal((err as TypeError).message, 'fetch failed')
+        return true
+      },
+    )
+    assert.equal(calls, 4)
+  })
+
+  it('retries on socket errors and abort errors (ConnectTimeoutError, ECONNRESET)', async () => {
+    let calls = 0
+    const socketErr = new Error('read ECONNRESET')
+    ;(socketErr as any).code = 'ECONNRESET'
+
+    const result = await withRetry(
+      () => {
+        calls++
+        if (calls === 1) {
+          throw socketErr
+        }
+        if (calls === 2) {
+          const timeoutErr = new Error('connection timeout')
+          timeoutErr.name = 'ConnectTimeoutError'
+          throw timeoutErr
+        }
+        return Promise.resolve('ok')
+      },
+      { maxAttempts: 4, baseDelayMs: 1 },
+    )
+    assert.equal(result, 'ok')
+    assert.equal(calls, 3)
+  })
 })
 
 describe('parseRetryAfterMs', () => {
