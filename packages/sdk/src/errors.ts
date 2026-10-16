@@ -113,6 +113,30 @@ export class KikisAppTrustlineError extends KikisAppError {
   }
 }
 
+/** Vault configuration parameter is invalid (e.g. mock prover on mainnet, unknown prover, unsupported payment mode). */
+export class KikisAppVaultConfigError extends KikisAppError {
+  constructor(message: string, options: KikisAppErrorOptions = {}) {
+    super(message, 'VAULT_CONFIG', false, options)
+    this.name = 'KikisAppVaultConfigError'
+  }
+
+  static [Symbol.hasInstance](instance: unknown): boolean {
+    return (
+      (instance instanceof KikisAppError && instance.code === 'VAULT_CONFIG') ||
+      (typeof instance === 'object' &&
+        instance !== null &&
+        'name' in instance &&
+        ((instance as { name?: string }).name === 'KikisAppVaultConfigError' ||
+          (instance as { name?: string }).name === 'NulthConfigError' ||
+          (instance as { code?: string }).code === 'VAULT_CONFIG'))
+    )
+  }
+}
+
+/** Alias for {@link KikisAppVaultConfigError} */
+export const NulthConfigError = KikisAppVaultConfigError
+export type NulthConfigError = KikisAppVaultConfigError
+
 /** x402 facilitator or provider returned a retryable HTTP failure (5xx, 429). */
 export class KikisAppFacilitatorError extends KikisAppError {
   readonly status: number

@@ -68,6 +68,8 @@ export interface NulthClientConfig {
   policy: NulthPolicyState
   /** Optional verifier contract deployed alongside the Nulth account */
   verifierContract?: string
+  /** Optional log sink for the mock-prover warning. */
+  logger?: any
 }
 
 export class NulthPolicyError extends Error {
@@ -79,3 +81,13 @@ export class NulthPolicyError extends Error {
     this.code = code
   }
 }
+
+export class NulthConfigError extends Error {
+  readonly code = 'VAULT_CONFIG' as const
+
+  constructor(message: string) {
+    super(message)
+    this.name = 'NulthConfigError'
+  }
+}
+
