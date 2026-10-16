@@ -7,6 +7,7 @@ import { signManifest } from '../../manifest/sign.js'
 import type { KikisAppManifest } from '../../types.js'
 
 const TESTNET_USDC_ISSUER = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5'
+const TESTNET_EURC_ISSUER = 'GB3Q6QDZYTHWT7E5PVS3W7FUT5GVAFC5KSZFFLPU25GO7VTC3NM2ZTVO'
 const SPAM_ISSUER = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN' // Mainnet issuer used on testnet
 
 function makeUsdcManifest(payeeKeypair: Keypair): KikisAppManifest {
@@ -18,6 +19,27 @@ function makeUsdcManifest(payeeKeypair: Keypair): KikisAppManifest {
       modes: ['x402'],
       network: 'testnet',
       asset: 'USDC',
+      asset_contract: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA',
+      payee: payeeKeypair.publicKey(),
+      pricing: {
+        x402: { amount: '0.001', per: 'request', facilitator: 'https://channels.openzeppelin.com/x402/testnet' },
+      },
+      endpoints: { price: { method: 'GET', path: '/price' } },
+      tags: ['test'],
+    },
+    payeeKeypair.secret(),
+  )
+}
+
+function makeEurcManifest(payeeKeypair: Keypair): KikisAppManifest {
+  return signManifest(
+    {
+      kikis-app: '1.0',
+      name: 'EURC Service',
+      description: 'Trustline EURC test',
+      modes: ['x402'],
+      network: 'testnet',
+      asset: 'EURC',
       asset_contract: 'CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA',
       payee: payeeKeypair.publicKey(),
       pricing: {
@@ -135,7 +157,42 @@ describe('KikisAppClient — Trustline issuer enforcement', () => {
     assert.equal(cache.has(cacheKey), false)
   })
 
-  it('passes on code alone when asset has no entry in ASSET_ISSUERS', async () => {
+  it('rejects EURC from a spoofed issuer with KikisAppTrustlineError', async () => {
+    const payeeKeypair = Keypair.random()
+    const payerKeypair = Keypair.random()
+    const manifest = makeEurcManifest(payeeKeypair)
+
+    const randomIssuer = Keypair.random().publicKey()
+
+    mock.method(Horizon.Server.prototype, 'loadAccount', async () => ({
+      balances: [
+        {
+          asset_type: 'credit_alphanum4',
+          asset_code: 'EURC',
+          asset_issuer: randomIssuer,
+          balance: '50.0000000',
+        },
+      ],
+    }))
+
+    const client = new KikisAppClient({
+      network: 'testnet',
+      wallet: payerKeypair,
+    })
+
+    await assert.rejects(
+      async () => client.preflight(manifest),
+      (err: unknown) => {
+        assert.ok(err instanceof KikisAppTrustlineError)
+        assert.equal(err.asset, 'EURC')
+        assert.equal(err.issuer, TESTNET_EURC_ISSUER)
+        assert.match(err.remediation, new RegExp(`change-trust --asset EURC:${TESTNET_EURC_ISSUER}`))
+        return true
+      },
+    )
+  })
+
+  it('rejects unknown asset with no registered issuer', async () => {
     const payeeKeypair = Keypair.random()
     const payerKeypair = Keypair.random()
     const manifest = makeCustomAssetManifest(payeeKeypair)
@@ -158,12 +215,15 @@ describe('KikisAppClient — Trustline issuer enforcement', () => {
       wallet: payerKeypair,
     })
 
-    const cacheKey = `testnet:${payerKeypair.publicKey()}:CUSTOM`
-    const cache = (KikisAppClient as unknown as { _trustlineCache: Map<string, { exists: boolean }> })._trustlineCache
-
-    const result = await client.preflight(manifest)
-    assert.equal(result.hasTrustline, true)
-    assert.equal(result.asset, 'CUSTOM')
-    assert.equal(cache.has(cacheKey), true)
+    await assert.rejects(
+      async () => client.preflight(manifest),
+      (err: unknown) => {
+        assert.ok(err instanceof KikisAppTrustlineError)
+        assert.equal(err.asset, 'CUSTOM')
+        assert.equal(err.issuer, 'unknown')
+        assert.match(err.remediation, /No trusted issuer registered/)
+        return true
+      },
+    )
   })
 })

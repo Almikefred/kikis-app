@@ -3,17 +3,37 @@ import { resolveLogger, type KikisAppLogger } from '../internal/logger.js'
 // ── Types ────────────────────────────────────────────────────────────────────
 
 /**
+ * A single in-flight spend reservation persisted durably.
+ */
+export interface PendingReserve {
+  /** Unique identifier for this reservation */
+  reserveId: string
+  /** Amount reserved, in the asset's base units (e.g. stroops for 7-decimal assets) */
+  amountMicros: string
+  /** Endpoint origin key this reserve applies to (undefined for global only) */
+  endpointKey?: string
+  /** ISO timestamp when the reservation was created */
+  timestamp: string
+}
+
+/**
  * Daily spend accumulator, keyed by an ISO date (YYYY-MM-DD).
  *
- * Totals are decimal strings of integer microUSDC (1 USDC = 10^7 units) so
+ * Totals are decimal strings of integer units (asset-specific base units) so
  * the record stays JSON-serializable with no floating point precision loss.
+ *
+ * pendingReserves holds in-flight reservations that have been written to the
+ * durable store but not yet committed or rolled back. On client startup,
+ * reconcilePendingReserves() prunes stale entries older than the TTL.
  */
 export interface DailySpend {
   date: string
-  /** Global accumulated spend for the day, in microUSDC (e.g. "5000000") */
+  /** Global accumulated spend for the day, in base units (e.g. "5000000" stroops for USDC) */
   totalMicros: string
-  /** Per-endpoint accumulated spend for the day, keyed by origin URL, in microUSDC */
+  /** Per-endpoint accumulated spend for the day, keyed by origin URL, in base units */
   endpoints: Record<string, string>
+  /** In-flight reservations awaiting commit or rollback */
+  pendingReserves: PendingReserve[]
 }
 
 // ── Interface ──────────────────────────────────────────────────────────────────

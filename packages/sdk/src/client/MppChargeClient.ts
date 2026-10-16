@@ -13,6 +13,7 @@ import {
 import { stroopsToUsdc } from '../internal/usdc.js'
 import { withRetry, type RetryPolicy } from '../internal/retry.js'
 import { checkChargeChallenge, type Caip2Network } from './challenge.js'
+import type { ModeSelectOptions } from './ModeRouter.js'
 
 /**
  * Estimate network base fee in stroops from Horizon /fee_stats.
@@ -72,7 +73,11 @@ export class MppChargeClient {
     }
   }
 
-  async pay(url: string, manifest: KikisAppManifest): Promise<PaymentResult> {
+  async pay(
+    url: string,
+    manifest: KikisAppManifest,
+    options?: ModeSelectOptions,
+  ): Promise<PaymentResult> {
     const pricing = manifest.pricing['mpp-charge']
     if (!pricing) {
       throw new KikisAppManifestError('manifest.pricing.mpp-charge missing')
@@ -175,13 +180,28 @@ export class MppChargeClient {
       }
 
       let data: unknown
-      try {
-        data = await response.json()
-      } catch (cause) {
-        throw new KikisAppManifestError(
-          `Failed to parse JSON from response (HTTP ${response.status})`,
-          { cause },
-        )
+      const responseType = options?.responseType ?? 'auto'
+      const contentType = response.headers.get('content-type') ?? ''
+      if (responseType === 'text' || (responseType === 'auto' && contentType.startsWith('text/'))) {
+        data = await response.text()
+      } else if (
+        responseType === 'arrayBuffer' ||
+        responseType === 'blob' ||
+        (responseType === 'auto' &&
+          (contentType.startsWith('image/') ||
+            contentType.includes('application/octet-stream') ||
+            contentType.includes('application/pdf')))
+      ) {
+        data = await response.arrayBuffer()
+      } else {
+        try {
+          data = await response.json()
+        } catch (cause) {
+          throw new KikisAppManifestError(
+            `Failed to parse JSON from response (HTTP ${response.status})`,
+            { cause },
+          )
+        }
       }
       return {
         data,

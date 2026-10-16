@@ -289,6 +289,16 @@ export interface ModeSelectOptions {
   forceMode?: PaymentMode
   /** Structured logger for mode selection events. Defaults to no-op. */
   logger?: KikisAppLogger
+  /**
+   * Expected response content type for the paid response body.
+   * When 'auto' (default), the client inspects the Content-Type header:
+   * - application/json → parsed JSON object
+   * - text/* → returned as string
+   * - image/*, application/octet-stream, etc. → returned as ArrayBuffer
+   * When a specific type is set, the client uses that parsing strategy
+   * regardless of the Content-Type header.
+   */
+  responseType?: 'json' | 'text' | 'arrayBuffer' | 'blob' | 'auto'
 }
 
 /**

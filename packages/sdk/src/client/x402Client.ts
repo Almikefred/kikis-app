@@ -15,6 +15,7 @@ import {
 import { stroopsToUsdc } from '../internal/usdc.js'
 import { withRetry, type RetryPolicy } from '../internal/retry.js'
 import { checkX402Accept, filterX402Accepts, type Caip2Network } from './challenge.js'
+import type { ModeSelectOptions } from './ModeRouter.js'
 
 type Network = 'testnet' | 'mainnet'
 
@@ -62,7 +63,11 @@ export class X402Client {
     return new X402Client(signer, this.network, this.retryPolicy)
   }
 
-  async pay(url: string, manifest: KikisAppManifest): Promise<PaymentResult> {
+  async pay(
+    url: string,
+    manifest: KikisAppManifest,
+    options?: ModeSelectOptions,
+  ): Promise<PaymentResult> {
     const pricing = manifest.pricing.x402
     if (!pricing) {
       throw new KikisAppManifestError('manifest.pricing.x402 missing')
@@ -91,12 +96,27 @@ export class X402Client {
           )
         }
         let data: unknown
-        try {
-          data = await init.json()
-        } catch {
-          throw new KikisAppManifestError(
-            `Failed to parse JSON from non-402 response (HTTP ${init.status})`,
-          )
+        const responseType = options?.responseType ?? 'auto'
+        const contentType = init.headers.get('content-type') ?? ''
+        if (responseType === 'text' || (responseType === 'auto' && contentType.startsWith('text/'))) {
+          data = await init.text()
+        } else if (
+          responseType === 'arrayBuffer' ||
+          responseType === 'blob' ||
+          (responseType === 'auto' &&
+            (contentType.startsWith('image/') ||
+              contentType.includes('application/octet-stream') ||
+              contentType.includes('application/pdf')))
+        ) {
+          data = await init.arrayBuffer()
+        } else {
+          try {
+            data = await init.json()
+          } catch {
+            throw new KikisAppManifestError(
+              `Failed to parse JSON from non-402 response (HTTP ${init.status})`,
+            )
+          }
         }
         return { kind: 'free', data }
       }
@@ -239,10 +259,25 @@ export class X402Client {
     }
 
     let data: unknown
-    try {
-      data = await settled.json()
-    } catch {
-      throw new KikisAppManifestError('Failed to parse JSON from settled response')
+    const responseType = options?.responseType ?? 'auto'
+    const contentType = settled.headers.get('content-type') ?? ''
+    if (responseType === 'text' || (responseType === 'auto' && contentType.startsWith('text/'))) {
+      data = await settled.text()
+    } else if (
+      responseType === 'arrayBuffer' ||
+      responseType === 'blob' ||
+      (responseType === 'auto' &&
+        (contentType.startsWith('image/') ||
+          contentType.includes('application/octet-stream') ||
+          contentType.includes('application/pdf')))
+    ) {
+      data = await settled.arrayBuffer()
+    } else {
+      try {
+        data = await settled.json()
+      } catch {
+        throw new KikisAppManifestError('Failed to parse JSON from settled response')
+      }
     }
     return { data, txHash, mode: 'x402', amount: signedAmount, timestamp: Date.now() }
   }
