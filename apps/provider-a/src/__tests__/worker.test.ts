@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import worker, { type Env } from '../worker.js'
+import worker, { clearOrderBookCache, getOrderBook, type Env } from '../worker.js'
 import { TESTNET_USDC_CONTRACT } from '../manifest.js'
 
 const mockCtx = {
@@ -91,5 +91,102 @@ describe('provider-a worker payment path & routes', () => {
     const body = (await res.json()) as { status: string; missing?: string[] }
     assert.equal(body.status, 'misconfigured')
     assert.ok(body.missing?.includes('USDC_ASSET_CONTRACT'))
+  })
+})
+
+const ORDERBOOK_SNAPSHOT = {
+  asks: [{ price: '0.1000000', amount: '100.0000000' }],
+  bids: [{ price: '0.0900000', amount: '200.0000000' }],
+}
+
+const okOrderBook = () =>
+  new Response(JSON.stringify(ORDERBOOK_SNAPSHOT), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  })
+
+describe('provider-a orderbook cache & 429 resilience', () => {
+  it('coalesces 50 concurrent orderbook reads into exactly 1 Horizon query', async (t) => {
+    clearOrderBookCache()
+    let horizonCalls = 0
+    t.mock.method(globalThis, 'fetch', async () => {
+      horizonCalls++
+      await new Promise((resolve) => setTimeout(resolve, 25))
+      return okOrderBook()
+    })
+
+    const results = await Promise.all(
+      Array.from({ length: 50 }, () => getOrderBook('testnet', 1)),
+    )
+
+    assert.equal(horizonCalls, 1, 'a concurrent burst must produce a single Horizon REST query')
+    for (const result of results) {
+      assert.equal(result.stale, false)
+      assert.equal(result.data.asks[0]?.price, ORDERBOOK_SNAPSHOT.asks[0]!.price)
+    }
+  })
+
+  it('serves the cached snapshot within the 2s TTL without re-querying Horizon', async (t) => {
+    clearOrderBookCache()
+    let horizonCalls = 0
+    t.mock.method(globalThis, 'fetch', async () => {
+      horizonCalls++
+      return okOrderBook()
+    })
+
+    await getOrderBook('testnet', 1)
+    await getOrderBook('testnet', 1)
+    await getOrderBook('testnet', 1)
+    assert.equal(horizonCalls, 1)
+  })
+
+  it('falls back to the most recent snapshot when Horizon returns 429', async (t) => {
+    clearOrderBookCache()
+    const start = Date.now()
+    let now = start
+    t.mock.method(Date, 'now', () => now)
+
+    let horizonResponse: () => Response = okOrderBook
+    let horizonCalls = 0
+    t.mock.method(globalThis, 'fetch', async () => {
+      horizonCalls++
+      return horizonResponse()
+    })
+
+    // Prime the cache with a healthy snapshot at `start`.
+    const primed = await getOrderBook('testnet', 1)
+    assert.equal(primed.stale, false)
+
+    // Past the 2s TTL, within the 30s stale window: Horizon now rate-limits.
+    now = start + 5_000
+    horizonResponse = () => new Response('rate limited', { status: 429 })
+
+    const result = await getOrderBook('testnet', 1)
+    assert.equal(horizonCalls, 2)
+    assert.equal(result.stale, true, 'a 429 must be answered from the cached snapshot')
+    assert.equal(result.data.asks[0]?.price, ORDERBOOK_SNAPSHOT.asks[0]!.price)
+  })
+
+  it('rethrows when Horizon fails and no cached snapshot is available', async (t) => {
+    clearOrderBookCache()
+    t.mock.method(globalThis, 'fetch', async () => new Response('rate limited', { status: 429 }))
+
+    await assert.rejects(() => getOrderBook('testnet', 1), /Horizon responded 429/)
+  })
+
+  it('stops serving snapshots older than the 30s stale window', async (t) => {
+    clearOrderBookCache()
+    const start = Date.now()
+    let now = start
+    t.mock.method(Date, 'now', () => now)
+
+    let horizonResponse: () => Response = okOrderBook
+    t.mock.method(globalThis, 'fetch', async () => horizonResponse())
+
+    await getOrderBook('testnet', 1)
+    now = start + 31_000
+    horizonResponse = () => new Response('rate limited', { status: 429 })
+
+    await assert.rejects(() => getOrderBook('testnet', 1), /Horizon responded 429/)
   })
 })
