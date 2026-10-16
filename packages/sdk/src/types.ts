@@ -97,7 +97,7 @@ export interface EndpointDescriptor {
 /** Full KikisApp discovery manifest — served at /.well-known/kikis-app.json */
 export interface KikisAppManifest {
   /** Manifest schema version (major.minor), e.g. "1.0", "1.1", "2.0" */
-  kikis-app: string
+  'kikis-app': string
   /**
    * Minimum SDK client version (major.minor) required to use this manifest.
    * Clients below this version must refuse to pay.
@@ -461,7 +461,24 @@ export {
   KikisAppRefundWindowError,
   KikisAppPolicyRejectedError,
   KikisAppSessionError,
+  KikisAppFeeError,
 } from './errors.js'
+
+/** Configuration options for MppChargeClient */
+export interface MppChargeClientOptions {
+  /** Maximum allowable base fee in stroops before rejecting transaction submission */
+  maxFeeStroops?: number
+  /** Alias for maxFeeStroops */
+  maxBaseFeeStroops?: number
+  /** Whether to query Horizon /fee_stats for dynamic base fee surge pricing */
+  dynamicFee?: boolean
+  /** Custom Horizon RPC URL used for fee estimation */
+  horizonUrl?: string
+  /** Custom fetch function override (e.g. for testing) */
+  fetchFn?: typeof fetch
+}
+
+export type MppChargeClientConfig = MppChargeClientOptions
 
 /** Dispute status of a channel */
 export type DisputeStatus = 'open' | 'in-refund-window' | 'refundable' | 'settled'

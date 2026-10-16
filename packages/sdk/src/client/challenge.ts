@@ -3,6 +3,7 @@ import type { KikisAppManifest } from '../types.js'
 import { KikisAppPolicyRejectError } from '../errors.js'
 import { usdcToStroops } from '../internal/usdc.js'
 import { resolvePayee } from '../internal/payee.js'
+import { isAssetEligible } from '../internal/assetUtils.js'
 
 /**
  * Pure, RPC-free validators that bind a payment challenge (the unsigned 402
@@ -63,6 +64,7 @@ export function checkX402Accept(
   manifest: KikisAppManifest,
   network: Caip2Network,
   maxAmount: string,
+  endpoint?: string,
 ): KikisAppPolicyRejectError | null {
   if (accept.network !== network) {
     return new KikisAppPolicyRejectError('challenge_network_mismatch')
@@ -70,7 +72,13 @@ export function checkX402Accept(
   if (accept.payTo !== resolvePayee(manifest, 'x402')) {
     return new KikisAppPolicyRejectError('challenge_payee_mismatch')
   }
-  if (accept.asset !== manifest.asset_contract) {
+  let eligible = false
+  try {
+    eligible = isAssetEligible(manifest, accept.asset, 'x402', endpoint)
+  } catch {
+    eligible = false
+  }
+  if (!eligible) {
     return new KikisAppPolicyRejectError('challenge_asset_mismatch')
   }
   return checkAmount(accept.amount, maxAmount)
@@ -85,8 +93,9 @@ export function filterX402Accepts(
   manifest: KikisAppManifest,
   network: Caip2Network,
   maxAmount: string,
+  endpoint?: string,
 ): PaymentRequirements[] {
-  return accepts.filter((accept) => checkX402Accept(accept, manifest, network, maxAmount) === null)
+  return accepts.filter((accept) => checkX402Accept(accept, manifest, network, maxAmount, endpoint) === null)
 }
 
 /**
@@ -101,6 +110,7 @@ export function checkChargeChallenge(
   manifest: KikisAppManifest,
   network: Caip2Network,
   maxAmount: string,
+  endpoint?: string,
 ): KikisAppPolicyRejectError | null {
   const methodDetails = request['methodDetails']
   const rawNetwork = isRecord(methodDetails) ? methodDetails['network'] : undefined
@@ -115,7 +125,15 @@ export function checkChargeChallenge(
   }
 
   const currency = request['currency']
-  if (typeof currency !== 'string' || currency !== manifest.asset_contract) {
+  let eligible = false
+  if (typeof currency === 'string') {
+    try {
+      eligible = isAssetEligible(manifest, currency, 'mpp-charge', endpoint)
+    } catch {
+      eligible = false
+    }
+  }
+  if (!eligible) {
     return new KikisAppPolicyRejectError('challenge_asset_mismatch')
   }
 

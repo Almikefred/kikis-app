@@ -28,6 +28,15 @@ type ProbeOutcome =
   | { kind: 'free'; data: unknown }
   | { kind: 'payment-required'; init: Response }
 
+export interface FacilitatorReceipt {
+  txHash?: string
+  transaction?: string
+  nonce?: string
+  network?: string
+  timestamp?: number | string
+  [key: string]: unknown
+}
+
 export class X402Client {
   private readonly httpClient: x402HTTPClient
   private readonly signer: ClientStellarSigner
@@ -172,12 +181,61 @@ export class X402Client {
     let txHash: string | null = null
     const responseHeader = settled.headers.get('X-Payment-Response')
     if (responseHeader) {
+      let settleResponse: FacilitatorReceipt
       try {
-        const settleResponse = decodePaymentResponseHeader(responseHeader)
-        txHash = (settleResponse as { transaction?: string }).transaction ?? null
-      } catch {
-        // non-fatal — some facilitators may omit the response header
+        settleResponse = decodePaymentResponseHeader(responseHeader) as FacilitatorReceipt
+      } catch (err) {
+        throw new KikisAppSignatureError(`Failed to decode X-Payment-Response header: ${String(err)}`, {
+          cause: err,
+        })
       }
+
+      // Nonce alignment: verify receipt's nonce matches the payment payload's nonce
+      const payloadNonce =
+        (paymentPayload as any).nonce ??
+        (paymentPayload.payload as any)?.nonce ??
+        (paymentPayload.accepted as any)?.nonce ??
+        (paymentPayload.accepted?.extra as any)?.nonce
+
+      const receiptNonce =
+        settleResponse.nonce ??
+        (settleResponse as any).payload?.nonce ??
+        (settleResponse as any).extensions?.nonce
+
+      if (payloadNonce !== undefined || receiptNonce !== undefined) {
+        if (!receiptNonce || receiptNonce !== payloadNonce) {
+          throw new KikisAppSignatureError(
+            `Facilitator receipt nonce mismatch: expected "${payloadNonce}", got "${receiptNonce}"`,
+          )
+        }
+      }
+
+      // Timestamp freshness: verify receipt timestamp is within acceptable drift (< 60s)
+      if (settleResponse.timestamp !== undefined) {
+        let receiptTimeMs: number
+        if (typeof settleResponse.timestamp === 'number') {
+          receiptTimeMs =
+            settleResponse.timestamp < 1e11
+              ? settleResponse.timestamp * 1000
+              : settleResponse.timestamp
+        } else {
+          const parsed = Date.parse(settleResponse.timestamp)
+          receiptTimeMs = !Number.isNaN(parsed) ? parsed : Number(settleResponse.timestamp)
+        }
+
+        if (Number.isNaN(receiptTimeMs)) {
+          throw new KikisAppSignatureError('Facilitator receipt timestamp is invalid')
+        }
+
+        const driftMs = Math.abs(Date.now() - receiptTimeMs)
+        if (driftMs > 60_000) {
+          throw new KikisAppSignatureError(
+            `Facilitator receipt timestamp outside acceptable drift (< 60s): drift was ${Math.round(driftMs / 1000)}s`,
+          )
+        }
+      }
+
+      txHash = settleResponse.txHash ?? settleResponse.transaction ?? null
     }
 
     let data: unknown
