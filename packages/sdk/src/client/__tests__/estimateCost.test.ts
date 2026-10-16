@@ -40,7 +40,7 @@ function startTestServer(
 const PAYEE_KEYPAIR = Keypair.random()
 
 const BASE_MANIFEST = signManifest({
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'EstimateCost Test Provider',
   description: 'Provider exercised by estimateCost tests',
   modes: ['x402', 'mpp-charge'],
@@ -175,7 +175,7 @@ const SESSION_MANIFEST = signManifest({
   const server = await startTestServer((req, res) => {
     if (req.url === '/.well-known/kikis-app.json') {
       res.writeHead(200, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ kikis-app: '2.0', name: 'bad' }))
+      res.end(JSON.stringify({ 'kikis-app': '2.0', name: 'bad' }))
     } else {
       res.writeHead(404); res.end()
     }

@@ -14,7 +14,7 @@ describe('DOCS_MANIFEST_EXAMPLE', () => {
 
   it('fails validation for the legacy example (missing description and string endpoint)', () => {
     const legacyExample = {
-      kikis-app: '1.0',
+      'kikis-app': '1.0',
       name: 'Stellar DEX Price Feed',
       modes: ['x402', 'mpp-charge'],
       network: 'testnet',

@@ -13,7 +13,7 @@ const X402_PAYEE = 'GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAX402'
 
 function baseManifest(): Record<string, unknown> {
   return {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Test Service',
     description: 'Unit test provider',
     modes: ['x402', 'mpp-charge'],

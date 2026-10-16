@@ -31,7 +31,7 @@ const SESSION_URL = 'https://provider.test/stream/orderbook'
 
 function buildManifest(): KikisAppManifest {
   return {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Dispute Test Provider',
     description: 'Provider exercised by dispute resolution unit tests',
     modes: ['mpp-session'],

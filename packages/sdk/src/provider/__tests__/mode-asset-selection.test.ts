@@ -6,7 +6,7 @@ import Fastify from 'fastify'
 import { Hono } from 'hono'
 import { Keypair } from '@stellar/stellar-sdk'
 import { decodePaymentRequiredHeader } from '@x402/core/http'
-import { kikis-app } from '../kikisAppMiddleware.js'
+import { kikisApp } from '../kikisAppMiddleware.js'
 import { kikisAppFastify } from '../fastify.js'
 import { kikisAppHono } from '../hono.js'
 import type { KikisAppManifest } from '../../types.js'
@@ -17,7 +17,7 @@ const XLM_CONTRACT = 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC'
 const payeeKeypair = Keypair.random()
 
 const multiAssetManifest: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Multi-Asset Mode Selection Service',
   description: 'Provider testing per-mode asset routing',
   modes: ['x402', 'mpp-charge'],
@@ -64,7 +64,7 @@ describe('Mode-to-Asset Selection in Provider Adapters', () => {
     async function makeExpressServer(): Promise<{ url: string; close: () => Promise<void> }> {
       const app = express()
       app.use(
-        kikis-app({
+        kikisApp({
           manifest: multiAssetManifest,
           modes: ['x402', 'mpp-charge'],
           pricing: {
@@ -221,7 +221,7 @@ describe('Mode-to-Asset Selection in Provider Adapters', () => {
 
   describe('Endpoint-Aware Asset Selection (Issue #55)', () => {
     const issue55Manifest: KikisAppManifest = {
-      kikis-app: '1.0',
+      'kikis-app': '1.0',
       name: 'Issue 55 Endpoint-Scoped Multi-Asset Service',
       description: 'USDC for inference, XLM for lookup, both x402',
       modes: ['x402'],
@@ -257,7 +257,7 @@ describe('Mode-to-Asset Selection in Provider Adapters', () => {
       async function makeExpressServer(): Promise<{ url: string; close: () => Promise<void> }> {
         const app = express()
         app.use(
-          kikis-app({
+          kikisApp({
             manifest: issue55Manifest,
             modes: ['x402'],
             pricing: { x402: '0.001' },
@@ -405,7 +405,7 @@ describe('Mode-to-Asset Selection in Provider Adapters', () => {
 
     describe('Legacy manifest without assets array', () => {
       const legacyProviderManifest: KikisAppManifest = {
-        kikis-app: '1.0',
+        'kikis-app': '1.0',
         name: 'Legacy Single-Asset Provider',
         description: 'No assets array present',
         modes: ['x402'],
@@ -421,7 +421,7 @@ describe('Mode-to-Asset Selection in Provider Adapters', () => {
       it('falls back to root asset_contract on Express', async () => {
         const app = express()
         app.use(
-          kikis-app({
+          kikisApp({
             manifest: legacyProviderManifest,
             modes: ['x402'],
             pricing: { x402: '0.001' },

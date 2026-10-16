@@ -166,10 +166,10 @@ function buildCraftedHeader(json: Record<string, unknown>): string {
   return `Payment credential="${Buffer.from(JSON.stringify(json)).toString('base64')}"`
 }
 
-const { kikis-app } = await import('../kikisAppMiddleware.js')
+const { kikisApp } = await import('../kikisAppMiddleware.js')
 
 const manifest: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Express Verified Voucher E2E Test',
   description: 'Unit test provider',
   modes: ['mpp-session'],
@@ -200,7 +200,7 @@ async function makeServer(handlers: {
   closeCalls = []
   const app = express()
   app.use(
-    kikis-app({
+    kikisApp({
       asset: 'USDC',
       assetContract: ASSET_CONTRACT,
       payee: payeeKeypair.publicKey(),
@@ -211,7 +211,7 @@ async function makeServer(handlers: {
       modes: ['mpp-session'],
       pricing: { 'mpp-session': { rate: '0.0001', channelFactory: CHANNEL_CONTRACT } },
       ...handlers,
-    } as Parameters<typeof kikis-app>[0]),
+    } as Parameters<typeof kikisApp>[0]),
   )
   app.get('/price', async (_req: Request, res: ExpressResponse) => {
     res.json({ price: '42' })

@@ -11,7 +11,7 @@ import assert from 'node:assert/strict'
 import { describe, it, beforeEach } from 'node:test'
 import { Keypair } from '@stellar/stellar-sdk'
 import { kikisAppHono } from '../provider/hono.js'
-import { kikis-app } from '../provider/kikisAppMiddleware.js'
+import { kikisApp } from '../provider/kikisAppMiddleware.js'
 import { KikisAppClient } from '../client/KikisAppClient.js'
 import type { KikisAppLogLevel, KikisAppLogger } from '../internal/logger.js'
 import type { KikisAppManifest } from '../types.js'
@@ -32,7 +32,7 @@ function warnedWith(needle: string): boolean {
 }
 
 const manifest: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Logger Threading Test',
   description: 'Unit test provider',
   modes: ['x402', 'mpp-charge'],
@@ -99,14 +99,14 @@ describe('supplied logger reaches the default stores (#286)', () => {
 
   it('reaches the Express x402 SeenTxStore', () => {
     onWorkers(() => {
-      kikis-app({ ...BASE_OPTS, modes: ['x402'], pricing: { x402: '0.001' } })
+      kikisApp({ ...BASE_OPTS, modes: ['x402'], pricing: { x402: '0.001' } })
     })
     assert.ok(warnedWith(SEEN_TX_WARNING), 'Express x402 warned through console, not the logger')
   })
 
   it('reaches the Express mpp-charge SeenTxStore', () => {
     onWorkers(() => {
-      kikis-app({ ...BASE_OPTS, modes: ['mpp-charge'], pricing: { 'mpp-charge': '0.001' } })
+      kikisApp({ ...BASE_OPTS, modes: ['mpp-charge'], pricing: { 'mpp-charge': '0.001' } })
     })
     assert.ok(warnedWith(SEEN_TX_WARNING), 'Express mpp-charge warned through console, not the logger')
   })

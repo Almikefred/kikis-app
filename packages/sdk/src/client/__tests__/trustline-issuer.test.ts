@@ -12,7 +12,7 @@ const SPAM_ISSUER = 'GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN' /
 function makeUsdcManifest(payeeKeypair: Keypair): KikisAppManifest {
   return signManifest(
     {
-      kikis-app: '1.0',
+      'kikis-app': '1.0',
       name: 'Test Service',
       description: 'Trustline test provider',
       modes: ['x402'],
@@ -33,7 +33,7 @@ function makeUsdcManifest(payeeKeypair: Keypair): KikisAppManifest {
 function makeCustomAssetManifest(payeeKeypair: Keypair): KikisAppManifest {
   return signManifest(
     {
-      kikis-app: '1.0',
+      'kikis-app': '1.0',
       name: 'Custom Asset Service',
       description: 'Trustline custom asset test',
       modes: ['x402'],

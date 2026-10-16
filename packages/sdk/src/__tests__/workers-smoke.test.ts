@@ -60,7 +60,7 @@ test('importing the SDK client works under a Workers-like no-new-Function runtim
     const payeeKp = Keypair.random()
     const signedManifest = signManifest(
       {
-        kikis-app: '1.0',
+        'kikis-app': '1.0',
         name: 'Workers Smoke Provider',
         description: 'Smoke test provider',
         modes: ['x402' as const],

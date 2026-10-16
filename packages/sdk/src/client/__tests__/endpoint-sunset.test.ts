@@ -44,7 +44,7 @@ function endpointManifest(
 ): KikisAppManifest & { signature: string } {
   return signManifest(
     {
-      kikis-app: '1.0',
+      'kikis-app': '1.0',
       name: 'Endpoint Sunset Test Provider',
       description: 'Provider exercised by endpoint sunset tests',
       modes: ['x402', 'mpp-charge'],

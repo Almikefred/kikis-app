@@ -48,7 +48,7 @@ function transferPreimage(asset: string, from: string, to: string, amount: bigin
 }
 
 const baseManifest: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Nulth Test Provider',
   description: 'ZK vault test',
   modes: ['x402'],

@@ -11,7 +11,7 @@ const TESTNET_USDC_ISSUER = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZL
 function makeMultiAssetManifest(payeeKeypair: Keypair): KikisAppManifest {
   return signManifest(
     {
-      kikis-app: '1.0',
+      'kikis-app': '1.0',
       name: 'Multi-Asset Client Test Service',
       description: 'Provider for client mode-to-asset testing',
       modes: ['x402', 'mpp-charge'],
@@ -179,7 +179,7 @@ describe('KikisAppClient — multi-asset eligibility & trustline preflight', () 
     const payerKeypair = Keypair.random()
     const legacyManifest = signManifest(
       {
-        kikis-app: '1.0',
+        'kikis-app': '1.0',
         name: 'Legacy Single-Asset Test Service',
         description: 'Provider without assets array',
         modes: ['x402'],

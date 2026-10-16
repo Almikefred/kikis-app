@@ -97,7 +97,7 @@ export interface EndpointDescriptor {
 /** Full KikisApp discovery manifest — served at /.well-known/kikis-app.json */
 export interface KikisAppManifest {
   /** Manifest schema version (major.minor), e.g. "1.0", "1.1", "2.0" */
-  kikis-app: string
+  'kikis-app': string
   /**
    * Minimum SDK client version (major.minor) required to use this manifest.
    * Clients below this version must refuse to pay.

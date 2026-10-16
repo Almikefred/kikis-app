@@ -35,7 +35,7 @@ function startTestServer(
 const PAYEE_KEYPAIR = Keypair.random()
 
 const VALID_MANIFEST_BASE: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Metadata Test Provider',
   description: 'Provider for testing regions, latency_hints, capabilities',
   modes: ['x402', 'mpp-charge'],
