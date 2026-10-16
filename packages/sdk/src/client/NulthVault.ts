@@ -72,6 +72,8 @@ export interface NulthVaultConfig {
   dailyCapUsdc: string
   expiryLedger?: number
   verifierContract?: string
+  rpcUrl?: string
+  rpcTimeoutMs?: number
 }
 
 export function assertNulthVaultManifest(manifest: KikisAppManifest, nulthAccount: string): void {
@@ -83,11 +85,20 @@ export function assertNulthVaultManifest(manifest: KikisAppManifest, nulthAccoun
   }
 }
 
-export async function fetchLedgerSequence(network: 'testnet' | 'mainnet'): Promise<number> {
-  const rpcUrl = network === 'testnet'
-    ? 'https://soroban-testnet.stellar.org'
-    : 'https://soroban.stellar.org'
-  const server = new rpc.Server(rpcUrl)
+export async function fetchLedgerSequence(
+  network: 'testnet' | 'mainnet',
+  rpcUrlOverride?: string,
+  rpcTimeoutMs?: number,
+): Promise<number> {
+  const rpcUrl =
+    rpcUrlOverride ??
+    (network === 'testnet'
+      ? 'https://soroban-testnet.stellar.org'
+      : 'https://soroban.stellar.org')
+  const server = new rpc.Server(rpcUrl, {
+    allowHttp: rpcUrl.startsWith('http://'),
+    ...(rpcTimeoutMs !== undefined ? { timeout: rpcTimeoutMs } : {}),
+  })
   const latest = await server.getLatestLedger()
   return latest.sequence
 }
@@ -98,6 +109,8 @@ export async function prepareNulthSigner(
   mode: PaymentMode,
   network: 'testnet' | 'mainnet',
   ledgerSequenceOverride?: number,
+  rpcUrlOverride?: string,
+  rpcTimeoutMsOverride?: number,
 ): Promise<{ signer: ClientStellarSigner; config: NulthSignerConfig }> {
   assertNulthVaultManifest(manifest, vault.nulthAccount)
 
@@ -108,7 +121,11 @@ export async function prepareNulthSigner(
     )
   }
 
-  const ledgerSequence = ledgerSequenceOverride ?? (await fetchLedgerSequence(network))
+  const effectiveRpcUrl = rpcUrlOverride ?? vault.rpcUrl
+  const effectiveRpcTimeoutMs = rpcTimeoutMsOverride ?? vault.rpcTimeoutMs
+  const ledgerSequence =
+    ledgerSequenceOverride ??
+    (await fetchLedgerSequence(network, effectiveRpcUrl, effectiveRpcTimeoutMs))
   const policy = createPolicyState({
     dailyCapUsdc: vault.dailyCapUsdc,
     allowedPayees: vault.allowedPayees,

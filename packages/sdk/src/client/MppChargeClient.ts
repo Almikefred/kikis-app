@@ -1,6 +1,7 @@
 import { Keypair } from '@stellar/stellar-sdk'
 import { stellar } from '@stellar/mpp/charge/client'
 import { Mppx } from 'mppx/client'
+import type { ClientStellarSigner } from '@x402/stellar'
 import type { KikisAppManifest, PaymentResult, MppChargeClientOptions } from '../types.js'
 import {
   KikisAppManifestError,
@@ -53,7 +54,7 @@ export class MppChargeClient {
   private readonly options?: MppChargeClientOptions
 
   constructor(
-    private readonly keypair: Keypair,
+    private readonly keypairOrSigner: Keypair | ClientStellarSigner,
     private readonly network: 'testnet' | 'mainnet',
     retryPolicyOrOptions?: RetryPolicy | MppChargeClientOptions,
     options?: MppChargeClientOptions,
@@ -71,6 +72,15 @@ export class MppChargeClient {
       this.retryPolicy = retryPolicyOrOptions as RetryPolicy | undefined
       this.options = options
     }
+  }
+
+  /** Replace the signer (e.g. swap to a Nulth ZK account payer before pay). */
+  withSigner(signer: ClientStellarSigner): MppChargeClient {
+    return new MppChargeClient(signer, this.network, this.retryPolicy, this.options)
+  }
+
+  private get isKeypair(): boolean {
+    return this.keypairOrSigner instanceof Keypair
   }
 
   async pay(
@@ -126,8 +136,13 @@ export class MppChargeClient {
       polyfill: false,
       methods: [
         (stellar.charge as (opts: Record<string, unknown>) => any)({
-          keypair: this.keypair,
+          ...(this.isKeypair
+            ? { keypair: this.keypairOrSigner as Keypair }
+            : { keypair: this.keypairOrSigner as unknown as Keypair }),
           mode: 'pull',
+          // Custom Soroban RPC endpoint (#5): route all charge simulation /
+          // submission to the configured RPC instead of the public default.
+          ...(this.options?.rpcUrl !== undefined && { rpcUrl: this.options.rpcUrl }),
           fee: calculatedFee,
           baseFee: calculatedFee,
           maxFee: maxFeeCap ?? calculatedFee,

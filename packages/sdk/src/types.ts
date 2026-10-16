@@ -92,6 +92,14 @@ export interface EndpointDescriptor {
     requests: number
     window_seconds: number
   }
+  /** Optional endpoint-specific price override */
+  price?: string
+  /** Optional endpoint-specific amount override */
+  amount?: string
+  /** Optional endpoint-specific rate override (e.g. for session vouchers) */
+  rate?: string
+  /** Optional per-mode pricing overrides for this endpoint */
+  pricing?: Partial<KikisAppManifest['pricing']>
 }
 
 /** Full KikisApp discovery manifest — served at /.well-known/kikis-app.json */
@@ -324,6 +332,14 @@ export interface SessionOptions {
    */
   sorobanRpcUrl?: string
   /**
+   * Optional custom Soroban RPC endpoint. When specified, overrides default public endpoints.
+   */
+  rpcUrl?: string
+  /**
+   * Custom timeout in milliseconds for Soroban RPC calls.
+   */
+  rpcTimeoutMs?: number
+  /**
    * Base fee in stroops for close()'s settlement transaction. Defaults to the
    * SDK BASE_FEE (100 stroops). Raise it during fee surges so settlement
    * simulation and submission are not rejected for an underpriced fee (#51).
@@ -490,6 +506,17 @@ export interface MppChargeClientOptions {
   horizonUrl?: string
   /** Custom fetch function override (e.g. for testing) */
   fetchFn?: typeof fetch
+  /**
+   * Optional custom Soroban RPC endpoint for mpp-charge settlement.
+   * When specified, overrides the public default Stellar RPC endpoint.
+   * Useful when the public endpoint is unreachable or rate-limited (#5).
+   */
+  rpcUrl?: string
+  /**
+   * Custom timeout in milliseconds for Soroban RPC calls in mpp-charge
+   * settlement (#5).
+   */
+  rpcTimeoutMs?: number
 }
 
 export type MppChargeClientConfig = MppChargeClientOptions

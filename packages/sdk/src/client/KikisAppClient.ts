@@ -155,6 +155,19 @@ export interface KikisAppClientConfig {
    * with off-chain ZK proofs attached as auth signatures.
    */
   vault?: VaultConfig
+  /**
+   * Custom Soroban RPC endpoint for mpp-session settlement and NulthVault
+   * ledger lookups. Overrides the public default Stellar endpoint for
+   * `network`. Set this when the public endpoint is unreachable or
+   * rate-limited from your runtime (#5).
+   */
+  rpcUrl?: string
+  /**
+   * Timeout in milliseconds for Soroban RPC calls (mpp-session settlement
+   * and NulthVault ledger fetches). Passed through to the underlying
+   * `rpc.Server` constructor (#5).
+   */
+  rpcTimeoutMs?: number
 }
 
 /**
@@ -189,6 +202,8 @@ export class KikisAppClient {
   private readonly manifestTimeoutMs: number | undefined
   private readonly expectedPayee: string | undefined
   private readonly vault: VaultConfig | undefined
+  private readonly rpcUrl: string | undefined
+  private readonly rpcTimeoutMs: number | undefined
 
   /**
    * Durable backing store for the local daily spend accumulator (keyed by
@@ -236,6 +251,8 @@ export class KikisAppClient {
     this.logger = config.logger
     this.manifestTimeoutMs = config.manifestTimeoutMs
     this.expectedPayee = config.expectedPayee
+    this.rpcUrl = config.rpcUrl
+    this.rpcTimeoutMs = config.rpcTimeoutMs
 
     if (config.commitmentSecret) {
       _secrets.set(this, config.commitmentSecret)
@@ -251,7 +268,10 @@ export class KikisAppClient {
     // silences the SDK silences the retry path too.
     const retryPolicy = this.logger ? { ...this.retryPolicy, logger: this.logger } : this.retryPolicy
     this.x402 = new X402Client(secretKey, this.network, retryPolicy)
-    this.charge = new MppChargeClient(this.keypair, this.network, retryPolicy)
+    this.charge = new MppChargeClient(this.keypair, this.network, retryPolicy, {
+      ...(config.rpcUrl !== undefined && { rpcUrl: config.rpcUrl }),
+      ...(config.rpcTimeoutMs !== undefined && { rpcTimeoutMs: config.rpcTimeoutMs }),
+    })
     this.session = new MppSessionClient(
       this.keypair,
       this.network,
@@ -260,6 +280,8 @@ export class KikisAppClient {
       this.logger,
       {
         ...(config.sorobanRpcUrl !== undefined && { sorobanRpcUrl: config.sorobanRpcUrl }),
+        ...(config.rpcUrl !== undefined && { rpcUrl: config.rpcUrl }),
+        ...(config.rpcTimeoutMs !== undefined && { rpcTimeoutMs: config.rpcTimeoutMs }),
         ...(config.baseFeeStroops !== undefined && { baseFeeStroops: config.baseFeeStroops }),
       },
     )
@@ -422,7 +444,7 @@ export class KikisAppClient {
       if (this.vault?.mode === 'nulth') {
         // Mode/prover validation errors thrown here must also release the
         // reservation, which is why the call sits inside this try block.
-        result = await this._payWithNulthVault(url, manifest, mode)
+        result = await this._payWithNulthVault(url, manifest, mode, options)
       } else {
         switch (mode) {
           case 'x402':
@@ -460,19 +482,25 @@ export class KikisAppClient {
     url: string,
     manifest: import('../types.js').KikisAppManifest,
     mode: import('../types.js').PaymentMode,
+    options?: ModeSelectOptions,
   ): Promise<PaymentResult> {
     const prover = this.vault?.prover ?? 'mock';
     if (this.network === 'mainnet' && prover === 'mock') {
       throw new KikisAppManifestError('nulth vault uses a MOCK Groth16 prover and cannot be used on mainnet');
     }
-    if (mode !== 'x402') {
+    if (mode !== 'x402' && mode !== 'mpp-charge') {
       throw new KikisAppManifestError(
-        'nulth vault currently supports x402 mode — force x402 via { forceMode: "x402" }',
+        'nulth vault supports x402 and mpp-charge modes — force via { forceMode: "x402" | "mpp-charge" }',
       )
     }
 
     try {
       const { signer } = await prepareNulthSigner(this.vault!, manifest, mode, this.network)
+      if (mode === 'mpp-charge') {
+        // #34/#9: settle discrete mpp-charge payments through the Nulth vault signer.
+        const charge = this.charge.withSigner(signer)
+        return charge.pay(url, manifest, options)
+      }
       const x402 = this.x402.withSigner(signer)
       const result = await x402.pay(url, manifest)
       return result

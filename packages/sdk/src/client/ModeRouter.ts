@@ -287,6 +287,12 @@ export interface ModeSelectOptions {
    * Throws KikisAppNoSupportedModeError if the provider does not support it.
    */
   forceMode?: PaymentMode
+  /**
+   * Endpoint key whose endpoint-specific price/rate overrides (from
+   * `manifest.endpoints[endpoint].price` / `.amount` / `.rate`) are used
+   * instead of manifest-level pricing when comparing unit costs.
+   */
+  endpoint?: string
   /** Structured logger for mode selection events. Defaults to no-op. */
   logger?: KikisAppLogger
   /**
@@ -390,6 +396,88 @@ interface ModeSelection {
   reason?: 'cost-optimized'
 }
 
+/**
+ * Cost-based mode selection (#6). Compares the unit cost of every available
+ * mode — per-request modes (`x402`, `mpp-charge`) by `amount` and session
+ * modes (`mpp-session`, `mpp-session-ws`) by `rate` when sustained sessions
+ * are acceptable — and returns the cheapest mode within the caller's budget.
+ *
+ * Endpoint-specific price/rate overrides (`manifest.endpoints[endpoint]`,
+ * selected via `options.endpoint`) take precedence over manifest-level
+ * pricing.
+ */
+function selectByCost(
+  modes: PaymentMode[],
+  manifest: KikisAppManifest,
+  options: ModeSelectOptions,
+): ModeSelection | undefined {
+  // A caller-supplied ceiling must be a well-formed USDC decimal string.
+  // Validating up front keeps a malformed value ('abc', '$0.01', '') from
+  // parsing to NaN/Infinity and silently disabling the budget guard, which
+  // would let the cheapest mode be selected at any price.
+  let budgetStroops: bigint | null = null
+  if (options.budget_per_request !== undefined) {
+    try {
+      budgetStroops = usdcToStroops(options.budget_per_request)
+    } catch {
+      throw new KikisAppPolicyRejectError('invalid_budget_per_request')
+    }
+  }
+
+  const endpoint = options.endpoint ? manifest.endpoints[options.endpoint] : undefined
+
+  const unitPrice = (mode: PaymentMode): string | undefined => {
+    // Endpoint-specific overrides take precedence over manifest-level pricing.
+    if (endpoint) {
+      const perMode = endpoint.pricing?.[mode]
+      if (mode === 'mpp-session' || mode === 'mpp-session-ws') {
+        return perMode?.rate ?? endpoint.rate ?? manifest.pricing[mode]?.rate
+      }
+      return perMode?.amount ?? endpoint.price ?? endpoint.amount ?? manifest.pricing[mode]?.amount
+    }
+    if (mode === 'mpp-session' || mode === 'mpp-session-ws') {
+      return manifest.pricing[mode]?.rate
+    }
+    return manifest.pricing[mode]?.amount
+  }
+
+  const candidates: Array<{ mode: PaymentMode; amountStroops: bigint }> = []
+  for (const mode of modes) {
+    // Session modes are priced per voucher (`rate`) and only enter the cost
+    // comparison when sustained sessions are acceptable.
+    if ((mode === 'mpp-session' || mode === 'mpp-session-ws') && !options.sustained) continue
+    const price = unitPrice(mode)
+    if (typeof price !== 'string') continue
+    try {
+      candidates.push({ mode, amountStroops: usdcToStroops(price) })
+    } catch {
+      // Unparseable pricing can't be compared against a budget — drop it.
+      continue
+    }
+  }
+
+  if (candidates.length === 0) return undefined
+
+  const affordableCandidates =
+    budgetStroops === null
+      ? candidates
+      : candidates.filter((candidate) => candidate.amountStroops <= budgetStroops)
+
+  if (affordableCandidates.length === 0) {
+    // All candidates exceed the caller's budget ceiling — error instead of
+    // silently falling through to an over-budget mode.
+    if (budgetStroops !== null) {
+      throw new KikisAppPolicyRejectError('budget_per_request_exceeded')
+    }
+    return undefined
+  }
+
+  const cheapestCandidate = [...affordableCandidates].sort((a, b) =>
+    a.amountStroops < b.amountStroops ? -1 : a.amountStroops > b.amountStroops ? 1 : 0,
+  )[0]
+  return { mode: cheapestCandidate.mode, reason: 'cost-optimized' }
+}
+
 function selectFromModes(
   modes: PaymentMode[],
   manifest: KikisAppManifest,
@@ -408,51 +496,7 @@ function selectFromModes(
   }
 
   if (options.optimize === 'cost') {
-    // A caller-supplied ceiling must be a well-formed USDC decimal string.
-    // Validating up front keeps a malformed value ('abc', '$0.01', '') from
-    // parsing to NaN/Infinity and silently disabling the budget guard, which
-    // would let the cheapest mode be selected at any price.
-    let budgetStroops: bigint | null = null
-    if (options.budget_per_request !== undefined) {
-      try {
-        budgetStroops = usdcToStroops(options.budget_per_request)
-      } catch {
-        throw new KikisAppPolicyRejectError('invalid_budget_per_request')
-      }
-    }
-
-    const candidates = (['x402', 'mpp-charge'] as Array<'x402' | 'mpp-charge'>)
-      .filter((mode) => modes.includes(mode))
-      .flatMap((mode) => {
-        const amount = manifest.pricing[mode]?.amount
-        if (typeof amount !== 'string') return []
-        try {
-          return [{ mode: mode as PaymentMode, amountStroops: usdcToStroops(amount) }]
-        } catch {
-          // Unparseable pricing can't be compared against a budget — drop it.
-          return []
-        }
-      })
-
-    if (candidates.length > 0) {
-      const affordableCandidates =
-        budgetStroops === null
-          ? candidates
-          : candidates.filter((candidate) => candidate.amountStroops <= budgetStroops)
-
-      const cheapestCandidate = [...affordableCandidates].sort((a, b) =>
-        a.amountStroops < b.amountStroops ? -1 : a.amountStroops > b.amountStroops ? 1 : 0,
-      )[0]
-      if (cheapestCandidate) {
-        return { mode: cheapestCandidate.mode, reason: 'cost-optimized' }
-      }
-
-      // All candidates exceed the caller's budget ceiling — error instead of
-      // silently falling through to an over-budget mode.
-      if (budgetStroops !== null) {
-        throw new KikisAppPolicyRejectError('budget_per_request_exceeded')
-      }
-    }
+    return selectByCost(modes, manifest, options)
   }
 
   if (modes.includes('mpp-charge')) return { mode: 'mpp-charge' }
