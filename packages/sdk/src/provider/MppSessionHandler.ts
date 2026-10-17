@@ -72,6 +72,13 @@ export interface MppSessionHandlerOptions {
   assetContract?: string
   manifest: KikisAppManifest
   commitmentPublicKey: string
+  /**
+   * Transport this handler serves, reported to `onSettled` when the channel is
+   * closed. Defaults to 'mpp-session'; the Fastify adapter passes
+   * 'mpp-session-ws' when the WebSocket transport is the provider's primary
+   * session mode (mirrors the Hono adapter's shared session state).
+   */
+  mode?: 'mpp-session' | 'mpp-session-ws'
   onSettled?: (txHash: string, totalPaid: string, mode: string, payer: string | null) => Promise<void>
   onSessionOpen?: (channelId: string, payer: string | null) => Promise<void>
   onVoucher?: (channelId: string, voucherIndex: number, cumulativeAmount: string, signature: string) => Promise<void>
@@ -301,7 +308,7 @@ export function createMppSessionHandler(opts: MppSessionHandlerOptions): Request
 
           if (opts.onSettled) {
             const totalPaid = (Number(closeAmount) / 1e7).toFixed(7)
-            Promise.resolve().then(() => opts.onSettled!(closeTxHash, totalPaid, 'mpp-session', closePayer)).catch(err => {
+            Promise.resolve().then(() => opts.onSettled!(closeTxHash, totalPaid, opts.mode ?? 'mpp-session', closePayer)).catch(err => {
               logger('error', '[mpp-session] onSettled callback error', { error: err })
               opts.onCallbackError?.(err, 'onSettled')
             })

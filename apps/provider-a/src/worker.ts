@@ -71,6 +71,52 @@ function findStartupProblems(env: Env, network: Network): string[] {
 }
 
 /**
+ * Freshness window for the shared orderbook snapshot. Concurrent and
+ * back-to-back /price requests within this window are served from memory.
+ */
+const ORDERBOOK_TTL_MS = 2_000
+/**
+ * How long a snapshot may keep serving paid requests after Horizon stopped
+ * answering (429 rate limits, timeouts, 5xx). Past this age the provider
+ * fails honestly with a 502 rather than quoting a stale mid-price.
+ */
+const ORDERBOOK_STALE_MAX_AGE_MS = 30_000
+
+/** A cached orderbook snapshot, keyed by the Horizon query it came from. */
+interface CachedOrderBook {
+  key: string
+  data: OrderBookResponse
+  timestamp: number
+}
+
+/** Result of a (possibly cached) orderbook read. */
+export interface OrderBookResult {
+  data: OrderBookResponse
+  /** True when Horizon was unreachable and a cached snapshot was served instead. */
+  stale: boolean
+}
+
+/**
+ * Module-scope cache shared by every /price request in this isolate, plus the
+ * single in-flight fetch they coalesce onto.
+ */
+let cachedOrderBook: CachedOrderBook | null = null
+let inFlightOrderBook: { key: string; promise: Promise<OrderBookResult> } | null = null
+
+function orderBookCacheKey(network: Network, limit: number): string {
+  return `${network}:${limit}`
+}
+
+/**
+ * Drop the cached orderbook snapshot and any in-flight fetch.
+ * Exposed for tests; production code never needs it.
+ */
+export function clearOrderBookCache(): void {
+  cachedOrderBook = null
+  inFlightOrderBook = null
+}
+
+/**
  * Fetch the XLM/USDC orderbook straight from Horizon's REST API.
  *
  * The Express build used `Horizon.Server(...).orderbook(...)`, which pulls the
@@ -95,6 +141,66 @@ async function fetchOrderBook(network: Network, limit: number): Promise<OrderBoo
   }
 
   return (await response.json()) as OrderBookResponse
+}
+
+/**
+ * One Horizon fetch whose failures fall back to the most recent snapshot.
+ *
+ * kikisAppHono settles payment before the endpoint handler runs, so a Horizon
+ * hiccup here would fail a request the customer has already paid for. Serving
+ * a snapshot up to {@link ORDERBOOK_STALE_MAX_AGE_MS} old keeps the paid
+ * request succeeding; only a snapshot-free outage still fails.
+ */
+async function readOrderBookWithFallback(
+  key: string,
+  network: Network,
+  limit: number,
+): Promise<OrderBookResult> {
+  try {
+    const data = await fetchOrderBook(network, limit)
+    cachedOrderBook = { key, data, timestamp: Date.now() }
+    return { data, stale: false }
+  } catch (err) {
+    const snapshot = cachedOrderBook
+    const ageMs = snapshot ? Date.now() - snapshot.timestamp : Number.POSITIVE_INFINITY
+    if (snapshot && snapshot.key === key && ageMs <= ORDERBOOK_STALE_MAX_AGE_MS) {
+      console.warn(`[horizon] serving ${ageMs}ms-old cached orderbook after fetch failure:`, err)
+      return { data: snapshot.data, stale: true }
+    }
+    throw err
+  }
+}
+
+/**
+ * Read the orderbook through the isolate-level cache.
+ *
+ * - Requests within the {@link ORDERBOOK_TTL_MS} window are served from
+ *   memory.
+ * - Concurrent misses coalesce onto one in-flight Horizon query, so a burst
+ *   of simultaneous /price requests produces exactly one REST call instead of
+ *   tripping Horizon's 429 rate limit.
+ * - When Horizon fails (429, timeout, 5xx) the most recent snapshot — up to
+ *   {@link ORDERBOOK_STALE_MAX_AGE_MS} old — is served with `stale: true`
+ *   rather than the paid request failing.
+ */
+export async function getOrderBook(network: Network, limit: number): Promise<OrderBookResult> {
+  const key = orderBookCacheKey(network, limit)
+
+  const snapshot = cachedOrderBook
+  if (snapshot && snapshot.key === key && Date.now() - snapshot.timestamp <= ORDERBOOK_TTL_MS) {
+    return { data: snapshot.data, stale: false }
+  }
+
+  const flight =
+    inFlightOrderBook && inFlightOrderBook.key === key
+      ? inFlightOrderBook
+      : { key, promise: readOrderBookWithFallback(key, network, limit) }
+  inFlightOrderBook = flight
+  try {
+    return await flight.promise
+  } finally {
+    if (inFlightOrderBook === flight) inFlightOrderBook = null
+  }
 }
 
 function createApp(env: Env, ctx: ExecutionContext): Hono {
@@ -170,7 +276,7 @@ function createApp(env: Env, ctx: ExecutionContext): Hono {
 
   app.get('/price', async (c) => {
     try {
-      const orderbook = await fetchOrderBook(network, 1)
+      const { data: orderbook, stale } = await getOrderBook(network, 1)
       const ask = orderbook.asks[0]
       const bid = orderbook.bids[0]
 
@@ -186,6 +292,10 @@ function createApp(env: Env, ctx: ExecutionContext): Hono {
       }
 
       const midPrice = (parseFloat(ask.price) + parseFloat(bid.price)) / 2
+
+      // Horizon was rate-limiting or down; this quote comes from the fallback
+      // snapshot, so let the caller know it is not a live reading.
+      if (stale) c.header('X-Orderbook-Stale', 'true')
 
       return c.json({
         price: midPrice.toFixed(7),
