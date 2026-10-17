@@ -245,7 +245,7 @@ describe('Multi-asset challenge validation — checkX402Accept & checkChargeChal
       maxTimeoutSeconds: 60,
       extra: {},
     }
-    const rejection = checkX402Accept(accept, manifest, 'stellar:testnet', '0.001')
+    const rejection = checkX402Accept(accept, manifest, 'stellar:testnet' as const, '0.001')
     assert.equal(rejection, null)
   })
 
@@ -270,7 +270,7 @@ describe('Multi-asset challenge validation — checkX402Accept & checkChargeChal
       maxTimeoutSeconds: 60,
       extra: {},
     }
-    const x402Rejection = checkX402Accept(x402Accept, manifest, 'stellar:testnet', '0.001')
+    const x402Rejection = checkX402Accept(x402Accept, manifest, 'stellar:testnet' as const, '0.001')
     assert.ok(x402Rejection instanceof KikisAppPolicyRejectError)
     assert.equal(x402Rejection.reason, 'challenge_asset_mismatch')
 

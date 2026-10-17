@@ -89,7 +89,7 @@ const fakeMppx = {
     if (mppxScript.fetchNonJson) {
       return new Response('<html>proxy error</html>', {
         status: 200,
-        headers: { 'Content-Type': 'text/html' },
+        headers: { 'Content-Type': 'application/json' },
       })
     }
     if (mppxScript.challenge && capturedOnChallenge) {

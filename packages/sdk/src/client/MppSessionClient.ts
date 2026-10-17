@@ -662,6 +662,7 @@ export class MppSessionClient {
       },
 
       close(): Promise<SessionCloseResult> {
+        clearSessionTimer()
         if (status === 'closed' && lastCloseResult) {
           return Promise.resolve(lastCloseResult)
         }

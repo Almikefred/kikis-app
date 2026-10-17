@@ -82,15 +82,18 @@ function normalizeEndpointCaps(
   return normalized
 }
 
-/** Returns a copy of `spendCap` with `endpointCaps` keys normalized to their origin. */
 function normalizeSpendCap(spendCap: SpendCap): SpendCap {
   const endpointCaps = normalizeEndpointCaps(spendCap.endpointCaps)
-  return {
+  const result: SpendCap = {
     ...spendCap,
     // Default to USDC-compatible 7 decimals if not specified
     decimals: spendCap.decimals ?? 7,
     ...(endpointCaps !== undefined ? { endpointCaps } : {}),
   }
+  if (endpointCaps !== undefined) {
+    result.endpointCaps = endpointCaps
+  }
+  return result
 }
 
 export type VaultConfig = NulthVaultConfig
@@ -377,6 +380,28 @@ export class KikisAppClient {
       ])
 
       const balances = account.balances as unknown[]
+
+      if (targetAsset === 'XLM' || targetAsset === 'native') {
+        const hasNative = balances.some(
+          (b) =>
+            typeof b === 'object' &&
+            b !== null &&
+            (b as Record<string, unknown>).asset_type === 'native',
+        )
+        if (!hasNative) {
+          throw new KikisAppTrustlineError(
+            targetAsset,
+            'native',
+            `Fund account ${this.keypair.publicKey()} with native XLM on ${this.network}`,
+          )
+        }
+        KikisAppClient._trustlineCache.set(cacheKey, {
+          exists: true,
+          expiresAt: Date.now() + TRUSTLINE_CACHE_TTL_MS,
+        })
+        return
+      }
+
       const expectedIssuer = getAssetIssuer(targetAsset, this.network)
       if (!expectedIssuer) {
         throw new KikisAppTrustlineError(
@@ -390,10 +415,9 @@ export class KikisAppClient {
         (b) =>
           typeof b === 'object' &&
           b !== null &&
-          ((targetAsset === 'XLM' && (b as Record<string, unknown>).asset_type === 'native') ||
-            ('asset_code' in b &&
-              (b as Record<string, unknown>).asset_code === targetAsset &&
-              (b as Record<string, unknown>).asset_issuer === expectedIssuer)),
+          'asset_code' in b &&
+          (b as Record<string, unknown>).asset_code === targetAsset &&
+          (b as Record<string, unknown>).asset_issuer === expectedIssuer,
       )
       if (!hasTrustline) {
         const remediation = `Run: stellar tx new --source ${this.keypair.publicKey()} --network ${this.network} change-trust --asset ${targetAsset}:${expectedIssuer} --limit 100000`

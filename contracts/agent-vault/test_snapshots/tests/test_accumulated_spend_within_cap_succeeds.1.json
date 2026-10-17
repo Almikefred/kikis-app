@@ -1,6 +1,6 @@
 {
   "generators": {
-    "address": 7,
+    "address": 5,
     "nonce": 0
   },
   "auth": [
@@ -156,7 +156,7 @@
                           "symbol": "agentpk"
                         },
                         "val": {
-                          "bytes": "8aa524ff96ceca1243b4e45056b28ab0f1cbb68e6cc73eb22c85da818004a895"
+                          "bytes": "b00093fc6db0184bdd94b9a2dd887ba0e267e6a9bd5f9ac9cbaabe4166bd8562"
                         }
                       },
                       {
@@ -227,6 +227,14 @@
                             "lo": 5000000
                           }
                         }
+                      },
+                      {
+                        "key": {
+                          "symbol": "token"
+                        },
+                        "val": {
+                          "address": "CBPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF5AWC"
+                        }
                       }
                     ]
                   }
@@ -274,7 +282,7 @@
                 "symbol": "payment_authorized"
               },
               {
-                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOLZM"
+                "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
               },
               {
                 "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
@@ -289,7 +297,7 @@
                   }
                 },
                 {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMDR4"
+                  "address": "CBPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF4XS6LZPF5AWC"
                 },
                 {
                   "i128": {

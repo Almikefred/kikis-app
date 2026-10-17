@@ -145,6 +145,12 @@ describe('SupabaseSeenTxStore', () => {
     assert.equal(await store.claimReplay('missing'), Number.POSITIVE_INFINITY)
   })
 
+  it('claimReplay returns Infinity when the database replay cap refuses the claim', async () => {
+    // migration 006 returns -1 once replay_count reaches p_max_replays
+    const store = new SupabaseSeenTxStore(mockSupabase({ rpcData: -1 }).client)
+    assert.equal(await store.claimReplay('capped'), Number.POSITIVE_INFINITY)
+  })
+
   it('claimReplay throws KikisAppNetworkError when the RPC errors', async () => {
     const store = new SupabaseSeenTxStore(
       mockSupabase({ rpcError: 'function claim_settlement_replay(text) does not exist' }).client,

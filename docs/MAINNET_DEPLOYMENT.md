@@ -130,7 +130,8 @@ stellar contract deploy \
   --daily_cap 250000000 \
   --allowlist '{"<PAYEE_G_ADDRESS>":"250000000"}' \
   --expiry_ledger <ABSOLUTE_LEDGER_SEQUENCE> \
-  --lifetime_cap 0
+  --lifetime_cap 0 \
+  --authorized_token <USDC_SAC_CONTRACT_ID>
 ```
 
 Record the output as `AGENT_VAULT_CONTRACT_ID`.
@@ -139,12 +140,13 @@ Record the output as `AGENT_VAULT_CONTRACT_ID`.
 
 Deploy-time arguments configure the vault atomically in `__constructor`:
 
-- **`--admin`**: Vault administrator Stellar G-address holding exclusive authorization for admin entrypoints (`set_daily_cap`, `add_to_allowlist`, `remove_from_allowlist`, `set_expiry`, `set_agent_pubkey`, `freeze`/`unfreeze`, `upgrade`, `transfer_admin`).
+- **`--admin`**: Vault administrator Stellar G-address holding exclusive authorization for admin entrypoints (`set_daily_cap`, `add_to_allowlist`, `remove_from_allowlist`, `set_expiry`, `set_agent_pubkey`, `set_token`, `freeze`/`unfreeze`, `upgrade`, `transfer_admin`).
 - **`--agent_pk`**: Agent's 32-byte Ed25519 public key as 64 hex characters used to authorize payments via `__check_auth`.
 - **`--daily_cap`**: Daily spend cap in USDC stroops, where 1 USDC = 10,000,000 stroops (`250000000` = 25 USDC/day conservative cap).
 - **`--allowlist`**: Map of payee address to daily sub-cap in stroops (JSON object format, e.g. `'{"<PAYEE_G_ADDRESS>":"250000000"}'`). Restrict to production provider payee accounts.
 - **`--expiry_ledger`**: Absolute ledger sequence (compared against `env.ledger().sequence()`, **not** a relative duration). Set a short session key lifetime (e.g. current ledger + 720 for ~1 hour, or 4,320 for ~6 hours).
 - **`--lifetime_cap`**: Total USDC stroops the vault may ever spend over its lifetime. Set to `0` for unlimited.
+- **`--authorized_token`**: SAC wrapper contract ID of the asset (USDC on mainnet) that the caps are denominated in. The vault only authorizes `transfer` calls on this contract; any other contract's `transfer` is rejected, so a foreign token can neither move funds nor consume the USDC allowance. Rotatable later by the admin via `set_token`.
 
 Example environment snippet for agent runtime:
 

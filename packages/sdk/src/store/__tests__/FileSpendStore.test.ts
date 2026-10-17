@@ -186,7 +186,7 @@ describe('FileSpendStore', () => {
     assert.deepEqual(recovered, state)
     assert.equal(recovered?.pendingReserves?.length, 2)
     // One stale (>2min), one fresh (<2min)
-    const stale = recovered!.pendingReserves.filter(
+    const stale = (recovered?.pendingReserves ?? []).filter(
       (r) => Date.now() - Date.parse(r.timestamp) > 120_000,
     )
     assert.equal(stale.length, 1)
