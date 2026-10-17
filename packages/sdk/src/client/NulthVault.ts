@@ -72,6 +72,16 @@ export interface NulthVaultConfig {
   dailyCapUsdc: string
   expiryLedger?: number
   verifierContract?: string
+  /**
+   * Custom Soroban RPC URL used for ledger-sequence lookups.
+   * Defaults to public Soroban endpoints for `network`.
+   */
+  sorobanRpcUrl?: string | undefined
+  /**
+   * Timeout in milliseconds for Soroban RPC requests.
+   * Defaults to 10,000 ms (10s).
+   */
+  rpcTimeoutMs?: number | undefined
 }
 
 export function assertNulthVaultManifest(manifest: KikisAppManifest, nulthAccount: string): void {
@@ -83,12 +93,25 @@ export function assertNulthVaultManifest(manifest: KikisAppManifest, nulthAccoun
   }
 }
 
-export async function fetchLedgerSequence(network: 'testnet' | 'mainnet'): Promise<number> {
-  const rpcUrl = network === 'testnet'
-    ? 'https://soroban-testnet.stellar.org'
-    : 'https://soroban.stellar.org'
-  const server = new rpc.Server(rpcUrl)
-  const latest = await server.getLatestLedger()
+export async function fetchLedgerSequence(
+  network: 'testnet' | 'mainnet',
+  options?: { sorobanRpcUrl?: string; rpcTimeoutMs?: number },
+): Promise<number> {
+  const rpcUrl =
+    options?.sorobanRpcUrl ??
+    (network === 'testnet' ? 'https://soroban-testnet.stellar.org' : 'https://soroban.stellar.org')
+  const timeoutMs = options?.rpcTimeoutMs ?? 10_000
+  const server = new rpc.Server(rpcUrl, { allowHttp: rpcUrl.startsWith('http://') })
+  const latest = await Promise.race([
+    server.getLatestLedger(),
+    new Promise<never>((_, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`Soroban RPC request to ${rpcUrl} timed out after ${timeoutMs}ms`))
+      }, timeoutMs)
+      const maybeTimer = timer as unknown as { unref?: () => void }
+      maybeTimer.unref?.()
+    }),
+  ])
   return latest.sequence
 }
 
@@ -108,7 +131,12 @@ export async function prepareNulthSigner(
     )
   }
 
-  const ledgerSequence = ledgerSequenceOverride ?? (await fetchLedgerSequence(network))
+  const ledgerSequence =
+    ledgerSequenceOverride ??
+    (await fetchLedgerSequence(network, {
+      ...(vault.sorobanRpcUrl !== undefined ? { sorobanRpcUrl: vault.sorobanRpcUrl } : {}),
+      ...(vault.rpcTimeoutMs !== undefined ? { rpcTimeoutMs: vault.rpcTimeoutMs } : {}),
+    }))
   const policy = createPolicyState({
     dailyCapUsdc: vault.dailyCapUsdc,
     allowedPayees: vault.allowedPayees,

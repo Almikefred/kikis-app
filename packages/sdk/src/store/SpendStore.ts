@@ -11,7 +11,7 @@ export interface PendingReserve {
   /** Amount reserved, in the asset's base units (e.g. stroops for 7-decimal assets) */
   amountMicros: string
   /** Endpoint origin key this reserve applies to (undefined for global only) */
-  endpointKey?: string
+  endpointKey?: string | undefined
   /** ISO timestamp when the reservation was created */
   timestamp: string
 }
@@ -32,8 +32,10 @@ export interface DailySpend {
   totalMicros: string
   /** Per-endpoint accumulated spend for the day, keyed by origin URL, in base units */
   endpoints: Record<string, string>
-  /** In-flight reservations awaiting commit or rollback */
-  pendingReserves?: PendingReserve[]
+  /** In-flight reservations awaiting commit or rollback.
+   * Optional for backwards compatibility with fixtures written before durable
+   * pending reserves were introduced — missing journals read as empty. */
+  pendingReserves?: PendingReserve[] | undefined
 }
 
 // ── Interface ──────────────────────────────────────────────────────────────────

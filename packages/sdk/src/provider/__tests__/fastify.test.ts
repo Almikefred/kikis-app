@@ -2,8 +2,10 @@ import assert from 'node:assert/strict'
 import { describe, it, after } from 'node:test'
 import { createServer, type Server } from 'node:http'
 import Fastify from 'fastify'
+import fastifyWebsocket from '@fastify/websocket'
+import { WebSocket } from 'ws'
 import { Keypair } from '@stellar/stellar-sdk'
-import { kikisAppFastify, type KikisAppFastifyOptions } from '../fastify.js'
+import { kikisAppFastify, mppSessionWsFastifyVerified, type KikisAppFastifyOptions } from '../fastify.js'
 import type { KikisAppManifest } from '../../types.js'
 import {
   InMemorySeenTxStore,
@@ -228,6 +230,69 @@ describe('kikisAppFastify — mpp-session flow', () => {
   })
 })
 
+describe('kikisAppFastify — mpp-session-ws flow', () => {
+  const WS_PRICING = { 'mpp-session-ws': { rate: '0.0001', channelFactory: CHANNEL_CONTRACT } }
+
+  it('returns 402 challenge when no authorization header', async () => {
+    const { url, close } = await makeServer({ modes: ['mpp-session-ws'], pricing: WS_PRICING })
+    try {
+      const res = await fetch(`${url}/price`)
+      assert.equal(res.status, 402)
+    } finally {
+      await close()
+    }
+  })
+
+  it('returns { closeTxHash: null } on DELETE with no prior vouchers', async () => {
+    const { url, close } = await makeServer({ modes: ['mpp-session-ws'], pricing: WS_PRICING })
+    try {
+      const res = await fetch(`${url}/price`, { method: 'DELETE' })
+      assert.equal(res.status, 200)
+      const body = await res.json() as { closeTxHash: null }
+      assert.equal(body.closeTxHash, null)
+    } finally {
+      await close()
+    }
+  })
+
+  it('rejects an unauthenticated WebSocket handshake with 402 before the upgrade', async () => {
+    const fastify = Fastify()
+    await fastify.register(fastifyWebsocket)
+    await fastify.register(
+      kikisAppFastify({
+        ...BASE_OPTS,
+        modes: ['mpp-session-ws'],
+        pricing: WS_PRICING,
+      } as KikisAppFastifyOptions),
+    )
+
+    let routeRan = false
+    fastify.get('/stream', { websocket: true }, (socket: WebSocket) => {
+      routeRan = true
+      socket.close()
+    })
+
+    await fastify.listen({ port: 0, host: '127.0.0.1' })
+    const address = fastify.server.address()
+    const port = typeof address === 'object' && address ? address.port : 0
+    try {
+      await assert.rejects(
+        () =>
+          new Promise<void>((resolve, reject) => {
+            const socket = new WebSocket(`ws://127.0.0.1:${port}/stream`)
+            socket.once('open', () => resolve())
+            socket.once('error', reject)
+          }),
+        /Unexpected server response: 402/,
+        'the handshake must be refused with 402 before any WebSocket upgrade',
+      )
+      assert.equal(routeRan, false, 'the upgrade route must not run for an unpaid handshake')
+    } finally {
+      await fastify.close()
+    }
+  })
+})
+
 describe('kikisAppFastify — settlement idempotency', () => {
   const X402_AMOUNT = String(usdcToStroops('0.001'))
 
@@ -425,5 +490,26 @@ describe('kikisAppFastify — constructor validation', () => {
         } as unknown as Parameters<typeof kikisAppFastify>[0]),
       /requirescommitmentPublicKey|commitmentPublicKey/i,
     )
+  })
+
+  it('throws when mpp-session-ws mode is enabled without commitmentPublicKey', () => {
+    assert.throws(
+      () =>
+        kikisAppFastify({
+          ...BASE_OPTS,
+          commitmentPublicKey: undefined,
+          modes: ['mpp-session-ws'],
+          pricing: { 'mpp-session-ws': { rate: '0.0001', channelFactory: CHANNEL_CONTRACT } },
+        } as unknown as Parameters<typeof kikisAppFastify>[0]),
+      /requirescommitmentPublicKey|commitmentPublicKey/i,
+    )
+  })
+})
+
+describe('mppSessionWsFastifyVerified helper', () => {
+  it('returns true only when the verified flag is set on the request', () => {
+    assert.equal(mppSessionWsFastifyVerified({}), false)
+    assert.equal(mppSessionWsFastifyVerified({ 'kikis-app.mppSessionWs.verified': true }), true)
+    assert.equal(mppSessionWsFastifyVerified({ 'kikis-app.mppSessionWs.verified': 'yes' }), false)
   })
 })
