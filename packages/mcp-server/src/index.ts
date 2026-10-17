@@ -18,6 +18,8 @@ import {
   handleCloseSession,
   handleCheckBalance,
   handleListProviders,
+  handleCheckSpendCap,
+  handleCheckVaultStatus,
   type HandlerDeps,
   type PayForDataArgs,
   type OpenSessionArgs,
@@ -133,6 +135,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'list_providers':
         return await handleListProviders(args as unknown as ListProvidersArgs, deps)
+
+      case 'check_spend_cap':
+        return await handleCheckSpendCap(deps)
+
+      case 'check_vault_status':
+      case 'get_vault_status':
+        return await handleCheckVaultStatus(deps)
 
       default:
         throw new Error(`Unknown tool: ${name}`)

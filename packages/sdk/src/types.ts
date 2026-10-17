@@ -320,6 +320,11 @@ export interface SessionOptions {
    */
   mode?: 'mpp-session' | 'mpp-session-ws'
   /**
+   * Optional secret key used to sign session commitment hashes. Overrides the
+   * commitmentSecret passed in KikisAppClientConfig for this session.
+   */
+  commitmentSecret?: string
+  /**
    * Maximum wall-clock lifetime of the session in milliseconds. When the
    * timer fires, the session emits 'session:timeout' and auto-closes so an
    * orphaned channel cannot keep collateral locked on-chain indefinitely.
