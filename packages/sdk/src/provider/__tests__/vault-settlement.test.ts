@@ -3,18 +3,24 @@ import { describe, it } from 'node:test'
 import { Account, Keypair, Networks, scValToNative, StrKey, TransactionBuilder } from '@stellar/stellar-sdk'
 import { buildSessionSettlementTransaction, resolveVaultSettlementAddresses } from '../internal/vaultSettlement.js'
 
-describe('vault session settlement attribution', () => {
-  it('uses the captured session payer and provider payee as distinct participants', () => {
-    const payer = Keypair.random().publicKey()
+describe('vault session settlement attribution (#16)', () => {
+  it('attributes every settlement to the vault instance that governs it', () => {
+    // The vault is the governed payer account, so the settlement is
+    // attributed to this vault no matter who opened the channel or which
+    // payee settled it (#16). A third-party payer must never be accepted.
+    const vault = 'CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEUZ3'
     const payee = Keypair.random().publicKey()
 
-    assert.deepEqual(resolveVaultSettlementAddresses(payer, payee), { payer, payee })
+    assert.deepEqual(resolveVaultSettlementAddresses(vault, payee), {
+      payer: vault,
+      payee,
+    })
   })
 
-  it('returns null instead of substituting the provider when payer extraction failed', () => {
-    const payee = Keypair.random().publicKey()
-
-    assert.equal(resolveVaultSettlementAddresses(null, payee), null)
+  it('returns null when the vault address is unavailable', () => {
+    // Publishing no audit event is safer than silently attributing the
+    // settlement to the wrong account.
+    assert.equal(resolveVaultSettlementAddresses(null, 'G...'), null)
   })
 })
 
@@ -78,6 +84,29 @@ describe('buildSessionSettlementTransaction', () => {
     assert.equal(fn, 'record_session_settlement')
     // (channel_id, payer, payee, cumulative_amount, voucher_count)
     assert.deepEqual(args, [CHANNEL, PAYER, payeePublicKey, 500_000n, 42])
+  })
+
+  it('attributed payer equals the vault contract instance', () => {
+    const vault = StrKey.encodeContract(Keypair.random().rawPublicKey())
+    const payee = Keypair.random()
+    const payeePublicKey = payee.publicKey()
+
+    const tx = buildSessionSettlementTransaction(
+      new Account(payeePublicKey, '0'),
+      vault,
+      CHANNEL,
+      { payer: vault, payee: payeePublicKey },
+      500_000n,
+      42,
+      Networks.TESTNET,
+    )
+
+    const { fn, args } = hostCall(tx, Networks.TESTNET)
+    assert.equal(fn, 'record_session_settlement')
+    // (channel_id, payer=vault, payee, cumulative_amount, voucher_count)
+    assert.deepEqual(args, [CHANNEL, vault, payeePublicKey, 500_000n, 42])
+    // The payer carried on-chain must be the vault itself.
+    assert.equal(args[1], vault)
   })
 
   it('passes the channel close amount and voucher count through unchanged', () => {

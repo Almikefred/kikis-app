@@ -63,6 +63,7 @@ interface RpcScript {
   simulateTransaction?: (tx: unknown) => unknown
   prepareTransaction?: (tx: unknown) => unknown
   sendTransaction?: (tx: unknown) => unknown
+  getTransaction?: (hash: string) => unknown
   isSimulationError?: (result: unknown) => boolean
 }
 
@@ -88,6 +89,9 @@ function buildFakeSdk() {
     }
     async sendTransaction(tx: unknown) {
       return (rpc.sendTransaction ?? (() => ({ hash: 'DEFAULT_HASH' })))(tx)
+    }
+    async getTransaction(hash: string) {
+      return (rpc.getTransaction ?? (() => ({ status: 'SUCCESS' })))(hash)
     }
   }
 
@@ -156,6 +160,34 @@ describe('requestRefund()', () => {
     assert.equal(hash, 'REFUND_TX_HASH')
   })
 
+  it('waits for transaction inclusion before returning the hash', async () => {
+    let polls = 0
+    rpc.sendTransaction = () => ({ hash: 'REFUND_TX_HASH' })
+    rpc.getTransaction = () => {
+      polls++
+      if (polls < 2) return { status: 'NOT_FOUND' }
+      return { status: 'SUCCESS' }
+    }
+    const handle = await openHandle()
+    const hash = await handle.requestRefund()
+    assert.equal(hash, 'REFUND_TX_HASH')
+    assert.ok(polls >= 2, 'must poll getTransaction until inclusion')
+  })
+
+  it('throws KikisAppDisputeError with result code when on-chain execution fails during ledger close', async () => {
+    rpc.sendTransaction = () => ({ hash: 'REFUND_TX_HASH' })
+    rpc.getTransaction = () => ({ status: 'FAILED', resultCode: 'tx_failed' })
+    const handle = await openHandle()
+    await assert.rejects(
+      () => handle.requestRefund(),
+      (err: unknown) => {
+        assert.ok(err instanceof KikisAppDisputeError)
+        assert.match((err as Error).message, /tx_failed/)
+        return true
+      },
+    )
+  })
+
   it('throws KikisAppDisputeError when there is no open channel (simulation fails)', async () => {
     rpc.isSimulationError = () => true
     rpc.simulateTransaction = () => ({ error: 'channel not open' })
@@ -200,6 +232,40 @@ describe('settleWithLatestVoucher()', () => {
     const handle = await openHandle()
     const hash = await handle.settleWithLatestVoucher()
     assert.equal(hash, 'SETTLE_TX_HASH')
+  })
+
+  it('waits for transaction inclusion before returning the hash', async () => {
+    let polls = 0
+    rpc.simulateTransaction = () => ({
+      result: { retval: { bytes: () => Buffer.from([1, 2, 3, 4]) } },
+    })
+    rpc.sendTransaction = () => ({ hash: 'SETTLE_TX_HASH' })
+    rpc.getTransaction = () => {
+      polls++
+      if (polls < 2) return { status: 'NOT_FOUND' }
+      return { status: 'SUCCESS' }
+    }
+    const handle = await openHandle()
+    const hash = await handle.settleWithLatestVoucher()
+    assert.equal(hash, 'SETTLE_TX_HASH')
+    assert.ok(polls >= 2, 'must poll getTransaction until inclusion')
+  })
+
+  it('throws KikisAppDisputeError with result code when on-chain settlement fails during ledger close', async () => {
+    rpc.simulateTransaction = () => ({
+      result: { retval: { bytes: () => Buffer.from([1, 2, 3, 4]) } },
+    })
+    rpc.sendTransaction = () => ({ hash: 'SETTLE_TX_HASH' })
+    rpc.getTransaction = () => ({ status: 'FAILED', result_code: 'op_underfunded' })
+    const handle = await openHandle()
+    await assert.rejects(
+      () => handle.settleWithLatestVoucher(),
+      (err: unknown) => {
+        assert.ok(err instanceof KikisAppDisputeError)
+        assert.match((err as Error).message, /op_underfunded/)
+        return true
+      },
+    )
   })
 
   it('throws KikisAppDisputeError when prepare_commitment returns no bytes', async () => {

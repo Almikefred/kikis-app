@@ -31,11 +31,16 @@ export function useSession(url: string): UseSessionResult {
   const [error, setError] = useState<Error | null>(null)
   const mountedRef = useRef(true)
   const sessionRef = useRef<SessionHandle | null>(null)
+  const unsubscribeRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     mountedRef.current = true
     return () => {
       mountedRef.current = false
+      // Detach the live-stats listener first so no voucher event can land on
+      // an unmounted component (#15).
+      unsubscribeRef.current?.()
+      unsubscribeRef.current = null
       const s = sessionRef.current
       if (s) {
         s.close().catch(() => {
@@ -52,6 +57,16 @@ export function useSession(url: string): UseSessionResult {
     try {
       const s = await client.openSession(url)
       sessionRef.current = s
+      // Subscribe to per-voucher updates so vouchers/cumulative move in real
+      // time during streaming instead of staying at their initial zeros until
+      // close() resolves (#15). A previous session's listener (if any) is
+      // detached before attaching the new one.
+      unsubscribeRef.current?.()
+      unsubscribeRef.current = s.on('session:voucher', (payload) => {
+        if (!mountedRef.current) return
+        setVouchers(payload.vouchersIssued)
+        setCumulative(payload.currentCumulative)
+      })
       if (mountedRef.current) {
         setSession(s)
         setStatus('open')
@@ -74,6 +89,10 @@ export function useSession(url: string): UseSessionResult {
     try {
       const r = await s.close()
       sessionRef.current = null
+      // The session is settled — stop listening. The close result carries the
+      // authoritative final totals below, so no further update can arrive.
+      unsubscribeRef.current?.()
+      unsubscribeRef.current = null
       if (mountedRef.current) {
         setSession(null)
         setStatus('closed')

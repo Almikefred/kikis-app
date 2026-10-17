@@ -11,8 +11,10 @@ import {
   httpStatusToError,
   wrapMppError,
 } from '../errors.js'
-import { stroopsToUsdc } from '../internal/usdc.js'
+import { stroopsToAmount } from '../internal/usdc.js'
+import { selectAsset, resolveAssetContract } from '../internal/assetUtils.js'
 import { withRetry, type RetryPolicy } from '../internal/retry.js'
+import { prepareHttpRequestInit } from '../internal/http.js'
 import { checkChargeChallenge, type Caip2Network } from './challenge.js'
 import type { ModeSelectOptions } from './ModeRouter.js'
 
@@ -86,7 +88,8 @@ export class MppChargeClient {
   async pay(
     url: string,
     manifest: KikisAppManifest,
-    options?: ModeSelectOptions,
+    options?: ModeSelectOptions & { endpoint?: string },
+    endpoint?: string,
   ): Promise<PaymentResult> {
     const pricing = manifest.pricing['mpp-charge']
     if (!pricing) {
@@ -96,13 +99,20 @@ export class MppChargeClient {
     const caip2: Caip2Network =
       this.network === 'mainnet' ? 'stellar:pubnet' : 'stellar:testnet'
 
-    const endpoint = (() => {
-      try {
-        return new URL(url).pathname
-      } catch {
-        return url
-      }
-    })()
+    const targetEndpoint =
+      endpoint ??
+      options?.endpoint ??
+      (() => {
+        try {
+          return new URL(url).pathname
+        } catch {
+          return url
+        }
+      })()
+
+    const selectedAsset = selectAsset(manifest, 'mpp-charge', targetEndpoint)
+    const assetContract = resolveAssetContract(manifest, 'mpp-charge', targetEndpoint)
+    const decimals = selectedAsset.decimals ?? 7
 
     const maxFeeCap = this.options?.maxFeeStroops ?? this.options?.maxBaseFeeStroops
     let calculatedFee = 100
@@ -160,25 +170,30 @@ export class MppChargeClient {
       onChallenge: async (challenge, { createCredential }) => {
         // Bind the unsigned challenge to the signed manifest before signing.
         const request = challenge.request
-        const rejection = checkChargeChallenge(request, manifest, caip2, pricing.amount, endpoint)
+        const rejection = checkChargeChallenge(request, manifest, caip2, pricing.amount, targetEndpoint)
         if (rejection) throw rejection
 
         const amount = request['amount']
         if (typeof amount !== 'string') {
           throw new KikisAppPolicyRejectError('challenge_amount_invalid')
         }
-        signedAmount = stroopsToUsdc(BigInt(amount))
+        signedAmount = stroopsToAmount(BigInt(amount), decimals)
         credential ??= await createCredential()
         return credential
       },
     })
 
+    const reqInit = prepareHttpRequestInit(options?.request)
+
     return withRetry(async (): Promise<PaymentResult> => {
       let response: Response
       try {
         response = credential
-          ? await mppx.rawFetch(url, { headers: { Authorization: credential } })
-          : await mppx.fetch(url)
+          ? await mppx.rawFetch(url, {
+              ...reqInit,
+              headers: { ...reqInit.headers, Authorization: credential },
+            })
+          : await mppx.fetch(url, reqInit)
       } catch (err) {
         throw wrapMppError(err, 'MPP charge request')
       }
