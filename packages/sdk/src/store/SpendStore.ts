@@ -41,6 +41,14 @@ export interface DailySpend {
 // ── Interface ──────────────────────────────────────────────────────────────────
 
 /**
+ * Computes the next accumulator from the current one. Return `null` or
+ * `undefined` to leave the stored state unchanged; throw to abort.
+ */
+export type SpendUpdater = (
+  current: DailySpend | null,
+) => DailySpend | null | undefined | Promise<DailySpend | null | undefined>
+
+/**
  * Durable backing store for the client's local daily spend cap.
  *
  * The spend cap is a financial safety control: if its accumulator lives only in
@@ -53,6 +61,15 @@ export interface SpendStore {
   read(): Promise<DailySpend | null>
   /** Persist the accumulator. */
   write(state: DailySpend): Promise<void>
+  /**
+   * Optionally, run a read-modify-write atomically with respect to every
+   * other process sharing this store (e.g. under a lock or transaction).
+   * When present, the client uses it for all spend-cap updates so concurrent
+   * agents cannot read the same total and overwrite each other's spend.
+   * Optional so stores written against the original `read`/`write` contract
+   * keep compiling; those remain serialized only within one client instance.
+   */
+  mutate?(updateFn: SpendUpdater): Promise<void>
 }
 
 // ── In-memory implementation (default) ──────────────────────────────────────────
@@ -89,6 +106,11 @@ export class InMemorySpendStore implements SpendStore {
 
   async write(state: DailySpend): Promise<void> {
     this.state = { ...state, endpoints: { ...state.endpoints } }
+  }
+
+  async mutate(updateFn: SpendUpdater): Promise<void> {
+    const next = await updateFn(await this.read())
+    if (next) await this.write(next)
   }
 }
 

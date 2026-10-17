@@ -2,17 +2,18 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { SupabaseSeenTxStore } from '../SupabaseSeenTxStore.js'
+import { InMemorySeenTxStore } from '../../provider/SeenTxStore.js'
 
 interface MockOptions {
-  queryError?: string
-  upsertError?: string
+  queryError?: string | (() => string | null)
+  upsertError?: string | (() => string | null)
   data?: {
     tx_hash: string | null
     headers: Record<string, string> | null
     created_at?: string
-  } | null
-  rpcData?: number | null
-  rpcError?: string
+  } | null | (() => { tx_hash: string | null; headers: Record<string, string> | null; created_at?: string } | null)
+  rpcData?: number | null | (() => number | null)
+  rpcError?: string | (() => string | null)
 }
 
 function mockSupabase(opts: MockOptions) {
@@ -26,9 +27,11 @@ function mockSupabase(opts: MockOptions) {
             eq(_field: string, _val: string) {
               return {
                 maybeSingle() {
+                  const err = typeof opts.queryError === 'function' ? opts.queryError() : opts.queryError
+                  const d = typeof opts.data === 'function' ? opts.data() : opts.data
                   return Promise.resolve({
-                    data: opts.data ?? null,
-                    error: opts.queryError ? { message: opts.queryError } : null,
+                    data: d ?? null,
+                    error: err ? { message: err } : null,
                   })
                 },
               }
@@ -37,18 +40,21 @@ function mockSupabase(opts: MockOptions) {
         },
         upsert(payload: unknown, _opts: unknown) {
           upserts.push(payload)
+          const err = typeof opts.upsertError === 'function' ? opts.upsertError() : opts.upsertError
           return Promise.resolve({
             data: null,
-            error: opts.upsertError ? { message: opts.upsertError } : null,
+            error: err ? { message: err } : null,
           })
         },
       }
     },
     rpc(fn: string, args: unknown) {
       rpcCalls.push({ fn, args })
+      const err = typeof opts.rpcError === 'function' ? opts.rpcError() : opts.rpcError
+      const d = typeof opts.rpcData === 'function' ? opts.rpcData() : opts.rpcData
       return Promise.resolve({
-        data: opts.rpcData ?? null,
-        error: opts.rpcError ? { message: opts.rpcError } : null,
+        data: d ?? null,
+        error: err ? { message: err } : null,
       })
     },
   } as unknown as SupabaseClient
@@ -151,13 +157,68 @@ describe('SupabaseSeenTxStore', () => {
     assert.equal(await store.claimReplay('capped'), Number.POSITIVE_INFINITY)
   })
 
-  it('claimReplay throws KikisAppNetworkError when the RPC errors', async () => {
+  it('retries on transient query error and succeeds when query subsequently succeeds', async () => {
+    let attempts = 0
     const store = new SupabaseSeenTxStore(
-      mockSupabase({ rpcError: 'function claim_settlement_replay(text) does not exist' }).client,
+      mockSupabase({
+        queryError: () => {
+          attempts++
+          return attempts === 1 ? 'connection reset by peer' : null
+        },
+        data: () => ({ tx_hash: 'tx_retry_ok', headers: null, created_at: '2026-09-01T12:00:00.000Z' }),
+      }).client,
+      {
+        retryPolicy: { maxAttempts: 2, baseDelayMs: 5, maxDelayMs: 20 },
+      },
     )
-    await assert.rejects(() => store.claimReplay('key1'), {
-      name: 'KikisAppNetworkError',
-      message: /SupabaseSeenTxStore\.claimReplay failed/,
-    })
+    const result = await store.get('retry_key')
+    assert.equal(attempts, 2)
+    assert.equal(result?.txHash, 'tx_retry_ok')
+  })
+
+  it('falls back to fallbackStore.get when Supabase query fails after exhausted retries', async () => {
+    const fallback = new InMemorySeenTxStore({ warn: false })
+    fallback.set('fallback_key', { txHash: 'tx_from_fallback', createdAt: 12345 })
+
+    const store = new SupabaseSeenTxStore(
+      mockSupabase({ queryError: 'connection refused' }).client,
+      {
+        fallbackStore: fallback,
+        retryPolicy: { maxAttempts: 1, baseDelayMs: 5, maxDelayMs: 10 },
+      },
+    )
+
+    const result = await store.get('fallback_key')
+    assert.deepEqual(result, { txHash: 'tx_from_fallback', createdAt: 12345 })
+  })
+
+  it('falls back to fallbackStore.set when Supabase upsert fails after exhausted retries', async () => {
+    const fallback = new InMemorySeenTxStore({ warn: false })
+    const store = new SupabaseSeenTxStore(
+      mockSupabase({ upsertError: 'database timeout' }).client,
+      {
+        fallbackStore: fallback,
+        retryPolicy: { maxAttempts: 1, baseDelayMs: 5, maxDelayMs: 10 },
+      },
+    )
+
+    await store.set('set_fallback_key', { txHash: 'tx_fallback_set', createdAt: 54321 })
+    assert.equal(fallback.get('set_fallback_key')?.txHash, 'tx_fallback_set')
+  })
+
+  it('falls back to fallbackStore.claimReplay when Supabase claimReplay RPC fails after exhausted retries', async () => {
+    const fallback = new InMemorySeenTxStore({ warn: false })
+    fallback.set('claim_key', { txHash: 'tx_claim', createdAt: Date.now() })
+
+    const store = new SupabaseSeenTxStore(
+      mockSupabase({ rpcError: 'rpc timeout' }).client,
+      {
+        fallbackStore: fallback,
+        retryPolicy: { maxAttempts: 1, baseDelayMs: 5, maxDelayMs: 10 },
+      },
+    )
+
+    const count = await store.claimReplay('claim_key')
+    assert.equal(count, 1)
   })
 })

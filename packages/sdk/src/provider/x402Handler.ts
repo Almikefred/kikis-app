@@ -11,7 +11,7 @@ import {
 } from '@x402/core/http'
 import type { Network as X402Network } from '@x402/core/types'
 import type { KikisAppManifest } from '../types.js'
-import { KikisAppManifestError } from '../errors.js'
+import { KikisAppManifestError, KikisAppNetworkError } from '../errors.js'
 import { resolvePayee } from '../internal/payee.js'
 import { usdcToUnits } from '../internal/usdc.js'
 import { extractPayerAddress } from './payer.js'
@@ -48,6 +48,8 @@ export interface X402HandlerOptions {
    * retries the same signed payment. Defaults to a per-handler in-memory store.
    */
   seenTxStore?: SeenTxStore
+  /** Optional secondary fallback store when seenTxStore is unavailable. */
+  fallbackSeenTxStore?: SeenTxStore
   /** Log sink for internal error paths. Defaults to a console-backed logger. */
   logger?: KikisAppLogger
 }
@@ -169,7 +171,15 @@ export function createX402Handler(opts: X402HandlerOptions): RequestHandler {
         },
       )
       if (idempotencyKey) {
-        const replayCheck = await checkSettlementReplay(seenTxStore, idempotencyKey)
+        const replayCheck = await checkSettlementReplay(seenTxStore, idempotencyKey, Date.now(), {
+          fallbackStore: opts.fallbackSeenTxStore,
+          logger: opts.logger,
+        })
+        if (replayCheck.kind === 'unavailable') {
+          res.setHeader('Retry-After', '5')
+          res.status(503).json({ error: 'Idempotency store unavailable', reason: replayCheck.error.message })
+          return
+        }
         if (replayCheck.kind === 'spent') {
           res.status(402).json({ error: 'Payment already used' })
           return
@@ -257,7 +267,15 @@ export function createX402Handler(opts: X402HandlerOptions): RequestHandler {
         if (typeof paymentResponse === 'string') {
           headers['X-Payment-Response'] = paymentResponse
         }
-        await seenTxStore.set(idempotencyKey, { txHash, headers, createdAt: Date.now() })
+        try {
+          await seenTxStore.set(idempotencyKey, { txHash, headers, createdAt: Date.now() })
+        } catch (setErr) {
+          if (opts.fallbackSeenTxStore) {
+            await opts.fallbackSeenTxStore.set(idempotencyKey, { txHash, headers, createdAt: Date.now() })
+          } else {
+            throw setErr
+          }
+        }
       }
 
       if (txHash && opts.onSettled) {
@@ -271,6 +289,11 @@ export function createX402Handler(opts: X402HandlerOptions): RequestHandler {
     } catch (err) {
       if (err instanceof KikisAppManifestError) {
         next(err)
+        return
+      }
+      if (err instanceof KikisAppNetworkError) {
+        res.setHeader('Retry-After', '5')
+        res.status(503).json({ error: 'Service Unavailable', reason: err.message })
         return
       }
       logger('error', '[x402] Settlement error', { error: err })

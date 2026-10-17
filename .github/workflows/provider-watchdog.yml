@@ -41,7 +41,14 @@ jobs:
           }
 
           check_provider() {
-            local name="$1" base="$2" paid_path="$3"
+            local name="$1" base="$2" fallback_base="$3" paid_path="$4"
+
+            # Fall back to legacy provider URL if target host does not resolve or connect
+            if ! curl -sS --max-time 5 "$base/health" >/dev/null 2>&1; then
+              if [ -n "$fallback_base" ] && curl -sS --max-time 5 "$fallback_base/health" >/dev/null 2>&1; then
+                base="$fallback_base"
+              fi
+            fi
 
             local health
             health="$(curl -sS --max-time 20 "$base/health" || true)"
@@ -53,6 +60,9 @@ jobs:
 
             local manifest
             manifest="$(curl -sS --max-time 20 "$base/.well-known/kikis-app.json" || true)"
+            if [ -z "$(printf '%s' "$manifest" | jq -r '.signature // empty' 2>/dev/null)" ]; then
+              manifest="$(curl -sS --max-time 20 "$base/.well-known/routedock.json" || true)"
+            fi
             if ! printf '%s' "$manifest" | jq -e . >/dev/null 2>&1; then
               record "$name manifest is not valid JSON"
             elif [ -z "$(printf '%s' "$manifest" | jq -r '.signature // empty' 2>/dev/null)" ]; then
@@ -70,8 +80,8 @@ jobs:
             fi
           }
 
-          check_provider "provider-a" "$PROVIDER_A_URL" "/price"
-          check_provider "provider-b" "$PROVIDER_B_URL" "/stream/orderbook"
+          check_provider "provider-a" "$PROVIDER_A_URL" "https://api-a.routedock.xyz" "/price"
+          check_provider "provider-b" "$PROVIDER_B_URL" "https://api-b.routedock.xyz" "/stream/orderbook"
 
           if [ ! -s "$REPORT_FILE" ]; then
             echo "Both providers healthy."

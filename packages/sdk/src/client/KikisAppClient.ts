@@ -5,7 +5,7 @@ import { MppChargeClient } from './MppChargeClient.js'
 import { MppSessionClient } from './MppSessionClient.js'
 import { prepareNulthSigner, NulthPolicyError, type NulthVaultConfig } from './NulthVault.js'
 import type { PaymentResult, SessionHandle, SessionOptions, KikisAppManifest, PaymentMode, EstimateCostResult, PreflightResult, HttpRequestOptions } from '../types.js'
-import { KikisAppManifestError, KikisAppPolicyRejectError, KikisAppTrustlineError } from '../errors.js'
+import { KikisAppManifestError, KikisAppNetworkError, KikisAppPolicyRejectError, KikisAppTrustlineError } from '../errors.js'
 import type { RetryPolicy } from '../internal/retry.js'
 import { ASSET_ISSUERS, getAssetIssuer, usdcToStroops, amountToStroops } from '../internal/usdc.js'
 import { InMemorySpendStore, type DailySpend, type SpendStore } from '../store/SpendStore.js'
@@ -715,56 +715,65 @@ export class KikisAppClient {
     if (!this.spendCap) return ''
 
     return this._withSpendMutex(async () => {
-      const today = new Date().toISOString().slice(0, 10)
-      const persisted = await this.spendStore.read()
-      const current: DailySpend =
-        persisted && persisted.date === today
-          ? persisted
-          : {
-              date: today,
-              totalMicros: '0',
-              endpoints: {},
-              pendingReserves: [],
-            }
+      let reserveId = ''
+      const updateFn = (persisted: DailySpend | null): DailySpend => {
+        const today = new Date().toISOString().slice(0, 10)
+        const current: DailySpend =
+          persisted && persisted.date === today
+            ? persisted
+            : {
+                date: today,
+                totalMicros: '0',
+                endpoints: {},
+                pendingReserves: [],
+              }
 
-      const amountMicros = amountToStroops(amount, decimals)
-      const total = BigInt(current.totalMicros)
+        const amountMicros = amountToStroops(amount, decimals)
+        const total = BigInt(current.totalMicros)
 
-      // 1. Per-endpoint cap check
-      const endpointCapStr = this.spendCap!.endpointCaps?.[endpointKey]
-      if (endpointCapStr !== undefined) {
-        const endpointCapMicros = amountToStroops(endpointCapStr, decimals)
-        const endpointTotal = BigInt(current.endpoints[endpointKey] ?? '0')
-        if (endpointTotal + amountMicros > endpointCapMicros) {
-          throw new KikisAppPolicyRejectError('local_endpoint_cap_exceeded')
+        // 1. Per-endpoint cap check
+        const endpointCapStr = this.spendCap!.endpointCaps?.[endpointKey]
+        if (endpointCapStr !== undefined) {
+          const endpointCapMicros = amountToStroops(endpointCapStr, decimals)
+          const endpointTotal = BigInt(current.endpoints[endpointKey] ?? '0')
+          if (endpointTotal + amountMicros > endpointCapMicros) {
+            throw new KikisAppPolicyRejectError('local_endpoint_cap_exceeded')
+          }
         }
+
+        // 2. Global daily cap check
+        const globalCapMicros = amountToStroops(this.spendCap!.daily, decimals)
+        if (total + amountMicros > globalCapMicros) {
+          throw new KikisAppPolicyRejectError('local_daily_cap_exceeded')
+        }
+
+        // Both checks passed — reserve the spend (tentatively record)
+        reserveId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+        const now = Date.now()
+        this._pendingReserves.set(reserveId, { endpointKey, amountMicros, timestamp: now })
+
+        // Journal the pending reservation durably
+        ;(current.pendingReserves ??= []).push({
+          reserveId,
+          amountMicros: amountMicros.toString(),
+          endpointKey,
+          timestamp: new Date(now).toISOString(),
+        })
+
+        current.totalMicros = (total + amountMicros).toString()
+        if (endpointCapStr !== undefined) {
+          current.endpoints[endpointKey] =
+            (BigInt(current.endpoints[endpointKey] ?? '0') + amountMicros).toString()
+        }
+        return current
       }
 
-      // 2. Global daily cap check
-      const globalCapMicros = amountToStroops(this.spendCap!.daily, decimals)
-      if (total + amountMicros > globalCapMicros) {
-        throw new KikisAppPolicyRejectError('local_daily_cap_exceeded')
+      if (this.spendStore.mutate) {
+        await this.spendStore.mutate(updateFn)
+      } else {
+        const updated = await updateFn(await this.spendStore.read())
+        await this.spendStore.write(updated)
       }
-
-      // Both checks passed — reserve the spend (tentatively record)
-      const reserveId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-      const now = Date.now()
-      this._pendingReserves.set(reserveId, { endpointKey, amountMicros, timestamp: now })
-
-      // Journal the pending reservation durably
-      ;(current.pendingReserves ??= []).push({
-        reserveId,
-        amountMicros: amountMicros.toString(),
-        endpointKey,
-        timestamp: new Date(now).toISOString(),
-      })
-
-      current.totalMicros = (total + amountMicros).toString()
-      if (endpointCapStr !== undefined) {
-        current.endpoints[endpointKey] =
-          (BigInt(current.endpoints[endpointKey] ?? '0') + amountMicros).toString()
-      }
-      await this.spendStore.write(current)
       return reserveId
     })
   }
@@ -781,12 +790,20 @@ export class KikisAppClient {
     if (!this.spendCap) return
     await this._withSpendMutex(async () => {
       const today = new Date().toISOString().slice(0, 10)
-      const persisted = await this.spendStore.read()
-      if (!persisted || persisted.date !== today) return
-      persisted.pendingReserves = (persisted.pendingReserves ?? []).filter(
-        (r) => r.reserveId !== reserveId,
-      )
-      await this.spendStore.write(persisted)
+      const updateFn = (persisted: DailySpend | null): DailySpend | null => {
+        if (!persisted || persisted.date !== today) return null
+        persisted.pendingReserves = (persisted.pendingReserves ?? []).filter(
+          (r) => r.reserveId !== reserveId,
+        )
+        return persisted
+      }
+
+      if (this.spendStore.mutate) {
+        await this.spendStore.mutate(updateFn)
+      } else {
+        const next = await updateFn(await this.spendStore.read())
+        if (next) await this.spendStore.write(next)
+      }
     })
   }
 
@@ -806,28 +823,35 @@ export class KikisAppClient {
 
     await this._withSpendMutex(async () => {
       const today = new Date().toISOString().slice(0, 10)
-      const persisted = await this.spendStore.read()
-      if (!persisted || persisted.date !== today) return
+      const updateFn = (persisted: DailySpend | null): DailySpend | null => {
+        if (!persisted || persisted.date !== today) return null
 
-      const currentTotal = BigInt(persisted.totalMicros)
-      persisted.totalMicros = (currentTotal - amountMicros).toString()
+        const currentTotal = BigInt(persisted.totalMicros)
+        persisted.totalMicros = (currentTotal - amountMicros).toString()
 
-      const endpointBalance = persisted.endpoints[endpointKey]
-      if (endpointBalance !== undefined) {
-        const endpointTotal = BigInt(endpointBalance)
-        const newEndpointTotal = endpointTotal - amountMicros
-        if (newEndpointTotal <= 0n) {
-          delete persisted.endpoints[endpointKey]
-        } else {
-          persisted.endpoints[endpointKey] = newEndpointTotal.toString()
+        const endpointBalance = persisted.endpoints[endpointKey]
+        if (endpointBalance !== undefined) {
+          const endpointTotal = BigInt(endpointBalance)
+          const newEndpointTotal = endpointTotal - amountMicros
+          if (newEndpointTotal <= 0n) {
+            delete persisted.endpoints[endpointKey]
+          } else {
+            persisted.endpoints[endpointKey] = newEndpointTotal.toString()
+          }
         }
+
+        persisted.pendingReserves = (persisted.pendingReserves ?? []).filter(
+          (r) => r.reserveId !== reserveId,
+        )
+        return persisted
       }
 
-      persisted.pendingReserves = (persisted.pendingReserves ?? []).filter(
-        (r) => r.reserveId !== reserveId,
-      )
-
-      await this.spendStore.write(persisted)
+      if (this.spendStore.mutate) {
+        await this.spendStore.mutate(updateFn)
+      } else {
+        const next = await updateFn(await this.spendStore.read())
+        if (next) await this.spendStore.write(next)
+      }
     })
   }
 
@@ -841,50 +865,63 @@ export class KikisAppClient {
     if (!this.spendCap) return
 
     const today = new Date().toISOString().slice(0, 10)
-    const persisted = await this.spendStore.read()
-    if (!persisted || persisted.date !== today) return
+    let reconciledCount = 0
 
-    const now = Date.now()
-    const persistedReserves = persisted.pendingReserves ?? []
-    const stale = persistedReserves.filter(
-      (r) => now - Date.parse(r.timestamp) > PENDING_RESERVE_TTL_MS,
-    )
+    const updateFn = (persisted: DailySpend | null): DailySpend | null => {
+      if (!persisted || persisted.date !== today) return null
 
-    if (stale.length === 0) return
+      const now = Date.now()
+      const persistedReserves = persisted.pendingReserves ?? []
+      const stale = persistedReserves.filter(
+        (r) => now - Date.parse(r.timestamp) > PENDING_RESERVE_TTL_MS,
+      )
 
-    let updated = { ...persisted, pendingReserves: persistedReserves }
-    for (const reserve of stale) {
-      const amountMicros = BigInt(reserve.amountMicros)
-      const currentTotal = BigInt(updated.totalMicros)
-      updated.totalMicros = (currentTotal - amountMicros).toString()
+      if (stale.length === 0) return null
+      reconciledCount = stale.length
 
-      if (reserve.endpointKey) {
-        const endpointBalance = updated.endpoints[reserve.endpointKey]
-        if (endpointBalance !== undefined) {
-          const endpointTotal = BigInt(endpointBalance)
-          const newEndpointTotal = endpointTotal - amountMicros
-          if (newEndpointTotal <= 0n) {
-            delete updated.endpoints[reserve.endpointKey]
-          } else {
-            updated.endpoints[reserve.endpointKey] = newEndpointTotal.toString()
+      let updated = { ...persisted, pendingReserves: persistedReserves }
+      for (const reserve of stale) {
+        const amountMicros = BigInt(reserve.amountMicros)
+        const currentTotal = BigInt(updated.totalMicros)
+        updated.totalMicros = (currentTotal - amountMicros).toString()
+
+        if (reserve.endpointKey) {
+          const endpointBalance = updated.endpoints[reserve.endpointKey]
+          if (endpointBalance !== undefined) {
+            const endpointTotal = BigInt(endpointBalance)
+            const newEndpointTotal = endpointTotal - amountMicros
+            if (newEndpointTotal <= 0n) {
+              delete updated.endpoints[reserve.endpointKey]
+            } else {
+              updated.endpoints[reserve.endpointKey] = newEndpointTotal.toString()
+            }
           }
         }
+
+        // Remove from in-memory map too, in case it survived
+        this._pendingReserves.delete(reserve.reserveId)
       }
 
-      // Remove from in-memory map too, in case it survived
-      this._pendingReserves.delete(reserve.reserveId)
+      updated.pendingReserves = persistedReserves.filter(
+        (r) => !stale.some((s) => s.reserveId === r.reserveId),
+      )
+
+      return updated
     }
 
-    updated.pendingReserves = persistedReserves.filter(
-      (r) => !stale.some((s) => s.reserveId === r.reserveId),
-    )
+    if (this.spendStore.mutate) {
+      await this.spendStore.mutate(updateFn)
+    } else {
+      const next = await updateFn(await this.spendStore.read())
+      if (next) await this.spendStore.write(next)
+    }
 
-    await this.spendStore.write(updated)
-
-    this.logger?.(
-      'warn',
-      `[KikisApp] Rolled back ${stale.length} orphaned pending reservation(s) older than ${PENDING_RESERVE_TTL_MS / 1000}s`,
-    )
+    if (reconciledCount > 0) {
+      this.logger?.(
+        'warn',
+        `[KikisApp] Rolled back ${reconciledCount} orphaned pending reservation(s) older than ${PENDING_RESERVE_TTL_MS / 1000}s`,
+      )
+    }
   }
 }
 

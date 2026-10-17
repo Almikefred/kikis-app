@@ -374,6 +374,66 @@ describe('kikisAppHono — settlement idempotency', () => {
     })
     assert.equal(second.status, 402)
   })
+
+  it('returns 503 with Retry-After: 5 when seenTxStore is unavailable without fallbackStore', async () => {
+    const failingStore: SeenTxStore = {
+      get: () => {
+        throw new Error('Database connection pool timeout')
+      },
+      set: () => {},
+    }
+    const app = makeApp({
+      modes: ['mpp-charge'],
+      pricing: { 'mpp-charge': '0.0008' },
+      seenTxStore: failingStore,
+    })
+
+    const res = await app.request('/price', {
+      headers: { authorization: 'Payment test-credential' },
+    })
+    assert.equal(res.status, 503)
+    assert.equal(res.headers.get('retry-after'), '5')
+    const json = (await res.json()) as { error: string }
+    assert.equal(json.error, 'Idempotency store unavailable')
+  })
+
+  it('uses fallbackSeenTxStore when primary seenTxStore fails', async () => {
+    const failingStore: SeenTxStore = {
+      get: () => {
+        throw new Error('Database connection failed')
+      },
+      set: () => {},
+    }
+    const fallback = new InMemorySeenTxStore({ warn: false })
+    const key = await paymentIdempotencyKey(
+      (name) => (name.toLowerCase() === 'authorization' ? 'Payment test-credential' : undefined),
+      {
+        method: 'GET',
+        path: '/price',
+        amount: '0.0008',
+        payTo: payeeKeypair.publicKey(),
+      },
+    )
+    assert.ok(key)
+    fallback.set(key, {
+      txHash: 'FALLBACK_TX',
+      headers: { 'X-Payment-Response': 'fallback-header' },
+      createdAt: Date.now(),
+    })
+
+    const app = makeApp({
+      modes: ['mpp-charge'],
+      pricing: { 'mpp-charge': '0.0008' },
+      seenTxStore: failingStore,
+      fallbackSeenTxStore: fallback,
+    })
+
+    const res = await app.request('/price', {
+      headers: { authorization: 'Payment test-credential' },
+    })
+    assert.equal(res.status, 200)
+    assert.equal(res.headers.get('x-payment-response'), 'fallback-header')
+  })
 })
 
 describe('kikisAppHono — multi-mode routing (x402 + mpp-charge + mpp-session) (#43)', () => {
