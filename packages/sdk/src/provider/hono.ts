@@ -36,7 +36,7 @@ import {
 } from './SeenTxStore.js'
 import { resolveAssetContract } from '../internal/assetUtils.js'
 import { resolvePaymentMode } from './internal/detectPaymentMode.js'
-import { KikisAppManifestError } from '../errors.js'
+import { KikisAppManifestError, KikisAppNetworkError } from '../errors.js'
 import { readSettleResult } from './settleResult.js'
 
 type Network = 'testnet' | 'mainnet'
@@ -81,6 +81,11 @@ export interface KikisAppHonoOptions {
    * retries the same payment. Defaults to a per-handler in-memory store.
    */
   seenTxStore?: SeenTxStore
+  /**
+   * Optional secondary fallback store (e.g. InMemorySeenTxStore) used when
+   * seenTxStore is unavailable or encounters database connectivity errors.
+   */
+  fallbackSeenTxStore?: SeenTxStore
   /**
    * Persistent store backing mpp-session channel state and handler state.
    * Defaults to an in-memory store per handler; supply a durable store (e.g.
@@ -191,7 +196,14 @@ function createX402HonoHandler(opts: KikisAppHonoOptions): MiddlewareHandler {
         },
       )
       if (idempotencyKey) {
-        const replayCheck = await checkSettlementReplay(seenTxStore, idempotencyKey)
+        const replayCheck = await checkSettlementReplay(seenTxStore, idempotencyKey, Date.now(), {
+          fallbackStore: opts.fallbackSeenTxStore,
+          logger: opts.logger,
+        })
+        if (replayCheck.kind === 'unavailable') {
+          c.header('Retry-After', '5')
+          return c.json({ error: 'Idempotency store unavailable', reason: replayCheck.error.message }, 503)
+        }
         if (replayCheck.kind === 'spent') {
           return c.json({ error: 'Payment already used' }, 402)
         }
@@ -267,7 +279,15 @@ function createX402HonoHandler(opts: KikisAppHonoOptions): MiddlewareHandler {
       if (idempotencyKey) {
         const headers: Record<string, string> = {}
         if (paymentResponseHeader) headers['X-Payment-Response'] = paymentResponseHeader
-        await seenTxStore.set(idempotencyKey, { txHash, headers, createdAt: Date.now() })
+        try {
+          await seenTxStore.set(idempotencyKey, { txHash, headers, createdAt: Date.now() })
+        } catch (setErr) {
+          if (opts.fallbackSeenTxStore) {
+            await opts.fallbackSeenTxStore.set(idempotencyKey, { txHash, headers, createdAt: Date.now() })
+          } else {
+            throw setErr
+          }
+        }
       }
 
       if (txHash && opts.onSettled) {
@@ -281,6 +301,10 @@ function createX402HonoHandler(opts: KikisAppHonoOptions): MiddlewareHandler {
     } catch (err) {
       if (err instanceof KikisAppManifestError) {
         throw err
+      }
+      if (err instanceof KikisAppNetworkError) {
+        c.header('Retry-After', '5')
+        return c.json({ error: 'Service Unavailable', reason: err.message }, 503)
       }
       logger('error', '[x402] Settlement error', { error: err })
       return c.json({ error: 'Payment settlement failed' }, 500)
@@ -362,7 +386,14 @@ function createMppChargeHonoHandler(opts: KikisAppHonoOptions): MiddlewareHandle
         },
       )
       if (idempotencyKey) {
-        const replayCheck = await checkSettlementReplay(seenTxStore, idempotencyKey)
+        const replayCheck = await checkSettlementReplay(seenTxStore, idempotencyKey, Date.now(), {
+          fallbackStore: opts.fallbackSeenTxStore,
+          logger: opts.logger,
+        })
+        if (replayCheck.kind === 'unavailable') {
+          c.header('Retry-After', '5')
+          return c.json({ error: 'Idempotency store unavailable', reason: replayCheck.error.message }, 503)
+        }
         if (replayCheck.kind === 'spent') {
           return c.json({ error: 'Payment already used' }, 402)
         }
@@ -426,11 +457,23 @@ function createMppChargeHonoHandler(opts: KikisAppHonoOptions): MiddlewareHandle
 
       // Record the settlement so a retry of this exact charge is deduped.
       if (idempotencyKey) {
-        await seenTxStore.set(idempotencyKey, {
-          txHash: reference ?? null,
-          headers: receiptHeaders,
-          createdAt: Date.now(),
-        })
+        try {
+          await seenTxStore.set(idempotencyKey, {
+            txHash: reference ?? null,
+            headers: receiptHeaders,
+            createdAt: Date.now(),
+          })
+        } catch (setErr) {
+          if (opts.fallbackSeenTxStore) {
+            await opts.fallbackSeenTxStore.set(idempotencyKey, {
+              txHash: reference ?? null,
+              headers: receiptHeaders,
+              createdAt: Date.now(),
+            })
+          } else {
+            throw setErr
+          }
+        }
       }
 
       if (reference && opts.onSettled) {
@@ -442,6 +485,10 @@ function createMppChargeHonoHandler(opts: KikisAppHonoOptions): MiddlewareHandle
 
       await next()
     } catch (err) {
+      if (err instanceof KikisAppNetworkError) {
+        c.header('Retry-After', '5')
+        return c.json({ error: 'Service Unavailable', reason: err.message }, 503)
+      }
       throw err
     }
   }
@@ -900,10 +947,12 @@ export { registerProvider, type RegisterProviderOptions } from './registerProvid
 export { signManifest } from '../manifest/sign.js'
 export {
   SupabaseSeenTxStore,
+  type SupabaseSeenTxStoreOptions,
 } from '../store/SupabaseSeenTxStore.js'
 export {
   InMemorySeenTxStore,
   type SeenTxStore,
+  type SeenTxStoreOptions,
   type SettlementRecord,
 } from './SeenTxStore.js'
 export {

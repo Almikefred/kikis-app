@@ -192,4 +192,95 @@ describe('FileSpendStore', () => {
     assert.equal(stale.length, 1)
     assert.equal(stale[0]?.reserveId, 'stale-reserve')
   })
+
+  it('serializes concurrent mutate operations across multiple instances without lost updates', async () => {
+    const filePath = path.join(tmpDir, 'concurrent.json')
+    const state: DailySpend = {
+      date: '2026-06-26',
+      totalMicros: '0',
+      endpoints: {},
+      pendingReserves: [],
+    }
+    const initialStore = new FileSpendStore(filePath)
+    await initialStore.write(state)
+
+    const concurrency = 25
+    const increment = 100n
+    const workers = Array.from({ length: concurrency }, () => new FileSpendStore(filePath))
+
+    await Promise.all(
+      workers.map((store) =>
+        store.mutate((current) => {
+          const prev = BigInt(current?.totalMicros ?? '0')
+          return {
+            date: '2026-06-26',
+            totalMicros: (prev + increment).toString(),
+            endpoints: {},
+            pendingReserves: [],
+          }
+        }),
+      ),
+    )
+
+    const finalRead = await initialStore.read()
+    const expected = (BigInt(concurrency) * increment).toString()
+    assert.equal(finalRead?.totalMicros, expected)
+  })
+
+  it('cleans up lockfile after successful mutate', async () => {
+    const filePath = path.join(tmpDir, 'lock-cleanup-success.json')
+    const store = new FileSpendStore(filePath)
+    await store.mutate(() => ({
+      date: '2026-06-26',
+      totalMicros: '100',
+      endpoints: {},
+    }))
+
+    await assert.rejects(
+      () => fs.access(store.lockPath),
+      { code: 'ENOENT' },
+      'lockfile must be removed after mutate completes',
+    )
+  })
+
+  it('cleans up lockfile when mutate updater throws', async () => {
+    const filePath = path.join(tmpDir, 'lock-cleanup-error.json')
+    const store = new FileSpendStore(filePath)
+
+    await assert.rejects(
+      () =>
+        store.mutate(() => {
+          throw new Error('boom inside updater')
+        }),
+      /boom inside updater/,
+    )
+
+    await assert.rejects(
+      () => fs.access(store.lockPath),
+      { code: 'ENOENT' },
+      'lockfile must be removed even if updater throws',
+    )
+  })
+
+  it('reclaims stale lock left by crashed process', async () => {
+    const filePath = path.join(tmpDir, 'stale-lock.json')
+    const store = new FileSpendStore(filePath, { staleLockMs: 50, lockTimeoutMs: 1000 })
+
+    // Simulate an abandoned lock from a crashed process
+    await fs.mkdir(path.dirname(filePath), { recursive: true })
+    await fs.writeFile(store.lockPath, 'crashed-pid:12345', 'utf-8')
+    // Set mtime to 200ms in the past so it is older than staleLockMs (50ms)
+    const oldTime = new Date(Date.now() - 200)
+    await fs.utimes(store.lockPath, oldTime, oldTime)
+
+    // A new mutate should detect stale lock, reclaim it, and succeed
+    await store.mutate(() => ({
+      date: '2026-06-26',
+      totalMicros: '999',
+      endpoints: {},
+    }))
+
+    const read = await store.read()
+    assert.equal(read?.totalMicros, '999')
+  })
 })

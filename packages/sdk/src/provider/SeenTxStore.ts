@@ -95,11 +95,23 @@ export const SETTLEMENT_REPLAY_WINDOW_MS = 60_000
  */
 export const MAX_SETTLEMENT_REPLAYS = 1
 
+/** Options for settlement replay checks and idempotency stores. */
+export interface SeenTxStoreOptions {
+  /**
+   * Optional fallback store used when the primary store encounters an unrecoverable
+   * error or database connection failure.
+   */
+  fallbackStore?: SeenTxStore | undefined
+  /** Log sink for failure warnings. Defaults to a console-backed logger. */
+  logger?: KikisAppLogger | undefined
+}
+
 /** Outcome of checking whether an idempotency key may replay a settlement. */
 export type SettlementReplayCheck =
   | { kind: 'miss' }
   | { kind: 'replay'; record: SettlementRecord }
   | { kind: 'spent' }
+  | { kind: 'unavailable'; error: Error }
 
 /**
  * Decide what a payment bearing `key` should do.
@@ -110,6 +122,8 @@ export type SettlementReplayCheck =
  * - `spent` — the settlement is older than the replay window, or has already
  *             been replayed the maximum number of times; respond 402 without
  *             decoding, settling, or invoking callbacks.
+ * - `unavailable` — the idempotency store encountered an unrecoverable database or
+ *                   network failure; provider middleware returns HTTP 503 with Retry-After.
  *
  * The age check runs first so an expired record never touches the replay
  * counter.
@@ -126,20 +140,45 @@ export async function checkSettlementReplay(
   store: SeenTxStore,
   key: string,
   now = Date.now(),
+  options?: SeenTxStoreOptions,
 ): Promise<SettlementReplayCheck> {
-  const record = await store.get(key)
-  if (!record) return { kind: 'miss' }
+  try {
+    const record = await store.get(key)
+    if (!record) return { kind: 'miss' }
 
-  const { createdAt } = record
-  if (createdAt !== undefined && now - createdAt > SETTLEMENT_REPLAY_WINDOW_MS) {
-    return { kind: 'spent' }
-  }
+    const { createdAt } = record
+    if (createdAt !== undefined && now - createdAt > SETTLEMENT_REPLAY_WINDOW_MS) {
+      return { kind: 'spent' }
+    }
 
-  if (store.claimReplay) {
-    const replayed = await store.claimReplay(key)
-    if (replayed > MAX_SETTLEMENT_REPLAYS) return { kind: 'spent' }
+    if (store.claimReplay) {
+      const replayed = await store.claimReplay(key)
+      if (replayed > MAX_SETTLEMENT_REPLAYS) return { kind: 'spent' }
+    }
+    return { kind: 'replay', record }
+  } catch (err) {
+    if (options?.fallbackStore) {
+      const logger = resolveLogger(options.logger)
+      logger(
+        'warn',
+        '[checkSettlementReplay] Primary store failed, delegating to fallback store:',
+        { error: err },
+      )
+      try {
+        return await checkSettlementReplay(options.fallbackStore, key, now)
+      } catch (fallbackErr) {
+        return {
+          kind: 'unavailable',
+          error:
+            fallbackErr instanceof Error ? fallbackErr : new Error(String(fallbackErr)),
+        }
+      }
+    }
+    return {
+      kind: 'unavailable',
+      error: err instanceof Error ? err : new Error(String(err)),
+    }
   }
-  return { kind: 'replay', record }
 }
 
 /**

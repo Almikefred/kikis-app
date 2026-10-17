@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction, RequestHandler } from 'express'
 import { stellar } from '@stellar/mpp/charge/server'
 import { Mppx, Request as MppxRequest } from 'mppx/server'
 import type { KikisAppManifest } from '../types.js'
+import { KikisAppNetworkError } from '../errors.js'
 import { resolvePayee } from '../internal/payee.js'
 import { extractPayerAddress } from './payer.js'
 import type { SessionStore } from '../store/SessionStore.js'
@@ -38,6 +39,8 @@ export interface MppChargeHandlerOptions {
    * retries the same signed charge. Defaults to a per-handler in-memory store.
    */
   seenTxStore?: SeenTxStore
+  /** Optional secondary fallback store when seenTxStore is unavailable. */
+  fallbackSeenTxStore?: SeenTxStore
   /** Log sink for internal error paths. Defaults to a console-backed logger. */
   logger?: KikisAppLogger
 }
@@ -121,7 +124,15 @@ export function createMppChargeHandler(opts: MppChargeHandlerOptions): RequestHa
         },
       )
       if (idempotencyKey) {
-        const replayCheck = await checkSettlementReplay(seenTxStore, idempotencyKey)
+        const replayCheck = await checkSettlementReplay(seenTxStore, idempotencyKey, Date.now(), {
+          fallbackStore: opts.fallbackSeenTxStore,
+          logger: opts.logger,
+        })
+        if (replayCheck.kind === 'unavailable') {
+          res.setHeader('Retry-After', '5')
+          res.status(503).json({ error: 'Idempotency store unavailable', reason: replayCheck.error.message })
+          return
+        }
         if (replayCheck.kind === 'spent') {
           res.status(402).json({ error: 'Payment already used' })
           return
@@ -185,11 +196,23 @@ export function createMppChargeHandler(opts: MppChargeHandlerOptions): RequestHa
 
       // Record the settlement so a retry of this exact charge is deduped.
       if (idempotencyKey) {
-        await seenTxStore.set(idempotencyKey, {
-          txHash: reference ?? null,
-          headers: receiptHeaders,
-          createdAt: Date.now(),
-        })
+        try {
+          await seenTxStore.set(idempotencyKey, {
+            txHash: reference ?? null,
+            headers: receiptHeaders,
+            createdAt: Date.now(),
+          })
+        } catch (setErr) {
+          if (opts.fallbackSeenTxStore) {
+            await opts.fallbackSeenTxStore.set(idempotencyKey, {
+              txHash: reference ?? null,
+              headers: receiptHeaders,
+              createdAt: Date.now(),
+            })
+          } else {
+            throw setErr
+          }
+        }
       }
 
       if (reference && opts.onSettled) {
@@ -201,6 +224,11 @@ export function createMppChargeHandler(opts: MppChargeHandlerOptions): RequestHa
 
       next()
     } catch (err) {
+      if (err instanceof KikisAppNetworkError) {
+        res.setHeader('Retry-After', '5')
+        res.status(503).json({ error: 'Service Unavailable', reason: err.message })
+        return
+      }
       next(err)
     }
   }

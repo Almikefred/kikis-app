@@ -248,3 +248,41 @@ describe('checkSettlementReplay — custom stores without claimReplay', () => {
     assert.deepEqual(await checkSettlementReplay(store, 'k'), { kind: 'replay', record })
   })
 })
+
+describe('checkSettlementReplay — error handling and fallbacks', () => {
+  it('returns unavailable when the store throws and no fallback is configured', async () => {
+    const failingStore: SeenTxStore = {
+      get: () => {
+        throw new Error('db disconnected')
+      },
+      set: () => {},
+    }
+    const result = await checkSettlementReplay(failingStore, 'some-key')
+    assert.equal(result.kind, 'unavailable')
+    if (result.kind === 'unavailable') {
+      assert.equal(result.error.message, 'db disconnected')
+    }
+  })
+
+  it('delegates to options.fallbackStore when the primary store throws', async () => {
+    const failingStore: SeenTxStore = {
+      get: () => {
+        throw new Error('db network timeout')
+      },
+      set: () => {},
+    }
+    const fallback = new InMemorySeenTxStore({ warn: false })
+    const record: SettlementRecord = { txHash: 'tx_fb', createdAt: Date.now() }
+    fallback.set('some-key', record)
+
+    const result = await checkSettlementReplay(failingStore, 'some-key', undefined, {
+      fallbackStore: fallback,
+      logger: () => {},
+    })
+
+    assert.equal(result.kind, 'replay')
+    if (result.kind === 'replay') {
+      assert.deepEqual(result.record, record)
+    }
+  })
+})
