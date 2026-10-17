@@ -121,6 +121,8 @@ export async function prepareNulthSigner(
   mode: PaymentMode,
   network: 'testnet' | 'mainnet',
   ledgerSequenceOverride?: number,
+  rpcUrlOverride?: string,
+  rpcTimeoutMsOverride?: number,
 ): Promise<{ signer: ClientStellarSigner; config: NulthSignerConfig }> {
   assertNulthVaultManifest(manifest, vault.nulthAccount)
 

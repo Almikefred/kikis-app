@@ -159,6 +159,10 @@ function resolveStoreNetworkId(network: string | undefined): string {
 export interface MppSessionSettlementOverrides {
   /** Soroban RPC endpoint for settlement simulation / preparation. */
   sorobanRpcUrl?: string
+  /** Custom RPC URL override */
+  rpcUrl?: string
+  /** Custom RPC timeout in milliseconds */
+  rpcTimeoutMs?: number
   /** Base fee in stroops for the settlement transaction. */
   baseFeeStroops?: number
 }
@@ -247,9 +251,12 @@ export class MppSessionClient {
     // later in this function — this block runs first.)
     const settlementOverrides = this.settlement
     const sorobanRpcUrl =
+      options?.rpcUrl ??
       options?.sorobanRpcUrl ??
+      settlementOverrides?.rpcUrl ??
       settlementOverrides?.sorobanRpcUrl ??
       defaultSorobanRpcUrl(this.network)
+    const rpcTimeoutMs = options?.rpcTimeoutMs ?? settlementOverrides?.rpcTimeoutMs
     const baseFeeStroops = options?.baseFeeStroops ?? settlementOverrides?.baseFeeStroops
 
     let currentCumulative = 0n
@@ -809,10 +816,10 @@ export class MppSessionClient {
 
       async requestRefund(): Promise<string> {
         const { rpc: rpcMod, Contract, TransactionBuilder, BASE_FEE } = await import('@stellar/stellar-sdk')
-        const rpcUrl = network === 'testnet'
-          ? 'https://soroban-testnet.stellar.org'
-          : 'https://soroban.stellar.org'
-        const server = new rpcMod.Server(rpcUrl)
+        const server = new rpcMod.Server(sorobanRpcUrl, {
+          allowHttp: sorobanRpcUrl.startsWith('http://'),
+          ...(rpcTimeoutMs !== undefined ? { timeout: rpcTimeoutMs } : {}),
+        })
         const contract = new Contract(channelFactory)
         const passphrase = network === 'mainnet' ? Networks.PUBLIC : Networks.TESTNET
 
@@ -851,10 +858,10 @@ export class MppSessionClient {
 
       async settleWithLatestVoucher(): Promise<string> {
         const { rpc: rpcMod, Contract, nativeToScVal, TransactionBuilder, BASE_FEE } = await import('@stellar/stellar-sdk')
-        const rpcUrl = network === 'testnet'
-          ? 'https://soroban-testnet.stellar.org'
-          : 'https://soroban.stellar.org'
-        const server = new rpcMod.Server(rpcUrl)
+        const server = new rpcMod.Server(sorobanRpcUrl, {
+          allowHttp: sorobanRpcUrl.startsWith('http://'),
+          ...(rpcTimeoutMs !== undefined ? { timeout: rpcTimeoutMs } : {}),
+        })
         const contract = new Contract(channelFactory)
         const passphrase = network === 'mainnet' ? Networks.PUBLIC : Networks.TESTNET
 
@@ -907,10 +914,10 @@ export class MppSessionClient {
 
       async getDisputeStatus(): Promise<DisputeStatus> {
         const { rpc: rpcMod, Contract, TransactionBuilder, BASE_FEE } = await import('@stellar/stellar-sdk')
-        const rpcUrl = network === 'testnet'
-          ? 'https://soroban-testnet.stellar.org'
-          : 'https://soroban.stellar.org'
-        const server = new rpcMod.Server(rpcUrl)
+        const server = new rpcMod.Server(sorobanRpcUrl, {
+          allowHttp: sorobanRpcUrl.startsWith('http://'),
+          ...(rpcTimeoutMs !== undefined ? { timeout: rpcTimeoutMs } : {}),
+        })
         const contract = new Contract(channelFactory)
         const passphrase = network === 'mainnet' ? Networks.PUBLIC : Networks.TESTNET
 

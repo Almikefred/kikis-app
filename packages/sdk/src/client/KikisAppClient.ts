@@ -205,6 +205,8 @@ export class KikisAppClient {
   private readonly manifestTimeoutMs: number | undefined
   private readonly expectedPayee: string | undefined
   private readonly vault: VaultConfig | undefined
+  private readonly rpcUrl: string | undefined
+  private readonly rpcTimeoutMs: number | undefined
 
   /**
    * Durable backing store for the local daily spend accumulator (keyed by
@@ -255,6 +257,8 @@ export class KikisAppClient {
     this.logger = config.logger
     this.manifestTimeoutMs = config.manifestTimeoutMs
     this.expectedPayee = config.expectedPayee
+    this.rpcUrl = config.rpcUrl
+    this.rpcTimeoutMs = config.rpcTimeoutMs
 
     if (config.commitmentSecret) {
       _secrets.set(this, config.commitmentSecret)
@@ -270,7 +274,10 @@ export class KikisAppClient {
     // silences the SDK silences the retry path too.
     const retryPolicy = this.logger ? { ...this.retryPolicy, logger: this.logger } : this.retryPolicy
     this.x402 = new X402Client(secretKey, this.network, retryPolicy)
-    this.charge = new MppChargeClient(this.keypair, this.network, retryPolicy)
+    this.charge = new MppChargeClient(this.keypair, this.network, retryPolicy, {
+      ...(config.rpcUrl !== undefined && { rpcUrl: config.rpcUrl }),
+      ...(config.rpcTimeoutMs !== undefined && { rpcTimeoutMs: config.rpcTimeoutMs }),
+    })
     this.session = new MppSessionClient(
       this.keypair,
       this.network,
@@ -279,6 +286,8 @@ export class KikisAppClient {
       this.logger,
       {
         ...(config.sorobanRpcUrl !== undefined && { sorobanRpcUrl: config.sorobanRpcUrl }),
+        ...(config.rpcUrl !== undefined && { rpcUrl: config.rpcUrl }),
+        ...(config.rpcTimeoutMs !== undefined && { rpcTimeoutMs: config.rpcTimeoutMs }),
         ...(config.baseFeeStroops !== undefined && { baseFeeStroops: config.baseFeeStroops }),
       },
     )

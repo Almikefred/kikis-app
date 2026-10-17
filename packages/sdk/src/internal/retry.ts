@@ -1,4 +1,4 @@
-import { KikisAppError, KikisAppNetworkError } from '../errors.js'
+import { KikisAppError, KikisAppFacilitatorError, KikisAppNetworkError } from '../errors.js'
 import { resolveLogger, type KikisAppLogger } from './logger.js'
 
 export interface RetryPolicy {
@@ -159,7 +159,14 @@ export async function withRetry<T>(
       }
 
       const retryable = err instanceof KikisAppError ? err.retryable : true
-      const retryAfterMs = err instanceof KikisAppError ? err.retryAfterMs : undefined
+      const retryAfterMs =
+        err instanceof KikisAppFacilitatorError && err.retryAfterMs !== undefined
+          ? err.retryAfterMs
+          : err instanceof KikisAppError && err.retryAfterMs !== undefined
+            ? err.retryAfterMs
+            : typeof (err as any)?.retryAfterMs === 'number'
+              ? (err as any).retryAfterMs
+              : undefined
       const effectiveErr =
         err instanceof KikisAppError
           ? err
@@ -172,7 +179,7 @@ export async function withRetry<T>(
 
       const delay =
         retryAfterMs !== undefined
-          ? retryAfterMs
+          ? Math.max(retryAfterMs, 0)
           : backoffDelayMs(attempt, baseDelayMs, maxDelayMs)
 
       if (onRetry) {

@@ -192,6 +192,9 @@ export class MppChargeClient {
         (stellar.charge as (opts: Record<string, unknown>) => any)({
           keypair: effectiveKeypair,
           mode: 'pull',
+          // Custom Soroban RPC endpoint (#5): route all charge simulation /
+          // submission to the configured RPC instead of the public default.
+          ...(this.options?.rpcUrl !== undefined && { rpcUrl: this.options.rpcUrl }),
           fee: calculatedFee,
           baseFee: calculatedFee,
           maxFee: maxFeeCap ?? calculatedFee,
