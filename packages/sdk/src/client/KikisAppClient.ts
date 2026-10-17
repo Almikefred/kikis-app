@@ -636,10 +636,10 @@ export class KikisAppClient {
       )
     }
 
-    const secret = _secrets.get(this)
+    const secret = options?.commitmentSecret ?? _secrets.get(this)
     if (!secret) {
       throw new KikisAppManifestError(
-        'commitmentSecret is required in KikisAppClientConfig for mpp-session mode',
+        'commitmentSecret is required in KikisAppClientConfig or SessionOptions for mpp-session mode',
       )
     }
 
@@ -923,5 +923,27 @@ export class KikisAppClient {
       )
     }
   }
+
+  /**
+   * Durable backing store for the daily spend cap.
+   */
+  getSpendStore(): SpendStore {
+    return this.spendStore
+  }
+
+  /**
+   * Current configured spend cap, or undefined if unconfigured.
+   */
+  getSpendCap(): SpendCap | undefined {
+    return this.spendCap
+  }
+
+  /**
+   * Current configured vault config, or undefined if unconfigured.
+   */
+  getVaultConfig(): VaultConfig | undefined {
+    return this.vault
+  }
 }
+
 

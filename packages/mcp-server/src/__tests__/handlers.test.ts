@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { Keypair } from '@stellar/stellar-sdk'
-import type { KikisAppManifest, EstimateCostResult } from '@kikis-app/kikis-app'
+import {
+  InMemorySpendStore,
+  FileSpendStore,
+  signManifest,
+  type KikisAppManifest,
+  type EstimateCostResult,
+} from '@kikis-app/kikis-app'
 import {
   handlePayForData,
   handleOpenSession,
@@ -9,6 +18,8 @@ import {
   handleCloseSession,
   handleCheckBalance,
   handleListProviders,
+  handleCheckSpendCap,
+  handleCheckVaultStatus,
   type HandlerDeps,
   type ToolResult,
   type HorizonBalance,
@@ -18,22 +29,14 @@ import {
 import { MAX_STREAM_MESSAGES, TOOLS } from '../tools.js'
 
 // ---------------------------------------------------------------------------
-// Tool schema regression guard (issue #272)
-// Pins the pay_for_data preferred_mode enum against the SDK's PaymentMode so
-// future mode additions cause this test to fail rather than drift silently.
+// Tool schema regression guard
+// Ensures pay_for_data preferred_mode enum restricts to discrete payment modes
 // ---------------------------------------------------------------------------
 
-/** The canonical set of modes exported by the SDK. Kept as a const so any
- *  addition to PaymentMode surfaces here as a type error before the test runs. */
-const SDK_PAYMENT_MODES = ['x402', 'mpp-charge', 'mpp-session', 'mpp-session-ws'] as const
-type _AssertPaymentModes = (typeof SDK_PAYMENT_MODES)[number] extends import('@kikis-app/kikis-app').PaymentMode
-  ? import('@kikis-app/kikis-app').PaymentMode extends (typeof SDK_PAYMENT_MODES)[number]
-    ? true
-    : never
-  : never
+const DISCRETE_PAYMENT_MODES = ['x402', 'mpp-charge'] as const
 
 describe('TOOLS schema regression', () => {
-  it('pay_for_data preferred_mode enum matches SDK PaymentMode exactly', () => {
+  it('pay_for_data preferred_mode enum restricts to discrete payment modes', () => {
     const tool = TOOLS.find((t) => t.name === 'pay_for_data')
     assert.ok(tool, 'pay_for_data tool must exist in TOOLS')
 
@@ -41,13 +44,13 @@ describe('TOOLS schema regression', () => {
       properties: { preferred_mode: { enum: string[] } }
     }).properties.preferred_mode.enum
 
-    const expected = [...SDK_PAYMENT_MODES].sort()
+    const expected = [...DISCRETE_PAYMENT_MODES].sort()
     const actual = [...enumValues].sort()
 
     assert.deepEqual(
       actual,
       expected,
-      `Tool enum ${JSON.stringify(actual)} must match SDK PaymentMode ${JSON.stringify(expected)}`,
+      `Tool enum ${JSON.stringify(actual)} must match discrete modes ${JSON.stringify(expected)}`,
     )
   })
 
@@ -63,6 +66,14 @@ describe('TOOLS schema regression', () => {
     assert.equal(schema.minimum, 1)
     assert.equal(schema.maximum, MAX_STREAM_MESSAGES)
     assert.equal(MAX_STREAM_MESSAGES, 50)
+  })
+
+  it('check_spend_cap and check_vault_status tools exist in TOOLS', () => {
+    const spendCapTool = TOOLS.find((t) => t.name === 'check_spend_cap')
+    assert.ok(spendCapTool, 'check_spend_cap tool must exist in TOOLS')
+
+    const vaultTool = TOOLS.find((t) => t.name === 'check_vault_status')
+    assert.ok(vaultTool, 'check_vault_status tool must exist in TOOLS')
   })
 })
 
@@ -99,7 +110,11 @@ function makeClient(overrides: Partial<{
   estimateCost: HandlerDeps['client']['estimateCost']
   pay: HandlerDeps['client']['pay']
   openSession: HandlerDeps['client']['openSession']
+  getSpendStore: HandlerDeps['client']['getSpendStore']
+  getSpendCap: HandlerDeps['client']['getSpendCap']
+  getVaultConfig: HandlerDeps['client']['getVaultConfig']
 }> = {}): HandlerDeps['client'] {
+  const defaultStore = new InMemorySpendStore({ warn: false })
   return {
     estimateCost: overrides.estimateCost ?? (async () => estimate('0.001')),
     pay: overrides.pay ?? (async () => ({
@@ -115,6 +130,9 @@ function makeClient(overrides: Partial<{
       stream: () => ({ [Symbol.asyncIterator]: () => ({ next: async () => ({ done: true, value: undefined }) }) }),
       close: async () => ({ closeTxHash: 'CLOSE_TX', totalPaid: '0.01', vouchersIssued: 3 }),
     })),
+    getSpendStore: overrides.getSpendStore ?? (() => defaultStore),
+    getSpendCap: overrides.getSpendCap ?? (() => ({ daily: '1.00', asset: 'USDC' })),
+    getVaultConfig: overrides.getVaultConfig ?? (() => undefined),
   } as unknown as HandlerDeps['client']
 }
 
@@ -220,6 +238,73 @@ describe('handlePayForData', () => {
     )
     assert.deepEqual(capturedModeOptions, { forceMode: 'mpp-charge' })
   })
+
+  it('returns isError when url is not http or https', async () => {
+    const invalidUrls = ['file:///etc/passwd', 'javascript:alert(1)', 'ftp://example.com/data', 'not-a-url']
+    for (const url of invalidUrls) {
+      const result = await handlePayForData(
+        { url, max_amount: '1.00' },
+        baseDeps(),
+      )
+      assert.equal(result.isError, true)
+      const body = parseResult(result) as any
+      assert.equal(body.success, false)
+      assert.equal(body.error, 'Invalid URL: must be an http or https URL')
+    }
+  })
+
+  it('returns isError when preferred_mode is a session mode', async () => {
+    const sessionModes = ['mpp-session', 'mpp-session-ws'] as const
+    for (const mode of sessionModes) {
+      const result = await handlePayForData(
+        { url: 'https://provider.example.com/data', max_amount: '1.00', preferred_mode: mode as any },
+        baseDeps(),
+      )
+      assert.equal(result.isError, true)
+      const body = parseResult(result) as any
+      assert.equal(body.success, false)
+      assert.equal(body.error, 'Provider requires mpp-session mode. Please call open_session with this URL instead.')
+    }
+  })
+
+  it('returns isError when provider only supports session mode', async () => {
+    const deps = baseDeps({
+      client: makeClient({
+        estimateCost: async () => ({
+          amount: '0.001',
+          asset: 'USDC',
+          mode: 'mpp-session',
+          manifest: { ...FAKE_MANIFEST, modes: ['mpp-session'] },
+        }),
+      }),
+    })
+    const result = await handlePayForData(
+      { url: 'https://provider.example.com/data', max_amount: '1.00' },
+      deps,
+    )
+    assert.equal(result.isError, true)
+    const body = parseResult(result) as any
+    assert.equal(body.success, false)
+    assert.equal(body.error, 'Provider requires mpp-session mode. Please call open_session with this URL instead.')
+  })
+
+  it('catches client.pay openSession errors and returns informative error', async () => {
+    const deps = baseDeps({
+      client: makeClient({
+        pay: async () => {
+          throw new Error('Use client.openSession() for mpp-session mode — client.pay() only handles discrete payments.')
+        },
+      }),
+    })
+    const result = await handlePayForData(
+      { url: 'https://provider.example.com/data', max_amount: '1.00' },
+      deps,
+    )
+    assert.equal(result.isError, true)
+    const body = parseResult(result) as any
+    assert.equal(body.success, false)
+    assert.equal(body.error, 'Provider requires mpp-session mode. Please call open_session with this URL instead.')
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -301,6 +386,129 @@ describe('handleOpenSession', () => {
     assert.equal(result.isError, true)
     const body = parseResult(result) as any
     assert.ok(body.error.includes('min_deposit'))
+  })
+
+  it('returns isError when url is not http or https', async () => {
+    const invalidUrls = ['file:///etc/passwd', 'javascript:alert(1)', 'ftp://example.com']
+    for (const url of invalidUrls) {
+      const result = await handleOpenSession(
+        { url },
+        baseDeps(),
+        'secret123',
+      )
+      assert.equal(result.isError, true)
+      const body = parseResult(result) as any
+      assert.equal(body.success, false)
+      assert.equal(body.error, 'Invalid URL: must be an http or https URL')
+    }
+  })
+
+  it('forwards commitmentSecret to client.openSession options', async () => {
+    let capturedOptions: unknown
+    const deps = baseDeps({
+      client: makeClient({
+        openSession: async (_url: string, opts: unknown) => {
+          capturedOptions = opts
+          return {
+            channelId: 'CHAN-SECRET',
+            openTxHash: 'TX-SECRET',
+            stream: () => ({ [Symbol.asyncIterator]: () => ({ next: async () => ({ done: true, value: undefined }) }) }),
+            close: async () => ({ closeTxHash: 'CLOSE', totalPaid: '0', vouchersIssued: 0 }),
+          } as any
+        },
+      }),
+    })
+    const result = await handleOpenSession(
+      { url: 'https://provider.example.com' },
+      deps,
+      'my-external-secret',
+    )
+    assert.equal(result.isError, undefined)
+    assert.deepEqual(capturedOptions, { commitmentSecret: 'my-external-secret' })
+  })
+
+  it('KikisAppClient.openSession uses commitmentSecret from SessionOptions when client was initialized without one', async () => {
+    const { KikisAppClient } = await import('@kikis-app/kikis-app')
+    const client = new KikisAppClient({
+      wallet: Keypair.random(),
+      network: 'testnet',
+    })
+    let secretPassedToSession: string | undefined
+    ;(client as any).session.openSession = async (
+      _url: string,
+      _manifest: unknown,
+      secret: string,
+    ) => {
+      secretPassedToSession = secret
+      return { channelId: 'CHAN1' } as any
+    }
+
+    const payeeKey = Keypair.random()
+    const rawManifest = {
+      ...FAKE_MANIFEST,
+      payee: payeeKey.publicKey(),
+      modes: ['mpp-session'] as const,
+      endpoints: { stream: { path: '/stream', method: 'GET' } },
+      pricing: {
+        'mpp-session': {
+          rate: '0.0001',
+          per: 'voucher' as const,
+          channel_factory: 'CCK4XOW3YKQUEZFONUTINKMSNW7SNMRQZURME5U3UP7E6WNGK7UHUCAH',
+          min_deposit: '0.10',
+          refund_waiting_period_ledgers: 17280,
+        },
+      },
+    }
+    const signedManifest = signManifest(rawManifest as any, payeeKey.secret())
+    const origFetch = globalThis.fetch
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify(signedManifest), { status: 200 })
+    try {
+      await client.openSession('https://provider.example.com', {
+        commitmentSecret: 'injected-secret-xyz',
+      })
+      assert.equal(secretPassedToSession, 'injected-secret-xyz')
+    } finally {
+      globalThis.fetch = origFetch
+    }
+  })
+
+  it('KikisAppClient.openSession throws when neither client config nor SessionOptions provide commitmentSecret', async () => {
+    const { KikisAppClient } = await import('@kikis-app/kikis-app')
+    const client = new KikisAppClient({
+      wallet: Keypair.random(),
+      network: 'testnet',
+    })
+    const payeeKey = Keypair.random()
+    const rawManifest = {
+      ...FAKE_MANIFEST,
+      payee: payeeKey.publicKey(),
+      modes: ['mpp-session'] as const,
+      endpoints: { stream: { path: '/stream', method: 'GET' } },
+      pricing: {
+        'mpp-session': {
+          rate: '0.0001',
+          per: 'voucher' as const,
+          channel_factory: 'CCK4XOW3YKQUEZFONUTINKMSNW7SNMRQZURME5U3UP7E6WNGK7UHUCAH',
+          min_deposit: '0.10',
+          refund_waiting_period_ledgers: 17280,
+        },
+      },
+    }
+    const signedManifest = signManifest(rawManifest as any, payeeKey.secret())
+    const origFetch = globalThis.fetch
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify(signedManifest), { status: 200 })
+    try {
+      await assert.rejects(
+        async () => {
+          await client.openSession('https://provider.example.com')
+        },
+        /commitmentSecret is required/,
+      )
+    } finally {
+      globalThis.fetch = origFetch
+    }
   })
 })
 
@@ -712,3 +920,136 @@ describe('handleListProviders', () => {
     assert.equal(body.providers[0].name, 'ProvB')
   })
 })
+
+// ---------------------------------------------------------------------------
+// check_spend_cap
+// ---------------------------------------------------------------------------
+
+describe('handleCheckSpendCap', () => {
+  it('returns formatted daily_cap, spent_today, and remaining with InMemorySpendStore', async () => {
+    const store = new InMemorySpendStore({ warn: false })
+    const today = new Date().toISOString().slice(0, 10)
+    // 0.05 USDC = 500_000 microUSDC
+    await store.write({
+      date: today,
+      totalMicros: '500000',
+      endpoints: {},
+      pendingReserves: [],
+    })
+
+    const deps = baseDeps({
+      client: makeClient({
+        getSpendCap: () => ({ daily: '1.00', asset: 'USDC' }),
+        getSpendStore: () => store,
+      }),
+    })
+
+    const result = await handleCheckSpendCap(deps)
+    assert.equal(result.isError, undefined)
+    const body = parseResult(result) as any
+    assert.deepEqual(body, {
+      daily_cap: '1.00',
+      spent_today: '0.05',
+      remaining: '0.95',
+    })
+  })
+
+  it('works with FileSpendStore', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kikis-spend-test-'))
+    const filePath = path.join(tmpDir, 'spend.json')
+    try {
+      const fileStore = new FileSpendStore(filePath)
+      const today = new Date().toISOString().slice(0, 10)
+      await fileStore.write({
+        date: today,
+        totalMicros: '500000',
+        endpoints: {},
+        pendingReserves: [],
+      })
+
+      const deps = baseDeps({
+        client: makeClient({
+          getSpendCap: () => ({ daily: '1.00', asset: 'USDC' }),
+          getSpendStore: () => fileStore,
+        }),
+      })
+
+      const result = await handleCheckSpendCap(deps)
+      assert.equal(result.isError, undefined)
+      const body = parseResult(result) as any
+      assert.deepEqual(body, {
+        daily_cap: '1.00',
+        spent_today: '0.05',
+        remaining: '0.95',
+      })
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true })
+    }
+  })
+
+  it('returns zero spent_today and full remaining when no spend recorded today', async () => {
+    const store = new InMemorySpendStore({ warn: false })
+    const deps = baseDeps({
+      client: makeClient({
+        getSpendCap: () => ({ daily: '1.00', asset: 'USDC' }),
+        getSpendStore: () => store,
+      }),
+    })
+
+    const result = await handleCheckSpendCap(deps)
+    assert.equal(result.isError, undefined)
+    const body = parseResult(result) as any
+    assert.deepEqual(body, {
+      daily_cap: '1.00',
+      spent_today: '0.00',
+      remaining: '1.00',
+    })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// check_vault_status
+// ---------------------------------------------------------------------------
+
+describe('handleCheckVaultStatus', () => {
+  it('returns configured: false when no vault is configured on client', async () => {
+    const deps = baseDeps({
+      client: makeClient({
+        getVaultConfig: () => undefined,
+      }),
+    })
+    const result = await handleCheckVaultStatus(deps)
+    assert.equal(result.isError, undefined)
+    const body = parseResult(result) as any
+    assert.equal(body.configured, false)
+    assert.equal(body.message, 'No vault configured on client')
+  })
+
+  it('returns active allowlist, current ledger sequence, and expiry ledger when vault is configured', async () => {
+    const fakeVault = {
+      mode: 'nulth' as const,
+      nulthAccount: 'CNULTHACCOUNT',
+      witnessSecret: 'secret',
+      allowedPayees: ['GPAYEE1', 'GPAYEE2'],
+      dailyCapUsdc: '10.0',
+      expiryLedger: 99999,
+    }
+    const deps = baseDeps({
+      client: makeClient({
+        getVaultConfig: () => fakeVault as any,
+      }),
+      fetchLedgerSequence: async () => 12345,
+    })
+    const result = await handleCheckVaultStatus(deps)
+    assert.equal(result.isError, undefined)
+    const body = parseResult(result) as any
+    assert.equal(body.configured, true)
+    assert.equal(body.mode, 'nulth')
+    assert.equal(body.vault_account, 'CNULTHACCOUNT')
+    assert.deepEqual(body.allowed_payees, ['GPAYEE1', 'GPAYEE2'])
+    assert.equal(body.current_ledger_sequence, 12345)
+    assert.equal(body.expiry_ledger, 99999)
+    assert.equal(body.daily_cap, '10.0')
+  })
+})
+

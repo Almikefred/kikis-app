@@ -19,7 +19,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'pay_for_data',
     description:
-      "Pay for a single data request from a KikisApp provider. Automatically selects the best payment mode (x402, mpp-charge, mpp-session, or mpp-session-ws) based on the provider's manifest. Use mpp-session-ws for WebSocket-transport streaming providers (e.g. provider-b).",
+      'Pay for a single discrete data request from a KikisApp provider using per-request payment modes (x402 or mpp-charge). Automatically selects the best discrete payment mode based on the provider\'s manifest. For streaming or session-based providers (mpp-session or mpp-session-ws), use open_session instead.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -34,9 +34,9 @@ export const TOOLS: Tool[] = [
         },
         preferred_mode: {
           type: 'string',
-          enum: ['x402', 'mpp-charge', 'mpp-session', 'mpp-session-ws'],
+          enum: ['x402', 'mpp-charge'],
           description:
-            'Optional preferred payment mode. If not specified, the best mode is selected automatically. mpp-session-ws opens a WebSocket-transport MPP session instead of the default HTTP/SSE variant.',
+            'Optional preferred payment mode for discrete requests ("x402" or "mpp-charge"). If not specified, the best discrete mode is selected automatically. For streaming session modes (mpp-session or mpp-session-ws), use open_session instead.',
         },
       },
       required: ['url', 'max_amount'],
@@ -134,6 +134,26 @@ export const TOOLS: Tool[] = [
           description: 'Filter by Stellar network',
         },
       },
+      required: [],
+    },
+  },
+  {
+    name: 'check_spend_cap',
+    description:
+      'Check the current daily spend cap status, including configured daily cap, total spent today, and remaining spend allowance in USDC.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+  {
+    name: 'check_vault_status',
+    description:
+      'Check the status of the configured smart vault (e.g. NulthVault or AgentVault), returning active allowlist, current ledger sequence, and session expiry ledger.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
       required: [],
     },
   },

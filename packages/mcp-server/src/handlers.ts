@@ -11,7 +11,14 @@
  * the MCP Server, and dispatching to these functions.
  */
 
-import type { KikisAppClient, SessionHandle, PaymentMode } from '@kikis-app/kikis-app'
+import {
+  type KikisAppClient,
+  type SessionHandle,
+  type PaymentMode,
+  amountToStroops,
+  stroopsToAmount,
+  fetchLedgerSequence,
+} from '@kikis-app/kikis-app'
 import { Keypair, Horizon } from '@stellar/stellar-sdk'
 import { MAX_STREAM_MESSAGES } from './tools.js'
 
@@ -80,6 +87,13 @@ export interface HandlerDeps {
    * When omitted the global fetch is used.
    */
   fetchManifest?: (url: string) => Promise<{ json: () => Promise<unknown> }>
+  /**
+   * Optional: override ledger sequence fetching for testing check_vault_status.
+   */
+  fetchLedgerSequence?: (
+    network: 'testnet' | 'mainnet',
+    options?: { sorobanRpcUrl?: string; rpcTimeoutMs?: number },
+  ) => Promise<number>
 }
 
 // ---------------------------------------------------------------------------
@@ -97,6 +111,37 @@ function err(message: string): ToolResult {
     content: [{ type: 'text', text: JSON.stringify({ success: false, error: message }, null, 2) }],
     isError: true,
   }
+}
+
+/**
+ * Validate that a URL string parses cleanly and has an http: or https: scheme.
+ * Returns an error message string if invalid, or null if valid.
+ */
+export function validateHttpUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return 'Invalid URL: must be an http or https URL'
+    }
+    return null
+  } catch {
+    return 'Invalid URL: must be an http or https URL'
+  }
+}
+
+function formatAmount(units: bigint, decimals: number, minDecimals = 2): string {
+  let str = stroopsToAmount(units, decimals)
+  if (minDecimals > 0) {
+    if (!str.includes('.')) {
+      str += '.' + '0'.repeat(minDecimals)
+    } else {
+      const frac = str.split('.')[1]!
+      if (frac.length < minDecimals) {
+        str += '0'.repeat(minDecimals - frac.length)
+      }
+    }
+  }
+  return str
 }
 
 // ---------------------------------------------------------------------------
@@ -122,11 +167,39 @@ export async function handlePayForData(
   const { url, max_amount, preferred_mode } = args
   const { client } = deps
 
+  const urlErr = validateHttpUrl(url)
+  if (urlErr) {
+    return err(urlErr)
+  }
+
+  if (preferred_mode === 'mpp-session' || preferred_mode === 'mpp-session-ws') {
+    return err(
+      'Provider requires mpp-session mode. Please call open_session with this URL instead.',
+    )
+  }
+
   const modeOptions = preferred_mode
     ? { forceMode: preferred_mode as PaymentMode }
     : undefined
 
-  const estimate = await client.estimateCost(url, modeOptions)
+  let estimate
+  try {
+    estimate = await client.estimateCost(url, modeOptions)
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    if (msg.includes('openSession') || msg.includes('mpp-session')) {
+      return err(
+        'Provider requires mpp-session mode. Please call open_session with this URL instead.',
+      )
+    }
+    throw error
+  }
+
+  if (estimate.mode === 'mpp-session' || estimate.mode === 'mpp-session-ws') {
+    return err(
+      'Provider requires mpp-session mode. Please call open_session with this URL instead.',
+    )
+  }
 
   if (estimate.amount === undefined || isNaN(parseFloat(estimate.amount))) {
     return err('Provider returned an undefined or invalid price')
@@ -138,7 +211,18 @@ export async function handlePayForData(
     )
   }
 
-  const result = await client.pay(url, modeOptions)
+  let result
+  try {
+    result = await client.pay(url, modeOptions)
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error)
+    if (msg.includes('openSession') || msg.includes('mpp-session')) {
+      return err(
+        'Provider requires mpp-session mode. Please call open_session with this URL instead.',
+      )
+    }
+    throw error
+  }
 
   return ok({
     success: true,
@@ -171,6 +255,11 @@ export async function handleOpenSession(
   const { url, initial_deposit } = args
   const { client, openSessions, fetchManifest } = deps
 
+  const urlErr = validateHttpUrl(url)
+  if (urlErr) {
+    return err(urlErr)
+  }
+
   if (!commitmentSecret) {
     return err('COMMITMENT_SECRET environment variable is required for session mode')
   }
@@ -197,7 +286,7 @@ export async function handleOpenSession(
     }
   }
 
-  const session = await client.openSession(url)
+  const session = await client.openSession(url, { commitmentSecret })
   openSessions.set(session.channelId, session)
 
   return ok({
@@ -493,3 +582,80 @@ export async function handleListProviders(
     })),
   })
 }
+
+// ---------------------------------------------------------------------------
+// check_spend_cap
+// ---------------------------------------------------------------------------
+
+/**
+ * Return configured daily spend cap, total spent today, and remaining spend allowance in USDC.
+ */
+export async function handleCheckSpendCap(deps: HandlerDeps): Promise<ToolResult> {
+  const { client } = deps
+  const spendCap = client.getSpendCap?.()
+  const dailyCap = spendCap?.daily ?? '0'
+  const decimals = spendCap?.decimals ?? 7
+
+  const today = new Date().toISOString().slice(0, 10)
+  const spendStore = client.getSpendStore?.()
+  const persisted = spendStore ? await spendStore.read() : null
+
+  const spentMicros =
+    persisted && persisted.date === today
+      ? BigInt(persisted.totalMicros)
+      : 0n
+
+  const capMicros = amountToStroops(dailyCap, decimals)
+  const remainingMicros = capMicros > spentMicros ? capMicros - spentMicros : 0n
+
+  const minDecimals = dailyCap.includes('.') ? dailyCap.split('.')[1]!.length : 2
+  const spentTodayStr = formatAmount(spentMicros, decimals, minDecimals)
+  const remainingStr = formatAmount(remainingMicros, decimals, minDecimals)
+
+  return ok({
+    daily_cap: dailyCap,
+    spent_today: spentTodayStr,
+    remaining: remainingStr,
+  })
+}
+
+// ---------------------------------------------------------------------------
+// check_vault_status
+// ---------------------------------------------------------------------------
+
+/**
+ * Return active allowlist, current ledger sequence, and session expiry ledger if a smart vault is configured.
+ */
+export async function handleCheckVaultStatus(deps: HandlerDeps): Promise<ToolResult> {
+  const { client, stellarNetwork, fetchLedgerSequence: fetchLedger } = deps
+  const vault = client.getVaultConfig?.()
+
+  if (!vault) {
+    return ok({
+      configured: false,
+      message: 'No vault configured on client',
+    })
+  }
+
+  let currentLedger: number | null = null
+  try {
+    const fetcher = fetchLedger ?? fetchLedgerSequence
+    currentLedger = await fetcher(stellarNetwork, {
+      ...(vault.sorobanRpcUrl !== undefined ? { sorobanRpcUrl: vault.sorobanRpcUrl } : {}),
+      ...(vault.rpcTimeoutMs !== undefined ? { rpcTimeoutMs: vault.rpcTimeoutMs } : {}),
+    })
+  } catch {
+    // If ledger sequence cannot be fetched, return null sequence
+  }
+
+  return ok({
+    configured: true,
+    mode: vault.mode,
+    vault_account: vault.nulthAccount,
+    allowed_payees: vault.allowedPayees,
+    current_ledger_sequence: currentLedger,
+    expiry_ledger: vault.expiryLedger ?? null,
+    daily_cap: vault.dailyCapUsdc,
+  })
+}
+

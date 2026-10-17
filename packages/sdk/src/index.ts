@@ -14,7 +14,7 @@ export type {
   KikisAppLogLevel,
   KikisAppLogFields,
 } from './internal/logger.js'
-export { usdcToStroops, usdcToUnits, USDC_DECIMALS } from './internal/usdc.js'
+export { usdcToStroops, usdcToUnits, USDC_DECIMALS, amountToStroops, stroopsToAmount } from './internal/usdc.js'
 export {
   normalizeManifestAssets,
   getEligibleAssets,
