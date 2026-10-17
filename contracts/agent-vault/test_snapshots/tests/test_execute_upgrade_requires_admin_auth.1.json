@@ -15,7 +15,7 @@
               "function_name": "propose_upgrade",
               "args": [
                 {
-                  "bytes": "ebbda1edfc3dc2a4085138b94dfb6723598416a29f9dbcdef7a9fc9ce5f1022f"
+                  "bytes": "669f4d696040573b721c7c956228945d4d1943a5029f1eca6e1fd58000cc8dcd"
                 }
               ]
             }
@@ -106,7 +106,7 @@
                           "symbol": "agentpk"
                         },
                         "val": {
-                          "bytes": "0e7f4db24afa6330667a22a5f30c4814103ceb7e558f15ed3a66afefdb9c6035"
+                          "bytes": "5d76fe94174ba09c3d7448165575a8485aedb19dae57f1f341948bcd177c3307"
                         }
                       },
                       {
@@ -173,7 +173,7 @@
                         "val": {
                           "vec": [
                             {
-                              "bytes": "ebbda1edfc3dc2a4085138b94dfb6723598416a29f9dbcdef7a9fc9ce5f1022f"
+                              "bytes": "669f4d696040573b721c7c956228945d4d1943a5029f1eca6e1fd58000cc8dcd"
                             },
                             {
                               "u32": 17280

@@ -14,6 +14,8 @@ export type KikisAppErrorCode =
   | 'REFUND_WINDOW'
   | 'CLIENT_VERSION_TOO_OLD'
   | 'TRUSTLINE'
+  | 'VAULT_CONFIG'
+  | 'FEE'
 
 export interface KikisAppErrorOptions {
   cause?: unknown
@@ -112,6 +114,30 @@ export class KikisAppTrustlineError extends KikisAppError {
   }
 }
 
+/** Vault configuration parameter is invalid (e.g. mock prover on mainnet, unknown prover, unsupported payment mode). */
+export class KikisAppVaultConfigError extends KikisAppError {
+  constructor(message: string, options: KikisAppErrorOptions = {}) {
+    super(message, 'VAULT_CONFIG', false, options)
+    this.name = 'KikisAppVaultConfigError'
+  }
+
+  static override [Symbol.hasInstance](instance: unknown): boolean {
+    return (
+      (instance instanceof KikisAppError && instance.code === 'VAULT_CONFIG') ||
+      (typeof instance === 'object' &&
+        instance !== null &&
+        'name' in instance &&
+        ((instance as { name?: string }).name === 'KikisAppVaultConfigError' ||
+          (instance as { name?: string }).name === 'NulthConfigError' ||
+          (instance as { code?: string }).code === 'VAULT_CONFIG'))
+    )
+  }
+}
+
+/** Alias for {@link KikisAppVaultConfigError} */
+export const NulthConfigError = KikisAppVaultConfigError
+export type NulthConfigError = KikisAppVaultConfigError
+
 /** x402 facilitator or provider returned a retryable HTTP failure (5xx, 429). */
 export class KikisAppFacilitatorError extends KikisAppError {
   readonly status: number
@@ -186,6 +212,26 @@ export class KikisAppRefundWindowError extends KikisAppError {
   }
 }
 
+/** Network fee exceeds max configured fee or base fee surge rejected. */
+export class KikisAppFeeError extends KikisAppError {
+  readonly fee?: number | string
+  readonly maxFee?: number | string
+
+  constructor(
+    message: string,
+    options: KikisAppErrorOptions & { fee?: number | string; maxFee?: number | string } = {},
+  ) {
+    super(message, 'FEE', false, options)
+    this.name = 'KikisAppFeeError'
+    if (options.fee !== undefined) {
+      this.fee = options.fee
+    }
+    if (options.maxFee !== undefined) {
+      this.maxFee = options.maxFee
+    }
+  }
+}
+
 /** @deprecated Use {@link KikisAppPolicyRejectError} */
 export const KikisAppPolicyRejectedError = KikisAppPolicyRejectError
 
@@ -237,18 +283,66 @@ export function wrapFetchError(err: unknown, context: string): KikisAppError {
 }
 
 /**
- * Wrap an mppx failure; differentiates network transport errors from signing/credential errors.
- * Real transport failures (fetch TypeError, AbortError, TimeoutError) are wrapped as retryable
- * KikisAppNetworkError, while signing and challenge failures are wrapped as non-retryable
- * KikisAppSignatureError.
+ * Wrap an mppx failure; differentiates network transport/abort errors, RPC simulation
+ * failures, policy rejections, and cryptographic signing/credential errors.
  */
 export function wrapMppError(err: unknown, context: string): KikisAppError {
   if (err instanceof KikisAppError) return err
-  if (
+
+  const cause = (err as Record<string, unknown>)?.['cause']
+  const errName =
+    (err instanceof Error ? err.name : '') ||
+    (typeof err === 'object' && err !== null && 'name' in err ? String((err as any).name) : '')
+  const causeName =
+    (cause instanceof Error ? cause.name : '') ||
+    (typeof cause === 'object' && cause !== null && 'name' in cause ? String((cause as any).name) : '')
+  const errCode = (err as Record<string, unknown>)?.['code']
+  const causeCode = (cause as Record<string, unknown>)?.['code']
+
+  const fullMessage = [
+    err instanceof Error ? err.message : String(err),
+    cause instanceof Error ? cause.message : typeof cause === 'string' ? cause : '',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  const isNetworkOrAbort =
     err instanceof TypeError ||
-    (err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError'))
-  ) {
+    cause instanceof TypeError ||
+    errName === 'AbortError' ||
+    causeName === 'AbortError' ||
+    errName === 'TimeoutError' ||
+    causeName === 'TimeoutError' ||
+    errName === 'ConnectTimeoutError' ||
+    causeName === 'ConnectTimeoutError' ||
+    errName === 'SocketError' ||
+    causeName === 'SocketError' ||
+    errCode === 'ECONNRESET' ||
+    causeCode === 'ECONNRESET' ||
+    errCode === 'ETIMEDOUT' ||
+    causeCode === 'ETIMEDOUT' ||
+    /abort|timeout|timed out|fetch failed|socket hang up|econnreset|etimedout/i.test(fullMessage)
+
+  if (isNetworkOrAbort) {
     return new KikisAppNetworkError(`${context}: ${String(err)}`, { cause: err })
   }
+
+  const isPolicyReject =
+    /insufficient[ _]?balance|underfunded|policy[ _]?reject|spend[ _]?cap/i.test(fullMessage)
+
+  if (isPolicyReject) {
+    return new KikisAppPolicyRejectError(
+      err instanceof Error ? err.message : String(err),
+      { cause: err },
+    )
+  }
+
+  const isSimulationOrSequence =
+    /simulation|simulate|sequence[ _]?mismatch|tx_bad_seq|bad[ _]?seq|ledger[ _]?sequence/i.test(fullMessage)
+
+  if (isSimulationOrSequence) {
+    return new KikisAppChannelStateError(`${context}: ${String(err)}`, { cause: err })
+  }
+
   return new KikisAppSignatureError(`${context}: ${String(err)}`, { cause: err })
 }

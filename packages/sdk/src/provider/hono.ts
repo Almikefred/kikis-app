@@ -35,6 +35,7 @@ import {
   type SeenTxStore,
 } from './SeenTxStore.js'
 import { resolveAssetContract } from '../internal/assetUtils.js'
+import { resolvePaymentMode } from './internal/detectPaymentMode.js'
 import { KikisAppManifestError } from '../errors.js'
 import { readSettleResult } from './settleResult.js'
 
@@ -538,17 +539,22 @@ function createMppSessionHandlerState(
   // other host that can evict and recreate this closure between requests)
   // loses it even though `commit` persisted it to `innerStore` — so any path
   // that reads `record` must first try to reload it from the store. Never
-  // overwrites an in-memory record that is already set.
+  // overwrites an in-memory record that is already set. The persisted
+  // voucherCount is restored with it so eviction cannot reset the counters the
+  // DELETE close path and orphan reporting rely on (#52).
   async function loadPersistedRecord(): Promise<VerifiedVoucherRecord | null> {
     if (record) return record
     try {
       const stored = (await innerStore.get(voucherRecordKey)) as
-        | { amount?: string; signature?: string; payer?: string | null }
+        | { amount?: string; signature?: string; payer?: string | null; voucherCount?: number }
         | undefined
       if (!stored || typeof stored.amount !== 'string' || typeof stored.signature !== 'string') {
         return null
       }
       record = { amount: BigInt(stored.amount), signature: stored.signature, payer: stored.payer ?? null }
+      if (typeof stored.voucherCount === 'number' && stored.voucherCount > voucherCount) {
+        voucherCount = stored.voucherCount
+      }
     } catch {
       // Corrupt or unreadable persisted record — proceed as though there is none.
       return null
@@ -612,13 +618,17 @@ function createMppSessionHandlerState(
 
     const payer = record?.payer ?? extractPayerAddress(credential.source)
     record = { amount, signature: payload.signature, payer }
+    voucherCount++
+    // Persist the counters with the record: an isolate eviction between
+    // vouchers must not reset voucherCount (orphan info, onVoucher indexing)
+    // or strand the amount/signature the DELETE close path reads (#52).
     await innerStore.put(voucherRecordKey, {
       amount: record.amount.toString(),
       signature: record.signature,
       payer: record.payer,
+      voucherCount,
     })
 
-    voucherCount++
     // Voucher activity — this session is alive again.
     settledCleanly = false
     armIdleTimer()
@@ -667,31 +677,17 @@ function createMppSessionHandlerState(
     mppx,
 
     async handleDelete(c: DeleteContext): Promise<Response> {
+      // The persisted verified-voucher record is the only source of truth for
+      // settlement (#52). Reload it first so isolate eviction (Durable Object
+      // hibernation, cold start) cannot silently reset the provider's
+      // counters, and never fall back to the client-supplied body: it is
+      // untrusted input, and after an eviction the closure state it claims to
+      // supersede is exactly what must be recovered from storage. A close with
+      // no persisted record means this provider never verified a voucher — it
+      // must refuse to settle rather than trust a self-reported amount.
       await loadPersistedRecord()
-      let body: { amount?: string; signature?: string } | undefined
-      try {
-        body = await c.req.json() as { amount?: string; signature?: string }
-      } catch {
-        // empty or non-JSON body
-      }
-
-      const bodyAmount = body?.amount ? BigInt(body.amount) : 0n
-      const recordAmount = record?.amount ?? 0n
-      let closeAmount: bigint
-      let closeSig: string
-      if (bodyAmount > recordAmount) {
-        closeAmount = bodyAmount
-        closeSig = body?.signature ?? record?.signature ?? ''
-      } else {
-        closeAmount = recordAmount
-        // Prefer the provider's own verified-voucher signature. Fall back to
-        // the client's only when it signs the same amount and the provider
-        // never verified one — otherwise a close for a genuinely tracked
-        // amount no-ops and the session is never flagged for recovery.
-        closeSig =
-          record?.signature ||
-          (bodyAmount === recordAmount ? body?.signature ?? '' : '')
-      }
+      const closeAmount: bigint = record?.amount ?? 0n
+      const closeSig: string = record?.signature ?? ''
 
       if (closeAmount > 0n && closeSig) {
         const closeTxHash = await channelClose({
@@ -832,15 +828,18 @@ function isWebSocketUpgradeRequest(c: {
  * ```
  */
 export function kikisAppHono(opts: KikisAppHonoOptions): MiddlewareHandler {
-  const handlers: MiddlewareHandler[] = []
+  // Handlers keyed by the payment mode they speak — routing never depends on
+  // registration order, so an mpp-charge handler can no longer be skipped by
+  // an mpp-session handler occupying the last array slot (#43).
+  const handlers = new Map<PaymentMode, MiddlewareHandler>()
   const signedManifest = signManifest(opts.manifest, opts.payeeSecretKey)
 
   if (opts.modes.includes('x402') && opts.pricing.x402) {
-    handlers.push(createX402HonoHandler({ ...opts, manifest: signedManifest }))
+    handlers.set('x402', createX402HonoHandler({ ...opts, manifest: signedManifest }))
   }
 
   if (opts.modes.includes('mpp-charge') && opts.pricing['mpp-charge']) {
-    handlers.push(createMppChargeHonoHandler({ ...opts, manifest: signedManifest }))
+    handlers.set('mpp-charge', createMppChargeHonoHandler({ ...opts, manifest: signedManifest }))
   }
 
   // Session modes (mpp-session, mpp-session-ws) share one channel store so a
@@ -857,29 +856,36 @@ export function kikisAppHono(opts: KikisAppHonoOptions): MiddlewareHandler {
     const sessionPricing = opts.pricing[primarySessionMode]!
     const sharedState = createMppSessionHandlerState(opts, sessionPricing, primarySessionMode)
     for (const mode of sessionModes) {
-      handlers.push(
+      handlers.set(
+        mode,
         createMppSessionHonoHandler({ ...opts, manifest: signedManifest }, { mode }, sharedState),
       )
     }
   }
+
+  const availableModes = new Set(handlers.keys())
 
   return async (c, next) => {
     if (c.req.path === '/.well-known/kikis-app.json') {
       return c.json(signedManifest)
     }
 
-    if (handlers.length === 0) {
+    if (handlers.size === 0) {
       await next()
       return
     }
 
-    const hasX402Header = !!(
-      c.req.header('payment-signature') || c.req.header('x-payment')
+    // Route by the mode the request targets (#43): explicit x-preferred-mode,
+    // x402 payment headers, or the intent encoded in an mpp Payment
+    // credential — never by array position. Requests without a mode signal
+    // still receive the provider's default challenge (session, then charge,
+    // then x402).
+    const mode = resolvePaymentMode(
+      (name) => c.req.header(name),
+      availableModes,
+      { isWebSocketUpgrade: isWebSocketUpgradeRequest(c) },
     )
-    const prefersX402 = c.req.header('x-preferred-mode') === 'x402'
-
-    const handler =
-      hasX402Header || prefersX402 ? handlers[0] : handlers[handlers.length - 1]
+    const handler = mode ? handlers.get(mode) : undefined
 
     if (!handler) {
       await next()

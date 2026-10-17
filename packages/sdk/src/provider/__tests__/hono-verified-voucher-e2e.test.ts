@@ -190,7 +190,7 @@ function createSharedMemoryStore(): { get(k: string): Promise<unknown>; put(k: s
 const { kikisAppHono } = await import('../hono.js')
 
 const manifest: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Test Service',
   description: 'Unit test provider',
   modes: ['mpp-session'],

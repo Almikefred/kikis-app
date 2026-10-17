@@ -133,7 +133,7 @@
               "function_name": "set_agent_pubkey",
               "args": [
                 {
-                  "bytes": "e2d2007f964c5839eebf3f9109babfc55ab651246a5e1fd764bc6b56504da3c5"
+                  "bytes": "f56b6555a5dc0d298cfd07017beb6b19aebf42c45fc3f759b4b1ed340f2b4e14"
                 }
               ]
             }
@@ -226,7 +226,7 @@
               "function_name": "propose_upgrade",
               "args": [
                 {
-                  "bytes": "7ba2ed675897c812bf11f57df74ec662d569037a805206b3165dfacc42c80baf"
+                  "bytes": "56694fde1ace0638416d6c93bf0672f59c9872bdc1821fd19262ef085523dbc6"
                 }
               ]
             }
@@ -567,7 +567,7 @@
                           "symbol": "agentpk"
                         },
                         "val": {
-                          "bytes": "e2d2007f964c5839eebf3f9109babfc55ab651246a5e1fd764bc6b56504da3c5"
+                          "bytes": "f56b6555a5dc0d298cfd07017beb6b19aebf42c45fc3f759b4b1ed340f2b4e14"
                         }
                       },
                       {

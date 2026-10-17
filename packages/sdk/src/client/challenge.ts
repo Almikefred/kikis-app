@@ -3,6 +3,7 @@ import type { KikisAppManifest } from '../types.js'
 import { KikisAppPolicyRejectError } from '../errors.js'
 import { usdcToStroops } from '../internal/usdc.js'
 import { resolvePayee } from '../internal/payee.js'
+import { isAssetEligible } from '../internal/assetUtils.js'
 
 /**
  * Pure, RPC-free validators that bind a payment challenge (the unsigned 402
@@ -50,6 +51,46 @@ function checkAmount(
   return null
 }
 
+export const MAX_ALLOWED_CHALLENGE_TIMEOUT_SECONDS = 300
+
+function checkTimeout(
+  accept: PaymentRequirements,
+): KikisAppPolicyRejectError | null {
+  const timeout = accept.maxTimeoutSeconds
+  if (
+    typeof timeout !== 'number' ||
+    !Number.isFinite(timeout) ||
+    timeout <= 0 ||
+    timeout > MAX_ALLOWED_CHALLENGE_TIMEOUT_SECONDS
+  ) {
+    return new KikisAppPolicyRejectError('challenge_timeout_invalid')
+  }
+
+  const extra = isRecord(accept.extra) ? accept.extra : undefined
+  const rawExpiry =
+    (accept as Record<string, unknown>)['expiresAt'] ??
+    (accept as Record<string, unknown>)['expires_at'] ??
+    extra?.['expiresAt'] ??
+    extra?.['expires_at']
+
+  if (rawExpiry !== undefined) {
+    let expiryMs: number | undefined
+    if (typeof rawExpiry === 'number' && Number.isFinite(rawExpiry)) {
+      expiryMs = rawExpiry < 1e11 ? rawExpiry * 1000 : rawExpiry
+    } else if (typeof rawExpiry === 'string') {
+      const parsed = Date.parse(rawExpiry)
+      if (Number.isFinite(parsed)) {
+        expiryMs = parsed
+      }
+    }
+    if (expiryMs !== undefined && expiryMs < Date.now()) {
+      return new KikisAppPolicyRejectError('challenge_timeout_invalid')
+    }
+  }
+
+  return null
+}
+
 /**
  * Validate one x402 `accepts` entry against the manifest. Returns the rejection
  * to throw, or `null` when the entry is safe to sign.
@@ -63,6 +104,7 @@ export function checkX402Accept(
   manifest: KikisAppManifest,
   network: Caip2Network,
   maxAmount: string,
+  endpoint?: string,
 ): KikisAppPolicyRejectError | null {
   if (accept.network !== network) {
     return new KikisAppPolicyRejectError('challenge_network_mismatch')
@@ -70,8 +112,18 @@ export function checkX402Accept(
   if (accept.payTo !== resolvePayee(manifest, 'x402')) {
     return new KikisAppPolicyRejectError('challenge_payee_mismatch')
   }
-  if (accept.asset !== manifest.asset_contract) {
+  let eligible = false
+  try {
+    eligible = isAssetEligible(manifest, accept.asset, 'x402', endpoint)
+  } catch {
+    eligible = false
+  }
+  if (!eligible) {
     return new KikisAppPolicyRejectError('challenge_asset_mismatch')
+  }
+  const timeoutError = checkTimeout(accept)
+  if (timeoutError) {
+    return timeoutError
   }
   return checkAmount(accept.amount, maxAmount)
 }
@@ -85,8 +137,9 @@ export function filterX402Accepts(
   manifest: KikisAppManifest,
   network: Caip2Network,
   maxAmount: string,
+  endpoint?: string,
 ): PaymentRequirements[] {
-  return accepts.filter((accept) => checkX402Accept(accept, manifest, network, maxAmount) === null)
+  return accepts.filter((accept) => checkX402Accept(accept, manifest, network, maxAmount, endpoint) === null)
 }
 
 /**
@@ -101,6 +154,7 @@ export function checkChargeChallenge(
   manifest: KikisAppManifest,
   network: Caip2Network,
   maxAmount: string,
+  endpoint?: string,
 ): KikisAppPolicyRejectError | null {
   const methodDetails = request['methodDetails']
   const rawNetwork = isRecord(methodDetails) ? methodDetails['network'] : undefined
@@ -115,7 +169,15 @@ export function checkChargeChallenge(
   }
 
   const currency = request['currency']
-  if (typeof currency !== 'string' || currency !== manifest.asset_contract) {
+  let eligible = false
+  if (typeof currency === 'string') {
+    try {
+      eligible = isAssetEligible(manifest, currency, 'mpp-charge', endpoint)
+    } catch {
+      eligible = false
+    }
+  }
+  if (!eligible) {
     return new KikisAppPolicyRejectError('challenge_asset_mismatch')
   }
 

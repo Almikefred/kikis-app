@@ -76,7 +76,7 @@ function parseResult(result: ToolResult): unknown {
 
 /** Minimal KikisAppManifest fixture required by EstimateCostResult. */
 const FAKE_MANIFEST: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Fake Provider',
   description: 'Test fixture provider',
   modes: ['x402'],

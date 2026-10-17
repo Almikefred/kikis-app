@@ -14,6 +14,8 @@ export interface AssetConfig {
   asset: string
   /** Stellar Asset Contract (SAC) address for this payment asset */
   asset_contract: string
+  /** Optional: asset decimal precision (defaults to 7 for Stellar SAC assets) */
+  decimals?: number
   /** Optional: restrict this asset to specific payment modes. If omitted, available for all modes. */
   modes?: PaymentMode[]
   /** Optional: restrict this asset to specific endpoints (by name). If omitted, available for all endpoints. */
@@ -97,7 +99,7 @@ export interface EndpointDescriptor {
 /** Full KikisApp discovery manifest — served at /.well-known/kikis-app.json */
 export interface KikisAppManifest {
   /** Manifest schema version (major.minor), e.g. "1.0", "1.1", "2.0" */
-  kikis-app: string
+  'kikis-app': string
   /**
    * Minimum SDK client version (major.minor) required to use this manifest.
    * Clients below this version must refuse to pay.
@@ -201,6 +203,18 @@ export interface KikisAppManifest {
   signature_version?: '2'
   /** Optional hierarchical categories from a published taxonomy (e.g. "data/price/crypto") */
   categories?: string[]
+}
+
+/**
+ * Options for configuring the HTTP request performed during payment execution.
+ */
+export interface HttpRequestOptions {
+  /** HTTP request method. Defaults to 'GET'. */
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | string
+  /** Custom request headers to send with probe and settlement requests. */
+  headers?: Record<string, string>
+  /** Request body payload. Objects are serialized to JSON with Content-Type: application/json. */
+  body?: string | Uint8Array | Record<string, unknown> | unknown
 }
 
 /** Result returned by client.pay() for any payment mode */
@@ -315,6 +329,20 @@ export interface SessionOptions {
    * store to resume such a channel, or close it first.
    */
   store?: Store.Store
+  /**
+   * Soroban RPC endpoint used by close() for the settlement simulation
+   * (prepare_commitment) and transaction preparation. Defaults to the public
+   * Stellar endpoint for the session network. Set a private/self-hosted RPC
+   * here when the default endpoint is unreachable or rate-limited from the
+   * runtime the agent runs in (#51).
+   */
+  sorobanRpcUrl?: string
+  /**
+   * Base fee in stroops for close()'s settlement transaction. Defaults to the
+   * SDK BASE_FEE (100 stroops). Raise it during fee surges so settlement
+   * simulation and submission are not rejected for an underpriced fee (#51).
+   */
+  baseFeeStroops?: number
 }
 
 /**
@@ -324,8 +352,14 @@ export interface SessionOptions {
  * - 'session:close-failed' — that auto-close rejected. The channel may still
  *   hold collateral, so the caller should retry close() or fall back to
  *   requestRefund().
+ * - 'session:voucher' — a voucher was issued during streaming; carries the
+ *   live session stats so a subscriber can render real-time spend without
+ *   polling stats().
  */
-export type SessionEvent = 'session:timeout' | 'session:close-failed'
+export type SessionEvent =
+  | 'session:timeout'
+  | 'session:close-failed'
+  | 'session:voucher'
 
 /** Payload delivered with the 'session:timeout' event. */
 export interface SessionTimeoutPayload {
@@ -346,12 +380,30 @@ export interface SessionCloseFailedPayload {
 }
 
 /**
+ * Payload delivered with the 'session:voucher' event. Emitted once per issued
+ * voucher, after both counters have advanced, so the values always reflect
+ * everything signed so far (the same snapshot stats() would return).
+ */
+export interface SessionVoucherPayload {
+  /** Number of vouchers issued so far in this session */
+  vouchersIssued: number
+  /**
+   * Cumulative amount authorized across all signed vouchers so far, in
+   * payment-asset decimal units — the same units as
+   * {@link SessionStats.currentCumulative} and
+   * {@link SessionCloseResult.totalPaid}.
+   */
+  currentCumulative: string
+}
+
+/**
  * Maps each lifecycle event to the payload its listener receives, so on() can
  * narrow the callback argument per event.
  */
 export interface SessionEventPayloadMap {
   'session:timeout': SessionTimeoutPayload
   'session:close-failed': SessionCloseFailedPayload
+  'session:voucher': SessionVoucherPayload
 }
 
 /**
@@ -422,6 +474,14 @@ export interface SessionHandle {
     event: E,
     listener: (payload: SessionEventPayloadMap[E]) => void,
   ): () => void
+  /**
+   * Detach listeners registered through {@link SessionHandle.on}. With no
+   * `event`, every listener for every event is removed; with an `event`, only
+   * that event's listeners are removed. Idempotent — removing listeners from
+   * an event that has none is a no-op. A successful close() clears all
+   * listeners automatically, so long-lived handles cannot retain callbacks.
+   */
+  removeAllListeners(event?: SessionEvent): void
 }
 
 /**
@@ -461,7 +521,24 @@ export {
   KikisAppRefundWindowError,
   KikisAppPolicyRejectedError,
   KikisAppSessionError,
+  KikisAppFeeError,
 } from './errors.js'
+
+/** Configuration options for MppChargeClient */
+export interface MppChargeClientOptions {
+  /** Maximum allowable base fee in stroops before rejecting transaction submission */
+  maxFeeStroops?: number
+  /** Alias for maxFeeStroops */
+  maxBaseFeeStroops?: number
+  /** Whether to query Horizon /fee_stats for dynamic base fee surge pricing */
+  dynamicFee?: boolean
+  /** Custom Horizon RPC URL used for fee estimation */
+  horizonUrl?: string
+  /** Custom fetch function override (e.g. for testing) */
+  fetchFn?: typeof fetch
+}
+
+export type MppChargeClientConfig = MppChargeClientOptions
 
 /** Dispute status of a channel */
 export type DisputeStatus = 'open' | 'in-refund-window' | 'refundable' | 'settled'

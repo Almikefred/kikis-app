@@ -54,7 +54,7 @@ function buildSpecialistServer(specialistSecret: string): Hono {
     const specialistKp = Keypair.fromSecret(specialistSecret)
 
     const manifest: KikisAppManifest = {
-        kikis-app: '1.0',
+        'kikis-app': '1.0',
         name: 'Summariser Specialist',
         description: 'Accepts a text snippet and returns a one-sentence summary — paid per request',
         modes: ['x402'],

@@ -15,7 +15,7 @@
               "function_name": "propose_upgrade",
               "args": [
                 {
-                  "bytes": "78640fffe45407a91a1058d95b9db3c0e2caa0116ffe0d6eb63c5c5ddb354d56"
+                  "bytes": "1389b48775b405c1b62ace28d36a5194656fb99ed07b5c24a55b71ce446ae5d1"
                 }
               ]
             }
@@ -153,7 +153,7 @@
                           "symbol": "agentpk"
                         },
                         "val": {
-                          "bytes": "dee01d130765798f1f1f35cf0fa703404bf0ef5508835a7eb3c43f71a67336a2"
+                          "bytes": "a150bc51081ca65611287cb87b2773768b0dfab3300747b166c909b745eba57b"
                         }
                       },
                       {

@@ -76,7 +76,10 @@ pub enum Error {
     NoPendingUpgrade = 14,
     UpgradeNotReady = 15,
     UpgradeTimelockOverflow = 16,
-    UnauthorizedToken = 17,
+    /// The claimed settlement payer is not this vault instance. The vault is
+    /// the governed payer account, so only it may be attributed (#16).
+    PayerNotVault = 17,
+    UnauthorizedToken = 18,
 }
 
 fn validate_cap(env: &Env, cap: i128) {
@@ -214,6 +217,21 @@ impl AgentVault {
     /// third-party provider records its own settlements with its own payee key
     /// and never holds the admin secret, which also guards `upgrade` and
     /// `set_agent_pubkey`.
+    ///
+    /// The vault is the governed payer account, so `payer` must be this vault
+    /// instance's own address (#16): an unauthenticated caller parameter cannot
+    /// be trusted for audit attribution, and a malicious allowlisted provider
+    /// could otherwise emit settlement logs against arbitrary third-party
+    /// payer accounts. The contract is both the spend authority (`__check_auth`
+    /// debits its caps) and the settlement reporter, so `payer` is not a free
+    /// variable — it names this vault. The emitted event is therefore always
+    /// attributed to the vault instance that authorized it.
+    ///
+    /// The settlement accrues to the vault's daily, per-payee, and lifetime
+    /// spend counters through the same `record_spend()` policy a direct
+    /// transfer runs — a settlement that would exceed any of those caps panics
+    /// instead of recording, so off-chain sessions cannot spend around the
+    /// vault's on-chain caps.
     pub fn record_session_settlement(
         env: Env,
         channel_id: Address,
@@ -239,6 +257,14 @@ impl AgentVault {
         if cumulative_amount <= 0 {
             panic_with_error!(&env, Error::InvalidAmount);
         }
+        // Payer attribution (#16): the vault governs its own spend, so the
+        // only payer it may ever attribute a settlement to is itself. Checked
+        // before auth so a spoofed attribution fails even with a valid payee
+        // signature — a payee signature authorizes the payee's report, never a
+        // third party's spend.
+        if payer != env.current_contract_address() {
+            panic_with_error!(&env, Error::PayerNotVault);
+        }
         let allowlist: Map<Address, i128> = env
             .storage()
             .instance()
@@ -248,6 +274,16 @@ impl AgentVault {
             panic_with_error!(&env, Error::PayeeNotAllowed);
         }
         payee.require_auth();
+
+        // This entrypoint writes the lifetime spend counter in instance
+        // storage, so refresh the instance TTL like every other writer —
+        // placed after the auth check so an unauthenticated caller cannot
+        // make the vault pay for a bump.
+        bump_instance(&env);
+
+        if let Err(error) = record_spend(&env, &payee, cumulative_amount) {
+            panic_with_error!(&env, error);
+        }
 
         // topics: (Symbol("session_settled"), channel_id, payee)
         // data:   (payer, cumulative_amount, voucher_count)
@@ -511,6 +547,90 @@ impl AgentVault {
     }
 }
 
+// ── Shared spend accounting ──────────────────────────────────────────────────
+
+/// Validate `amount` against the vault's spend policy and atomically accrue it
+/// to the daily, per-payee, and lifetime spend counters.
+///
+/// Shared by `__check_auth` (direct SAC transfers) and
+/// `record_session_settlement` (off-chain channel settlements), so a channel
+/// settlement cannot bypass the caps a transfer would enforce. Checks run in
+/// policy order — allowlist, global daily cap, per-payee sub-cap, lifetime cap
+/// — and no counter is written until every check has passed, so a rejected
+/// spend leaves storage untouched even without relying on host rollback.
+///
+/// The day/payee counters live in temporary storage keyed by the current
+/// 17 280-ledger day bucket; each write extends their TTL to cover the rest of
+/// the current bucket plus the next day. Returns the updated global day-spend
+/// counter for the `payment_authorized` event payload.
+fn record_spend(env: &Env, payee: &Address, amount: i128) -> Result<i128, Error> {
+    let storage = env.storage().instance();
+    let daily_cap: i128 = storage.get(&CAP_KEY).unwrap_or(i128::MAX);
+    let lifetime_cap: i128 = storage.get(&LIFETIME_CAP_KEY).unwrap_or(0);
+    let lifetime_spend: i128 = storage
+        .get::<Symbol, i128>(&LIFETIME_SPEND_KEY)
+        .unwrap_or(0);
+    let allowlist: Map<Address, i128> = storage
+        .get(&LIST_KEY)
+        .unwrap_or_else(|| Map::new(env));
+
+    // Policy 2 — EndpointAllowlistPolicy (also fetches per-payee sub-cap)
+    let payee_sub_cap = allowlist.get(payee.clone()).ok_or(Error::PayeeNotAllowed)?;
+
+    // Day bucket: one bucket per ~24 h (17 280 ledgers × ~5 s each)
+    let day_bucket: u32 = env.ledger().sequence() / 17_280;
+    let spend_key = (SPEND_PREFIX, day_bucket);
+    let day_spend: i128 = env
+        .storage()
+        .temporary()
+        .get::<(Symbol, u32), i128>(&spend_key)
+        .unwrap_or(0);
+
+    // Policy 1 — Global DailyCapPolicy
+    let projected_day = day_spend.checked_add(amount).unwrap_or(i128::MAX);
+    if projected_day > daily_cap {
+        return Err(Error::DailyCapExceeded);
+    }
+
+    // Policy 4 — Per-payee DailyCapPolicy
+    let payee_spend_key = (PAYEE_SPEND_PREFIX, day_bucket, payee.clone());
+    let payee_spend: i128 = env
+        .storage()
+        .temporary()
+        .get::<(Symbol, u32, Address), i128>(&payee_spend_key)
+        .unwrap_or(0);
+    let projected_payee = payee_spend.checked_add(amount).unwrap_or(i128::MAX);
+    if projected_payee > payee_sub_cap {
+        return Err(Error::PayeeCapExceeded);
+    }
+
+    // Policy 5 — LifetimeCapPolicy (monotonic, never resets)
+    // Always accumulate; enforce only when a cap is set (lifetime_cap > 0).
+    let projected_lifetime = lifetime_spend.checked_add(amount).unwrap_or(i128::MAX);
+    if lifetime_cap > 0 && projected_lifetime > lifetime_cap {
+        return Err(Error::LifetimeCapExceeded);
+    }
+
+    // Every check passed — persist all three counters.
+    // Day/payee TTLs cover the current bucket plus one more day.
+    env.storage()
+        .temporary()
+        .set::<(Symbol, u32), i128>(&spend_key, &projected_day);
+    env.storage()
+        .temporary()
+        .extend_ttl::<(Symbol, u32)>(&spend_key, 17_280, 34_560);
+    env.storage()
+        .temporary()
+        .set::<(Symbol, u32, Address), i128>(&payee_spend_key, &projected_payee);
+    env.storage()
+        .temporary()
+        .extend_ttl::<(Symbol, u32, Address)>(&payee_spend_key, 17_280, 34_560);
+    // Persist monotonic lifetime spend counter — must survive vault lifetime
+    storage.set(&LIFETIME_SPEND_KEY, &projected_lifetime);
+
+    Ok(projected_day)
+}
+
 // ── CustomAccountInterface ────────────────────────────────────────────────────
 //
 // Architecture follows Crossmint/stellar-smart-account v1.0.0:
@@ -533,6 +653,9 @@ impl AgentVault {
 //     the global daily cap
 //   • Policy 5 — LifetimeCapPolicy: monotonic spend_counter in instance storage;
 //     enforced when lifetime_cap > 0; never resets across day boundaries
+//   • Policies 1, 2, 4 and 5 run through the shared record_spend() helper, so
+//     record_session_settlement enforces the identical caps (and accumulators)
+//     on off-chain channel settlements; only Policy 3 is auth-path-specific.
 
 #[contractimpl]
 impl CustomAccountInterface for AgentVault {
@@ -567,25 +690,6 @@ impl CustomAccountInterface for AgentVault {
         if env.ledger().sequence() > expiry {
             return Err(Error::SessionExpired);
         }
-
-        // ── Load policy state ────────────────────────────────────────────────
-        let daily_cap: i128 = storage.get(&CAP_KEY).unwrap_or(i128::MAX);
-        let lifetime_cap: i128 = storage.get(&LIFETIME_CAP_KEY).unwrap_or(0);
-        let mut lifetime_spend: i128 = storage
-            .get::<Symbol, i128>(&LIFETIME_SPEND_KEY)
-            .unwrap_or(0);
-        let allowlist: Map<Address, i128> = storage
-            .get(&LIST_KEY)
-            .unwrap_or_else(|| Map::new(&env));
-
-        // Day bucket: one bucket per ~24 h (17 280 ledgers × ~5 s each)
-        let day_bucket: u32 = env.ledger().sequence() / 17_280;
-        let spend_key = (SPEND_PREFIX, day_bucket);
-        let mut day_spend: i128 = env
-            .storage()
-            .temporary()
-            .get::<(Symbol, u32), i128>(&spend_key)
-            .unwrap_or(0);
 
         // ── Per-context policy checks ─────────────────────────────────────────
         // Default-deny: the policies below only fire for `transfer` on the
@@ -647,50 +751,17 @@ impl CustomAccountInterface for AgentVault {
                         return Err(Error::InvalidAmount);
                     }
 
-                    // Policy 2 — EndpointAllowlistPolicy (also fetches per-payee sub-cap)
-                    let payee_sub_cap = allowlist.get(to.clone()).ok_or(Error::PayeeNotAllowed)?;
-
-                    // Policy 1 — Global DailyCapPolicy
-                    let projected = day_spend.checked_add(amount).unwrap_or(i128::MAX);
-                    if projected > daily_cap {
-                        return Err(Error::DailyCapExceeded);
-                    }
-                    day_spend = projected;
-
-                    // Policy 4 — Per-payee DailyCapPolicy
-                    let payee_spend_key = (PAYEE_SPEND_PREFIX, day_bucket, to.clone());
-                    let payee_spend: i128 = env
-                        .storage()
-                        .temporary()
-                        .get::<(Symbol, u32, Address), i128>(&payee_spend_key)
-                        .unwrap_or(0);
-                    let payee_projected = payee_spend.checked_add(amount).unwrap_or(i128::MAX);
-                    if payee_projected > payee_sub_cap {
-                        return Err(Error::PayeeCapExceeded);
-                    }
-
-                    // Persist updated per-payee spend — TTL covers current bucket + one more day
-                    env.storage()
-                        .temporary()
-                        .set::<(Symbol, u32, Address), i128>(&payee_spend_key, &payee_projected);
-                    env.storage()
-                        .temporary()
-                        .extend_ttl::<(Symbol, u32, Address)>(&payee_spend_key, 17_280, 34_560);
-
-                    // Policy 5 — LifetimeCapPolicy (monotonic, never resets)
-                    // Always accumulate; enforce only when a cap is set (lifetime_cap > 0).
-                    let projected_lifetime =
-                        lifetime_spend.checked_add(amount).unwrap_or(i128::MAX);
-                    if lifetime_cap > 0 && projected_lifetime > lifetime_cap {
-                        return Err(Error::LifetimeCapExceeded);
-                    }
-                    lifetime_spend = projected_lifetime;
+                    // Policies 2 → 1 → 4 → 5 run through the shared helper so
+                    // record_session_settlement enforces the identical caps on
+                    // off-chain channel settlements. It returns the updated
+                    // global day-spend counter for the event payload below.
+                    let daily_cumulative = record_spend(&env, &to, amount)?;
 
                     // topics: (Symbol("payment_authorized"), payer, payee)
                     // data:   (amount, asset, daily_cumulative)
                     env.events().publish(
                         (Symbol::new(&env, EVT_PAYMENT_AUTHORIZED), from, to),
-                        (amount, asset, day_spend),
+                        (amount, asset, daily_cumulative),
                     );
                 }
                 // Any non-transfer contract call (SAC approve, burn, …) or
@@ -700,17 +771,6 @@ impl CustomAccountInterface for AgentVault {
                 }
             }
         }
-
-        // Persist updated global day spend — TTL covers current bucket + one more day
-        env.storage()
-            .temporary()
-            .set::<(Symbol, u32), i128>(&spend_key, &day_spend);
-        env.storage()
-            .temporary()
-            .extend_ttl::<(Symbol, u32)>(&spend_key, 17_280, 34_560);
-
-        // Persist monotonic lifetime spend counter — must survive vault lifetime
-        storage.set(&LIFETIME_SPEND_KEY, &lifetime_spend);
 
         Ok(())
     }
@@ -723,7 +783,7 @@ mod tests {
     use super::*;
     use soroban_sdk::{
         auth::{ContractContext, ContractExecutable, CreateContractHostFnContext},
-        testutils::{Address as _, BytesN as _, Ledger},
+        testutils::{storage::Temporary as _, Address as _, BytesN as _, Events as _, Ledger},
         IntoVal, FromVal,
     };
 
@@ -751,6 +811,7 @@ mod tests {
         BytesN::<64>::from_array(env, &sig.to_bytes())
     }
 
+    #[allow(dead_code)]
     fn event_topic_matches(env: &Env, topic: soroban_sdk::Val, expected: &Symbol) -> bool {
         let sym: Symbol = topic.into_val(env);
         sym == *expected
@@ -1403,7 +1464,7 @@ mod tests {
         let client = AgentVaultClient::new(&env, &vault_id);
 
         let channel_id = Address::generate(&env);
-        let payer = Address::generate(&env);
+        let payer = vault_id.clone();
         let payee = provider_a.clone();
         let cumulative_amount: i128 = 500_000;
         let voucher_count: u32 = 42;
@@ -1479,7 +1540,7 @@ mod tests {
         let (client, vault_id, _admin, payee) = setup_settlement(&env);
 
         let channel_id = Address::generate(&env);
-        let payer = Address::generate(&env);
+        let payer = vault_id.clone();
         let cumulative_amount: i128 = 500_000;
         let voucher_count: u32 = 7;
 
@@ -1534,6 +1595,105 @@ mod tests {
         assert_eq!(data_tuple.2, voucher_count, "data[2] should be voucher_count");
     }
 
+
+    /// Test 18b: a settlement attributed to an arbitrary (non-vault) payer
+    /// is rejected with Error::PayerNotAllowed, even when the payee is
+    /// allowlisted and authorizes the call (#16).
+    #[test]
+    #[should_panic(expected = "Error(Contract, #17)")]
+    fn test_session_settlement_rejects_arbitrary_payer() {
+        let env = Env::default();
+        let (client, vault_id, _admin, payee) = setup_settlement(&env);
+
+        let channel_id = Address::generate(&env);
+        let stranger = Address::generate(&env);
+        let cumulative_amount: i128 = 500_000;
+        let voucher_count: u32 = 7;
+
+        // `stranger` is allowlisted and signs as the payee, but the vault is
+        // the governed payer account: only it may be attributed as payer.
+        env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+            address: &payee,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &vault_id,
+                fn_name: "record_session_settlement",
+                args: (
+                    channel_id.clone(),
+                    stranger.clone(),
+                    payee.clone(),
+                    cumulative_amount,
+                    voucher_count,
+                )
+                    .into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        client.record_session_settlement(
+            &channel_id,
+            &stranger,
+            &payee,
+            &cumulative_amount,
+            &voucher_count,
+        );
+    }
+
+    /// Test 18c: a settlement attributed to the vault instance itself is
+    /// recorded, and the event identifies the vault as payer (#16).
+    #[test]
+    fn test_session_settlement_attributes_payer_to_vault() {
+        let env = Env::default();
+        let (client, vault_id, _admin, payee) = setup_settlement(&env);
+
+        let channel_id = Address::generate(&env);
+        let cumulative_amount: i128 = 500_000;
+        let voucher_count: u32 = 7;
+
+        env.mock_auths(&[soroban_sdk::testutils::MockAuth {
+            address: &payee,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &vault_id,
+                fn_name: "record_session_settlement",
+                args: (
+                    channel_id.clone(),
+                    vault_id.clone(),
+                    payee.clone(),
+                    cumulative_amount,
+                    voucher_count,
+                )
+                    .into_val(&env),
+                sub_invokes: &[],
+            },
+        }]);
+        client.record_session_settlement(
+            &channel_id,
+            &vault_id,
+            &payee,
+            &cumulative_amount,
+            &voucher_count,
+        );
+
+        let events = env.events().all();
+        let evt_name = Symbol::new(&env, "session_settled");
+        let matching: std::vec::Vec<_> = events
+            .iter()
+            .filter(|(addr, topics, _)| {
+                *addr == vault_id
+                    && topics
+                        .get(0)
+                        .map_or(false, |t| Symbol::from_val(&env, &t) == evt_name)
+            })
+            .collect();
+        assert_eq!(matching.len(), 1, "exactly one session_settled event expected");
+
+        let (_, topics, data) = &matching[0];
+        // topics: (session_settled, channel_id, payee)
+        let topic_payee: Address = topics.get(2).unwrap().into_val(&env);
+        assert_eq!(topic_payee, payee, "topic[2] must identify the payee");
+
+        let data_tuple: (Address, i128, u32) = data.clone().into_val(&env);
+        assert_eq!(data_tuple.0, vault_id, "event data must carry this vault as payer");
+    }
+
     /// Test 18b: the admin alone can no longer record a settlement.
     #[test]
     #[should_panic]
@@ -1542,7 +1702,7 @@ mod tests {
         let (client, vault_id, admin, payee) = setup_settlement(&env);
 
         let channel_id = Address::generate(&env);
-        let payer = Address::generate(&env);
+        let payer = vault_id.clone();
 
         // Authorized by the admin, but not by the allowlisted payee.
         env.mock_auths(&[soroban_sdk::testutils::MockAuth {
@@ -1564,11 +1724,11 @@ mod tests {
     #[should_panic(expected = "Error(Contract, #5)")]
     fn test_session_settled_rejects_non_allowlisted_payee() {
         let env = Env::default();
-        let (client, _vault_id, _admin, _payee) = setup_settlement(&env);
+        let (client, vault_id, _admin, _payee) = setup_settlement(&env);
 
         let stranger = Address::generate(&env);
         let channel_id = Address::generate(&env);
-        let payer = Address::generate(&env);
+        let payer = vault_id.clone();
 
         // mock_all_auths would satisfy require_auth for anyone — the allowlist
         // check must be what stops this call.
@@ -1602,6 +1762,178 @@ mod tests {
 
         env.mock_all_auths();
         client.record_session_settlement(&channel_id, &payer, &payee, &-1_i128, &10_u32);
+    }
+
+    /// Build a vault with explicit caps for cap-enforcement tests: one
+    /// allowlisted payee with `sub_cap`, a global `daily_cap`, and a
+    /// `lifetime_cap` (0 = unlimited).
+    fn setup_capped_settlement(
+        env: &Env,
+        daily_cap: i128,
+        sub_cap: i128,
+        lifetime_cap: i128,
+    ) -> (AgentVaultClient<'_>, Address, Address) {
+        let admin = Address::generate(env);
+        let (_, agent_pk) = gen_keypair(env);
+        let payee = Address::generate(env);
+        let allowlist = Map::from_array(env, [(payee.clone(), sub_cap)]);
+        let vault_id = env.register(
+            AgentVault,
+            (admin, agent_pk, daily_cap, allowlist, 10_000_u32, lifetime_cap, authorized_token(env)),
+        );
+        (AgentVaultClient::new(env, &vault_id), vault_id, payee)
+    }
+
+    /// Test 18f: a settlement exceeding the daily cap panics with
+    /// Error::DailyCapExceeded instead of recording (#17).
+    #[test]
+    #[should_panic(expected = "Error(Contract, #4)")]
+    fn test_session_settlement_rejects_daily_cap_exceeded() {
+        let env = Env::default();
+        // daily cap = sub-cap = 5_000_000; the global daily cap is checked
+        // before the sub-cap, so 6_000_000 fails with DailyCapExceeded (#4).
+        let (client, vault_id, _admin, payee) = setup_settlement(&env);
+
+        let channel_id = Address::generate(&env);
+        let payer = vault_id.clone();
+        env.mock_all_auths();
+        client.record_session_settlement(&channel_id, &payer, &payee, &6_000_000_i128, &10_u32);
+    }
+
+    /// Test 18g: a settlement within the global daily cap but above the
+    /// payee's sub-cap panics with Error::PayeeCapExceeded (#17) and leaves
+    /// every counter untouched.
+    #[test]
+    fn test_session_settlement_rejects_payee_cap_exceeded() {
+        let env = Env::default();
+        // global daily cap = 10_000_000, per-payee sub-cap = 1_000_000
+        let (client, vault_id, payee) = setup_capped_settlement(&env, 10_000_000, 1_000_000, 0);
+
+        let channel_id = Address::generate(&env);
+        let payer = vault_id.clone();
+        env.mock_all_auths();
+        let result =
+            client.try_record_session_settlement(&channel_id, &payer, &payee, &2_000_000_i128, &10_u32);
+
+        assert_eq!(result.unwrap_err().unwrap(), Error::PayeeCapExceeded.into());
+        assert_eq!(
+            read_spend_counters(&env, &vault_id, &payee),
+            (0, 0, 0),
+            "rejected settlement must not mutate any spend counter"
+        );
+    }
+
+    /// Test 18h: a settlement exceeding the lifetime cap panics with
+    /// Error::LifetimeCapExceeded (#17).
+    #[test]
+    #[should_panic(expected = "Error(Contract, #7)")]
+    fn test_session_settlement_rejects_lifetime_cap_exceeded() {
+        let env = Env::default();
+        // daily + sub-cap generous (10_000_000), lifetime cap = 1_000_000
+        let (client, vault_id, payee) = setup_capped_settlement(&env, 10_000_000, 10_000_000, 1_000_000);
+
+        let channel_id = Address::generate(&env);
+        let payer = vault_id.clone();
+        env.mock_all_auths();
+        client.record_session_settlement(&channel_id, &payer, &payee, &2_000_000_i128, &10_u32);
+    }
+
+    /// Test 18i: a successful settlement increments day_spend, payee_spend,
+    /// and lifetime_spend, and successive settlements accumulate (#17).
+    #[test]
+    fn test_successful_session_settlement_increments_spend_counters() {
+        let env = Env::default();
+        let (client, vault_id, _admin, payee) = setup_settlement(&env);
+
+        let channel_id = Address::generate(&env);
+        let payer = vault_id.clone();
+        env.mock_all_auths();
+
+        client.record_session_settlement(&channel_id, &payer, &payee, &500_000_i128, &10_u32);
+        assert_eq!(
+            read_spend_counters(&env, &vault_id, &payee),
+            (500_000, 500_000, 500_000),
+            "first settlement must advance all three counters"
+        );
+
+        client.record_session_settlement(&channel_id, &payer, &payee, &300_000_i128, &7_u32);
+        assert_eq!(
+            read_spend_counters(&env, &vault_id, &payee),
+            (800_000, 800_000, 800_000),
+            "second settlement must accumulate on the same counters"
+        );
+    }
+
+    /// Test 18j: discrete transfers and channel settlements share the same
+    /// counters — a settlement cannot spend past a cap an earlier transfer
+    /// already ate into (#17).
+    #[test]
+    fn test_session_settlement_counts_against_discrete_transfer_caps() {
+        let env = Env::default();
+        let (client, agent_sk, vault_id, payee) = setup(&env);
+
+        // Discrete payment of 4_000_000 against the 5_000_000 daily cap.
+        let p = BytesN::<32>::random(&env);
+        let s = sign_payload(&env, &agent_sk, &p);
+        let c = Vec::from_array(&env, [transfer_context(&env, &payee, 4_000_000)]);
+        env.try_invoke_contract_check_auth::<Error>(&vault_id, &p, s.into_val(&env), &c)
+            .unwrap();
+        assert_eq!(
+            read_spend_counters(&env, &vault_id, &payee),
+            (4_000_000, 4_000_000, 4_000_000),
+        );
+
+        // A 1_500_000 settlement would push the day total to 5_500_000 > cap.
+        let channel_id = Address::generate(&env);
+        let payer = vault_id.clone();
+        env.mock_all_auths();
+        let result =
+            client.try_record_session_settlement(&channel_id, &payer, &payee, &1_500_000_i128, &5_u32);
+        assert_eq!(result.unwrap_err().unwrap(), Error::DailyCapExceeded.into());
+        assert_eq!(
+            read_spend_counters(&env, &vault_id, &payee),
+            (4_000_000, 4_000_000, 4_000_000),
+            "rejected settlement must not accrue anything"
+        );
+
+        // The remaining 1_000_000 of daily budget is still spendable through
+        // a settlement — the counters are genuinely shared.
+        client.record_session_settlement(&channel_id, &payer, &payee, &1_000_000_i128, &4_u32);
+        assert_eq!(
+            read_spend_counters(&env, &vault_id, &payee),
+            (5_000_000, 5_000_000, 5_000_000),
+        );
+    }
+
+    /// Test 18k: recording a settlement extends the temporary TTLs of both
+    /// spend counters so they cannot be archived mid-bucket (#17).
+    #[test]
+    fn test_session_settlement_extends_spend_counter_ttls() {
+        let env = Env::default();
+        let (client, vault_id, _admin, payee) = setup_settlement(&env);
+
+        let channel_id = Address::generate(&env);
+        let payer = vault_id.clone();
+        env.mock_all_auths();
+        client.record_session_settlement(&channel_id, &payer, &payee, &500_000_i128, &10_u32);
+
+        let day_bucket: u32 = env.ledger().sequence() / 17_280;
+        let spend_key = (SPEND_PREFIX, day_bucket);
+        let payee_key = (PAYEE_SPEND_PREFIX, day_bucket, payee.clone());
+        let (day_ttl, payee_ttl) = env.as_contract(&vault_id, || {
+            (
+                env.storage().temporary().get_ttl(&spend_key),
+                env.storage().temporary().get_ttl(&payee_key),
+            )
+        });
+        assert_eq!(
+            day_ttl, 34_560,
+            "day-spend TTL must cover the current bucket plus one more day"
+        );
+        assert_eq!(
+            payee_ttl, 34_560,
+            "payee-spend TTL must cover the current bucket plus one more day"
+        );
     }
 
     /// Test 19: payment within global cap but exceeding per-payee sub-cap is rejected
@@ -3436,13 +3768,13 @@ mod tests {
         );
     }
 
-    /// Test 46: every admin entrypoint that writes instance storage refreshes the
+    /// Test 46: every entrypoint that writes instance storage refreshes the
     /// instance TTL. Kept as one loop so a missing bump in any single entrypoint
     /// fails here rather than silently shipping.
     #[test]
     fn test_every_admin_entrypoint_refreshes_instance_ttl() {
         let env = Env::default();
-        let (client, _, vault_id, _) = setup(&env);
+        let (client, _, vault_id, _allowlisted_payee) = setup(&env);
         env.mock_all_auths();
         let payee = Address::generate(&env);
         let new_admin = Address::generate(&env);
@@ -3572,7 +3904,7 @@ mod tests {
         let env = Env::default();
         let (client, vault_id, _admin, payee) = setup_settlement(&env);
         let channel_id = Address::generate(&env);
-        let payer = Address::generate(&env);
+        let payer = vault_id.clone();
         env.mock_all_auths();
 
         // #given the vault is frozen by its admin
@@ -3622,7 +3954,7 @@ mod tests {
         let env = Env::default();
         let (client, vault_id, _admin, payee) = setup_settlement(&env);
         let channel_id = Address::generate(&env);
-        let payer = Address::generate(&env);
+        let payer = vault_id.clone();
         env.mock_all_auths();
 
         assert_refreshes_instance_ttl(&env, &vault_id, "record_session_settlement", || {
@@ -3791,6 +4123,54 @@ mod prop_tests {
         true
     }
 
+    /// Helper: apply a mixed sequence of discrete transfers and off-chain
+    /// session settlements through the shared record_spend() policy order
+    /// (allowlist → global daily cap → per-payee sub-cap → lifetime cap).
+    /// Both settlement kinds accrue to the same counters, so accepted spends
+    /// must never push a counter past its cap and rejected spends must leave
+    /// every counter untouched.
+    fn mixed_settlements_respect_caps(
+        daily_cap: i128,
+        sub_cap: i128,
+        lifetime_cap: i128,
+        amounts: Vec<i128>,
+    ) -> bool {
+        let mut day: i128 = 0;
+        let mut payee: i128 = 0;
+        let mut lifetime: i128 = 0;
+        for amount in amounts {
+            if amount <= 0 {
+                continue;
+            }
+            // Same checked_add overflow guard and check order as record_spend():
+            // any counter that would bust its cap rejects the whole spend.
+            let (Some(next_day), Some(next_payee), Some(next_lifetime)) = (
+                day.checked_add(amount),
+                payee.checked_add(amount),
+                lifetime.checked_add(amount),
+            ) else {
+                continue;
+            };
+            if next_day > daily_cap || next_payee > sub_cap {
+                continue;
+            }
+            if lifetime_cap > 0 && next_lifetime > lifetime_cap {
+                continue;
+            }
+            day = next_day;
+            payee = next_payee;
+            lifetime = next_lifetime;
+            // Accepted spends must leave every counter within its cap.
+            if day > daily_cap || payee > sub_cap {
+                return false;
+            }
+            if lifetime_cap > 0 && lifetime > lifetime_cap {
+                return false;
+            }
+        }
+        true
+    }
+
     proptest! {
         /// Invariant 1: The daily cap is never exceeded regardless of the
         /// sequence and magnitude of approved withdrawals.
@@ -3839,6 +4219,29 @@ mod prop_tests {
                 prop_assert!(lifetime_spent <= lifetime_max);
                 prev = lifetime_spent;
             }
+        }
+
+        /// Invariant 4: mixed discrete transfers and off-chain session
+        /// settlements share the same record_spend() accumulators, so no mix
+        /// of the two can jointly exceed the daily, per-payee, or lifetime
+        /// caps (#17).
+        #[test]
+        fn mixed_settlements_never_exceed_caps(
+            daily_cap in 1_i128..=100_000_000_i128,
+            // Sub-cap is always a fraction of the global daily cap
+            sub_cap_fraction in 1_u32..=100_u32,
+            // 0 = no lifetime cap, as configured on-chain
+            lifetime_cap in 0_i128..=100_000_000_i128,
+            amounts in proptest::collection::vec(0_i128..=5_000_000_i128, 0..=60),
+        ) {
+            let sub_cap = (daily_cap / (sub_cap_fraction as i128).max(1)).max(1);
+            prop_assert!(sub_cap <= daily_cap);
+            prop_assert!(mixed_settlements_respect_caps(
+                daily_cap,
+                sub_cap,
+                lifetime_cap,
+                amounts,
+            ));
         }
     }
 }

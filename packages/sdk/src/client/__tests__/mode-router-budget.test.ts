@@ -9,7 +9,7 @@ function createManifest(
   modes: KikisAppManifest['modes'] = ['x402', 'mpp-charge'],
 ): KikisAppManifest {
   return {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Budget Test Provider',
     description: 'Manifest used to verify budget_per_request validation',
     modes,

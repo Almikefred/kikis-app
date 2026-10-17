@@ -16,7 +16,7 @@ import { beforeEach, describe, it, mock } from 'node:test'
 import { Keypair } from '@stellar/stellar-sdk'
 import { Challenge } from 'mppx'
 import type { KikisAppManifest } from '../../types.js'
-import type { WebSocketFactory } from '../MppSessionClient.js'
+import type { WebSocketFactory, WebSocketLike } from '../MppSessionClient.js'
 import {
   KikisAppManifestError,
   KikisAppChannelStateError,
@@ -127,7 +127,7 @@ const { MppSessionClient } = await import('../MppSessionClient.js')
 
 function buildManifest(): KikisAppManifest {
   return {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'WS Session Test Provider',
     description: 'Provider exercised by mpp-session-ws unit tests',
     modes: ['mpp-session', 'mpp-session-ws'],
@@ -156,13 +156,29 @@ function buildManifest(): KikisAppManifest {
   }
 }
 
-function makeFakeWsFactory(): { factory: WebSocketFactory; calls: Array<{ url: string; headers: Record<string, string> }>; closes: Array<number | undefined> } {
+function makeFakeWsFactory(): { factory: WebSocketFactory; calls: Array<{ url: string; headers: Record<string, string> }>; closes: Array<number | undefined>; sent: string[] } {
   const calls: Array<{ url: string; headers: Record<string, string> }> = []
   const closes: Array<number | undefined> = []
+  const sent: string[] = []
   const factory: WebSocketFactory = (url, init, handlers) => {
     calls.push({ url, headers: init.headers })
-    const socket = {
+    const socket: WebSocketLike = {
       readyState: 0, // CONNECTING
+      send: (data: string) => {
+        sent.push(data)
+        const parsed = JSON.parse(data)
+        if (parsed.type === 'init') {
+          queueMicrotask(() => {
+            for (const frame of wsScript.frames ?? []) {
+              handlers.onMessage(frame)
+            }
+            if (wsScript.closeCode !== undefined) {
+              socket.readyState = 3
+              handlers.onClose(wsScript.closeCode, '')
+            }
+          })
+        }
+      },
       close: (code?: number) => {
         closes.push(code)
         socket.readyState = 3 // CLOSED
@@ -177,17 +193,10 @@ function makeFakeWsFactory(): { factory: WebSocketFactory; calls: Array<{ url: s
       }
       socket.readyState = 1 // OPEN
       handlers.onOpen()
-      for (const frame of wsScript.frames ?? []) {
-        handlers.onMessage(frame)
-      }
-      if (wsScript.closeCode !== undefined) {
-        socket.readyState = 3
-        handlers.onClose(wsScript.closeCode, '')
-      }
     })
     return socket
   }
-  return { factory, calls, closes }
+  return { factory, calls, closes, sent }
 }
 
 function openWsHandle(wsFactory: WebSocketFactory, onSpend?: (amount: string) => Promise<void>) {
@@ -203,7 +212,7 @@ describe('mpp-session-ws — success path', () => {
   it('opens the channel, negotiates the voucher over HTTP, upgrades to WebSocket, and yields frames', async () => {
     mppxScript = {}
     wsScript = { frames: ['{"seq":1,"text":"hello"}', '{"seq":2,"text":"world"}'], closeCode: 1000 }
-    const { factory, calls } = makeFakeWsFactory()
+    const { factory, calls, sent } = makeFakeWsFactory()
 
     const handle = await openWsHandle(factory)
     const items: unknown[] = []
@@ -220,6 +229,32 @@ describe('mpp-session-ws — success path', () => {
     assert.equal(calls.length, 1)
     assert.equal(calls[0]!.url, 'wss://provider.test/stream/orderbook')
     assert.equal(calls[0]!.headers.authorization, 'Payment fake-voucher-credential')
+    assert.deepEqual(sent, [JSON.stringify({ type: 'init' })])
+  })
+
+  it('sends initiation frame upon open, handles provider ack gracefully, and yields orderbook frames', async () => {
+    mppxScript = {}
+    wsScript = {
+      frames: [
+        JSON.stringify({ type: 'ack', at: '2026-10-16T12:00:00.000Z' }),
+        JSON.stringify({ bids: [['0.12', '500']], asks: [['0.13', '500']] }),
+      ],
+      closeCode: 1000,
+    }
+    const { factory, calls, sent } = makeFakeWsFactory()
+
+    const handle = await openWsHandle(factory)
+    const items: unknown[] = []
+    for await (const item of handle.stream()) {
+      items.push(item)
+    }
+
+    assert.equal(calls.length, 1)
+    assert.equal(sent.length, 1)
+    assert.deepEqual(JSON.parse(sent[0]!), { type: 'init' })
+    assert.deepEqual(items, [
+      { bids: [['0.12', '500']], asks: [['0.13', '500']] },
+    ])
   })
 
   it('signs an explicit cumulative amount derived from the manifest rate', async () => {
@@ -295,6 +330,24 @@ describe('mpp-session-ws — success path', () => {
     await new Promise((resolve) => setImmediate(resolve))
 
     assert.equal(closes.length, 1, 'socket.close should be called once on early return')
+    assert.equal(closes[0], 1000)
+  })
+
+  it('closes the socket when the consumer breaks out of a for-await loop', async () => {
+    mppxScript = {}
+    wsScript = { frames: ['{"a":1}', '{"a":2}', '{"a":3}'] }
+    const { factory, closes } = makeFakeWsFactory()
+
+    const handle = await openWsHandle(factory)
+    const items: unknown[] = []
+    for await (const item of handle.stream()) {
+      items.push(item)
+      break // early exit — the loop must close the iterator on its way out
+    }
+    await new Promise((resolve) => setImmediate(resolve))
+
+    assert.deepEqual(items, [{ a: 1 }])
+    assert.equal(closes.length, 1, 'socket.close should be called once on for-await break')
     assert.equal(closes[0], 1000)
   })
 })

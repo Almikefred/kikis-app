@@ -65,6 +65,8 @@ const DEFAULT_ACCOUNT = {
   incrementSequenceNumber: () => undefined,
 }
 
+let simulateTransactionFailuresRemaining = 0
+
 function buildFakeSdk() {
   class FakeServer {
     constructor(_url: string) {}
@@ -72,6 +74,10 @@ function buildFakeSdk() {
       return DEFAULT_ACCOUNT
     }
     async simulateTransaction() {
+      if (simulateTransactionFailuresRemaining > 0) {
+        simulateTransactionFailuresRemaining--
+        throw new Error('RPC network timeout')
+      }
       return { result: { retval: { bytes: () => Buffer.from([1, 2, 3, 4]) } } }
     }
     async prepareTransaction(tx: unknown) {
@@ -126,6 +132,7 @@ const originalFetch = globalThis.fetch
 
 beforeEach(() => {
   fetchCallCount = 0
+  simulateTransactionFailuresRemaining = 0
   globalThis.fetch = (async () =>
     new Response(JSON.stringify({ closeTxHash: 'CLOSE_TX_HASH' }), {
       status: 200,
@@ -142,7 +149,7 @@ after(() => {
 
 function buildManifest(): KikisAppManifest {
   return {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'Close Stream Test Provider',
     description: 'Provider exercised by session close stream tests',
     modes: ['mpp-session'],
@@ -167,8 +174,9 @@ function buildManifest(): KikisAppManifest {
 function openHandle(
   options: SessionOptions,
   onSpend?: (amount: string) => Promise<void>,
+  retryPolicy?: import('../../internal/retry.js').RetryPolicy,
 ) {
-  const client = new MppSessionClient(agentKeypair, 'testnet')
+  const client = new MppSessionClient(agentKeypair, 'testnet', retryPolicy)
   return client.openSession(
     SESSION_URL,
     buildManifest(),
@@ -257,5 +265,33 @@ describe('MppSessionClient.stream() after close()', () => {
         isSessionClosed(err) &&
         (err as Error).name === 'KikisAppChannelStateError',
     )
+  })
+
+  test('if simulateTransaction fails with a network error during close(), a second call to close() is permitted and retries settlement', async () => {
+    simulateTransactionFailuresRemaining = 1
+    const handle = await openHandle({ maxDurationMs: 0 }, undefined, { maxAttempts: 1 })
+
+    await assert.rejects(
+      () => handle.close(),
+      (err: unknown) =>
+        err instanceof Error && /prepare_commitment RPC/.test(err.message),
+    )
+
+    // Second call to close() must be permitted and succeed
+    const result = await handle.close()
+    assert.equal(result.closeTxHash, 'CLOSE_TX_HASH')
+  })
+
+  test('concurrent close calls are deduplicated into the same promise', async () => {
+    const handle = await openHandle({ maxDurationMs: 0 })
+
+    const p1 = handle.close()
+    const p2 = handle.close()
+
+    assert.strictEqual(p1, p2, 'Concurrent close calls must return the same promise')
+
+    const [r1, r2] = await Promise.all([p1, p2])
+    assert.deepEqual(r1, r2)
+    assert.equal(r1.closeTxHash, 'CLOSE_TX_HASH')
   })
 })

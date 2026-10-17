@@ -4,10 +4,10 @@ import { X402Client } from './x402Client.js'
 import { MppChargeClient } from './MppChargeClient.js'
 import { MppSessionClient } from './MppSessionClient.js'
 import { prepareNulthSigner, NulthPolicyError, type NulthVaultConfig } from './NulthVault.js'
-import type { PaymentResult, SessionHandle, SessionOptions, KikisAppManifest, PaymentMode, EstimateCostResult, PreflightResult } from '../types.js'
+import type { PaymentResult, SessionHandle, SessionOptions, KikisAppManifest, PaymentMode, EstimateCostResult, PreflightResult, HttpRequestOptions } from '../types.js'
 import { KikisAppManifestError, KikisAppPolicyRejectError, KikisAppTrustlineError } from '../errors.js'
 import type { RetryPolicy } from '../internal/retry.js'
-import { USDC_ISSUERS, usdcToStroops } from '../internal/usdc.js'
+import { ASSET_ISSUERS, getAssetIssuer, usdcToStroops, amountToStroops } from '../internal/usdc.js'
 import { InMemorySpendStore, type DailySpend, type SpendStore } from '../store/SpendStore.js'
 import { selectAsset } from '../internal/assetUtils.js'
 
@@ -18,9 +18,12 @@ import { selectAsset } from '../internal/assetUtils.js'
 const _secrets = new WeakMap<KikisAppClient, string>()
 
 export interface SpendCap {
-  /** Maximum total USDC spend per day (decimal string, e.g. "1.00") */
+  /** Maximum total spend per day (decimal string, e.g. "1.00") */
   daily: string
-  asset: 'USDC'
+  /** Asset ticker for this spend cap (e.g. "USDC", "EURC") */
+  asset: string
+  /** Decimal precision of the asset (e.g. 7 for USDC/EURC, 18 for XLM-like tokens) */
+  decimals?: number
   /**
    * Optional per-endpoint daily spend caps, keyed by endpoint origin URL
    * (e.g. "https://api.openai.com"). Checked before the global `daily` cap.
@@ -78,10 +81,17 @@ function normalizeEndpointCaps(
   return normalized
 }
 
-/** Returns a copy of `spendCap` with `endpointCaps` keys normalized to their origin. */
 function normalizeSpendCap(spendCap: SpendCap): SpendCap {
   const endpointCaps = normalizeEndpointCaps(spendCap.endpointCaps)
-  return endpointCaps === undefined ? spendCap : { ...spendCap, endpointCaps }
+  const result: SpendCap = {
+    ...spendCap,
+    // Default to USDC-compatible 7 decimals if not specified
+    decimals: spendCap.decimals ?? 7,
+  }
+  if (endpointCaps !== undefined) {
+    result.endpointCaps = endpointCaps
+  }
+  return result
 }
 
 export type VaultConfig = NulthVaultConfig
@@ -110,6 +120,20 @@ export interface KikisAppClientConfig {
   spendStore?: SpendStore
   /** Structured logger for SDK events. Defaults to no-op (silent). */
   logger?: KikisAppLogger
+  /**
+   * Soroban RPC endpoint used for mpp-session settlement (close()'s
+   * prepare_commitment simulation and transaction preparation). Defaults to
+   * the public Stellar endpoint for `network`. Point this at a private or
+   * self-hosted RPC when the public endpoint is unreachable or rate-limited
+   * from your runtime (#51).
+   */
+  sorobanRpcUrl?: string
+  /**
+   * Base fee in stroops for mpp-session settlement transactions. Defaults to
+   * BASE_FEE (100 stroops). Raise during fee surges so settlement simulation
+   * and submission are not rejected for an underpriced fee (#51).
+   */
+  baseFeeStroops?: number
   /**
    * Timeout in milliseconds for manifest fetches. A provider that accepts the TCP
    * connection but never sends a response body will be aborted after this delay.
@@ -142,20 +166,13 @@ export interface KikisAppClientConfig {
  */
 export const usdcToMicros = usdcToStroops
 
-/**
- * Well-known Stellar asset issuers, keyed by asset code then network.
- * Used by the trustline preflight to produce exact remediation commands.
- */
-const ASSET_ISSUERS: Record<string, Record<string, string>> = {
-  USDC: USDC_ISSUERS,
-}
 
-function getAssetIssuer(asset: string, network: string): string {
-  return ASSET_ISSUERS[asset]?.[network] ?? ''
-}
 
 /** Trustline cache TTL — 5 minutes, since trustlines are rarely added at runtime. */
 const TRUSTLINE_CACHE_TTL_MS = 300_000
+
+/** Pending reservations older than this TTL are considered orphaned and rolled back on startup. */
+const PENDING_RESERVE_TTL_MS = 120_000
 
 interface TrustlineCacheEntry {
   exists: true
@@ -196,8 +213,14 @@ export class KikisAppClient {
   /**
    * Pending spend reservations keyed by reserveId. Used by _rollbackSpend
    * to revert the accumulator when a payment fails after reservation.
+   * Entries are also journaled in DailySpend.pendingReserves for crash
+   * recovery (see reconcilePendingReserves).
    */
-  private _pendingReserves = new Map<string, { endpointKey: string; amountMicros: bigint }>()
+  private _pendingReserves = new Map<string, {
+    endpointKey: string
+    amountMicros: bigint
+    timestamp: number
+  }>()
 
   constructor(config: KikisAppClientConfig) {
     this.keypair =
@@ -231,7 +254,17 @@ export class KikisAppClient {
     const retryPolicy = this.logger ? { ...this.retryPolicy, logger: this.logger } : this.retryPolicy
     this.x402 = new X402Client(secretKey, this.network, retryPolicy)
     this.charge = new MppChargeClient(this.keypair, this.network, retryPolicy)
-    this.session = new MppSessionClient(this.keypair, this.network, retryPolicy, undefined, this.logger)
+    this.session = new MppSessionClient(
+      this.keypair,
+      this.network,
+      retryPolicy,
+      undefined,
+      this.logger,
+      {
+        ...(config.sorobanRpcUrl !== undefined && { sorobanRpcUrl: config.sorobanRpcUrl }),
+        ...(config.baseFeeStroops !== undefined && { baseFeeStroops: config.baseFeeStroops }),
+      },
+    )
   }
 
   /** Fetch manifest and select mode — shared by pay() and estimateCost(). */
@@ -308,21 +341,48 @@ export class KikisAppClient {
     try {
       const account = await server.loadAccount(this.keypair.publicKey())
       const balances = account.balances as unknown[]
+
+      if (targetAsset === 'XLM' || targetAsset === 'native') {
+        const hasNative = balances.some(
+          (b) =>
+            typeof b === 'object' &&
+            b !== null &&
+            (b as Record<string, unknown>).asset_type === 'native',
+        )
+        if (!hasNative) {
+          throw new KikisAppTrustlineError(
+            targetAsset,
+            'native',
+            `Fund account ${this.keypair.publicKey()} with native XLM on ${this.network}`,
+          )
+        }
+        KikisAppClient._trustlineCache.set(cacheKey, {
+          exists: true,
+          expiresAt: Date.now() + TRUSTLINE_CACHE_TTL_MS,
+        })
+        return
+      }
+
       const expectedIssuer = getAssetIssuer(targetAsset, this.network)
+      if (!expectedIssuer) {
+        throw new KikisAppTrustlineError(
+          targetAsset,
+          'unknown',
+          `No trusted issuer registered for asset "${targetAsset}" on ${this.network}. ` +
+            `Add the asset issuer to ASSET_ISSUERS or use a supported asset (USDC, EURC).`,
+        )
+      }
       const hasTrustline = balances.some(
         (b) =>
           typeof b === 'object' &&
           b !== null &&
-          ((targetAsset === 'XLM' && (b as Record<string, unknown>).asset_type === 'native') ||
-            ('asset_code' in b &&
-              (b as Record<string, unknown>).asset_code === targetAsset &&
-              (!expectedIssuer || (b as Record<string, unknown>).asset_issuer === expectedIssuer))),
+          'asset_code' in b &&
+          (b as Record<string, unknown>).asset_code === targetAsset &&
+          (b as Record<string, unknown>).asset_issuer === expectedIssuer,
       )
       if (!hasTrustline) {
-        const remediation = expectedIssuer
-          ? `Run: stellar tx new --source ${this.keypair.publicKey()} --network ${this.network} change-trust --asset ${targetAsset}:${expectedIssuer} --limit 100000`
-          : `Establish a trustline for ${targetAsset} with the appropriate issuer on ${this.network}`
-        throw new KikisAppTrustlineError(targetAsset, expectedIssuer || 'unknown', remediation)
+        const remediation = `Run: stellar tx new --source ${this.keypair.publicKey()} --network ${this.network} change-trust --asset ${targetAsset}:${expectedIssuer} --limit 100000`
+        throw new KikisAppTrustlineError(targetAsset, expectedIssuer, remediation)
       }
       KikisAppClient._trustlineCache.set(cacheKey, {
         exists: true,
@@ -346,11 +406,19 @@ export class KikisAppClient {
    * 200 with no challenge). Concurrent pay() calls are serialized through a
    * per-instance mutex to prevent spend-cap overrun.
    */
-  async pay(url: string, options?: ModeSelectOptions): Promise<PaymentResult> {
+  async pay(
+    url: string,
+    options?: ModeSelectOptions,
+    request?: HttpRequestOptions,
+  ): Promise<PaymentResult> {
+    const opts: ModeSelectOptions = {
+      ...options,
+      ...(request ? { request } : {}),
+    }
     const baseUrl = new URL(url).origin
     const manifest = await fetchManifest(baseUrl, this.retryPolicy, this.manifestTimeoutMs, this.expectedPayee)
     assertEndpointActive(manifest, url, this.logger)
-    const mode = selectMode(manifest, { ...options, ...(this.logger && { logger: this.logger }) })
+    const mode = selectMode(manifest, { ...opts, ...(this.logger && { logger: this.logger }) })
 
     const selectedAsset = selectAsset(manifest, mode, url).asset
 
@@ -374,21 +442,25 @@ export class KikisAppClient {
     }
 
     // Reserve before dispatching so no path can spend outside the cap.
-    const reserveId = await this._checkAndReserveSpend(amount, baseUrl)
+    const reserveId = await this._checkAndReserveSpend(
+      amount,
+      baseUrl,
+      this.spendCap?.decimals ?? 7,
+    )
 
     let result: PaymentResult
     try {
       if (this.vault?.mode === 'nulth') {
         // Mode/prover validation errors thrown here must also release the
         // reservation, which is why the call sits inside this try block.
-        result = await this._payWithNulthVault(url, manifest, mode)
+        result = await this._payWithNulthVault(url, manifest, mode, opts)
       } else {
         switch (mode) {
           case 'x402':
-            result = await this.x402.pay(url, manifest)
+            result = await this.x402.pay(url, manifest, opts)
             break
           case 'mpp-charge':
-            result = await this.charge.pay(url, manifest)
+            result = await this.charge.pay(url, manifest, opts)
             break
           default:
             throw new KikisAppManifestError(`Unknown payment mode: ${mode as string}`)
@@ -419,6 +491,7 @@ export class KikisAppClient {
     url: string,
     manifest: import('../types.js').KikisAppManifest,
     mode: import('../types.js').PaymentMode,
+    options?: ModeSelectOptions,
   ): Promise<PaymentResult> {
     const prover = this.vault?.prover ?? 'mock';
     if (this.network === 'mainnet' && prover === 'mock') {
@@ -433,7 +506,7 @@ export class KikisAppClient {
     try {
       const { signer } = await prepareNulthSigner(this.vault!, manifest, mode, this.network)
       const x402 = this.x402.withSigner(signer)
-      const result = await x402.pay(url, manifest)
+      const result = await x402.pay(url, manifest, options)
       return result
     } catch (err) {
       if (err instanceof NulthPolicyError) {
@@ -524,7 +597,11 @@ export class KikisAppClient {
    * reservation after the voucher fetch succeeds.
    */
   private async _recordSessionSpend(amount: string, endpointKey: string): Promise<void> {
-    const reserveId = await this._checkAndReserveSpend(amount, endpointKey)
+    const reserveId = await this._checkAndReserveSpend(
+      amount,
+      endpointKey,
+      this.spendCap?.decimals ?? 7,
+    )
     if (reserveId) {
       // For sessions, commit immediately — the spend is final once the
       // voucher is issued. No rollback path on voucher fetch failure since
@@ -569,7 +646,11 @@ export class KikisAppClient {
    * Both limits are independent: a payment is only reserved after **both** pass.
    * All spend (regardless of endpoint) counts toward the global accumulator.
    */
-  private async _checkAndReserveSpend(amount: string, endpointKey: string): Promise<string> {
+  private async _checkAndReserveSpend(
+    amount: string,
+    endpointKey: string,
+    decimals: number = this.spendCap?.decimals ?? 7,
+  ): Promise<string> {
     if (!this.spendCap) return ''
 
     return this._withSpendMutex(async () => {
@@ -578,15 +659,20 @@ export class KikisAppClient {
       const current: DailySpend =
         persisted && persisted.date === today
           ? persisted
-          : { date: today, totalMicros: '0', endpoints: {} }
+          : {
+              date: today,
+              totalMicros: '0',
+              endpoints: {},
+              pendingReserves: [],
+            }
 
-      const amountMicros = usdcToStroops(amount)
+      const amountMicros = amountToStroops(amount, decimals)
       const total = BigInt(current.totalMicros)
 
       // 1. Per-endpoint cap check
       const endpointCapStr = this.spendCap!.endpointCaps?.[endpointKey]
       if (endpointCapStr !== undefined) {
-        const endpointCapMicros = usdcToStroops(endpointCapStr)
+        const endpointCapMicros = amountToStroops(endpointCapStr, decimals)
         const endpointTotal = BigInt(current.endpoints[endpointKey] ?? '0')
         if (endpointTotal + amountMicros > endpointCapMicros) {
           throw new KikisAppPolicyRejectError('local_endpoint_cap_exceeded')
@@ -594,14 +680,25 @@ export class KikisAppClient {
       }
 
       // 2. Global daily cap check
-      const globalCapMicros = usdcToStroops(this.spendCap!.daily)
+      const globalCapMicros = amountToStroops(this.spendCap!.daily, decimals)
       if (total + amountMicros > globalCapMicros) {
         throw new KikisAppPolicyRejectError('local_daily_cap_exceeded')
       }
 
       // Both checks passed — reserve the spend (tentatively record)
       const reserveId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-      this._pendingReserves.set(reserveId, { endpointKey, amountMicros })
+      const now = Date.now()
+      this._pendingReserves.set(reserveId, { endpointKey, amountMicros, timestamp: now })
+
+      // Journal the pending reservation durably
+      current.pendingReserves = current.pendingReserves ?? []
+      current.pendingReserves.push({
+        reserveId,
+        amountMicros: amountMicros.toString(),
+        endpointKey,
+        timestamp: new Date(now).toISOString(),
+      })
+
       current.totalMicros = (total + amountMicros).toString()
       if (endpointCapStr !== undefined) {
         current.endpoints[endpointKey] =
@@ -613,17 +710,30 @@ export class KikisAppClient {
   }
 
   /**
-   * Commit a previously reserved spend after payment succeeds. For discrete
-   * pay() calls this is a no-op (the spend was already recorded by reserve).
-   * Reserved for future use if the committed amount differs from the reserved.
+   * Commit a previously reserved spend after payment succeeds.
+   * Removes the reservation from the in-memory map and the durable
+   * pendingReserves journal. The accumulator already reflects the spend.
    */
   private async _commitSpend(reserveId: string): Promise<void> {
     this._pendingReserves.delete(reserveId)
+
+    // Durably remove from pendingReserves journal
+    if (!this.spendCap) return
+    await this._withSpendMutex(async () => {
+      const today = new Date().toISOString().slice(0, 10)
+      const persisted = await this.spendStore.read()
+      if (!persisted || persisted.date !== today) return
+      persisted.pendingReserves = (persisted.pendingReserves ?? []).filter(
+        (r) => r.reserveId !== reserveId,
+      )
+      await this.spendStore.write(persisted)
+    })
   }
 
   /**
    * Rollback a previously reserved spend when payment fails. Reverts the
-   * tentative accumulator write done by _checkAndReserveSpend.
+   * tentative accumulator write done by _checkAndReserveSpend and removes
+   * the reservation from both memory and the durable journal.
    */
   private async _rollbackSpend(reserveId: string): Promise<void> {
     if (!this.spendCap || !reserveId) return
@@ -652,8 +762,67 @@ export class KikisAppClient {
         }
       }
 
+      persisted.pendingReserves = (persisted.pendingReserves ?? []).filter(
+        (r) => r.reserveId !== reserveId,
+      )
+
       await this.spendStore.write(persisted)
     })
+  }
+
+  /**
+   * Roll back any orphaned pending reservations older than PENDING_RESERVE_TTL_MS.
+   * Called on client startup to recover from process crashes that left
+   * tentative spend deductions without a corresponding commit or rollback.
+   * Idempotent: safe to call multiple times.
+   */
+  private async _reconcilePendingReserves(): Promise<void> {
+    if (!this.spendCap) return
+
+    const today = new Date().toISOString().slice(0, 10)
+    const persisted = await this.spendStore.read()
+    if (!persisted || persisted.date !== today) return
+
+    const now = Date.now()
+    const stale = (persisted.pendingReserves ?? []).filter(
+      (r) => now - Date.parse(r.timestamp) > PENDING_RESERVE_TTL_MS,
+    )
+
+    if (stale.length === 0) return
+
+    let updated = { ...persisted }
+    for (const reserve of stale) {
+      const amountMicros = BigInt(reserve.amountMicros)
+      const currentTotal = BigInt(updated.totalMicros)
+      updated.totalMicros = (currentTotal - amountMicros).toString()
+
+      if (reserve.endpointKey) {
+        const currentEndpoint = updated.endpoints[reserve.endpointKey]
+        if (currentEndpoint) {
+          const endpointTotal = BigInt(currentEndpoint)
+          const newEndpointTotal = endpointTotal - amountMicros
+          if (newEndpointTotal <= 0n) {
+            delete updated.endpoints[reserve.endpointKey]
+          } else {
+            updated.endpoints[reserve.endpointKey] = newEndpointTotal.toString()
+          }
+        }
+      }
+
+      // Remove from in-memory map too, in case it survived
+      this._pendingReserves.delete(reserve.reserveId)
+    }
+
+    updated.pendingReserves = (persisted.pendingReserves ?? []).filter(
+      (r) => !stale.some((s) => s.reserveId === r.reserveId),
+    )
+
+    await this.spendStore.write(updated)
+
+    this.logger?.(
+      'warn',
+      `[KikisApp] Rolled back ${stale.length} orphaned pending reservation(s) older than ${PENDING_RESERVE_TTL_MS / 1000}s`,
+    )
   }
 }
 

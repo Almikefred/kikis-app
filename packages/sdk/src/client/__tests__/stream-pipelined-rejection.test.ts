@@ -46,7 +46,7 @@ const client = new MppSessionClient(clientKeypair, 'testnet', { maxAttempts: 1 }
 const payeeKeypair = Keypair.random()
 const manifest = signManifest(
   {
-    kikis-app: '1.0',
+    'kikis-app': '1.0',
     name: 'test-agent',
     description: 'Test agent for stream pipelining',
     modes: ['mpp-session'],

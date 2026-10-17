@@ -11,7 +11,7 @@ import {
   paymentContextFromManifest,
 } from '../NulthVault.js'
 import type { KikisAppManifest } from '../../types.js'
-import { KikisAppManifestError } from '../../errors.js'
+import { KikisAppManifestError, KikisAppVaultConfigError } from '../../errors.js'
 import { decodeAuthSignature, NulthPolicyError } from '../NulthVault.js'
 import { resolvePayee } from '../../internal/payee.js'
 
@@ -48,7 +48,7 @@ function transferPreimage(asset: string, from: string, to: string, amount: bigin
 }
 
 const baseManifest: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Nulth Test Provider',
   description: 'ZK vault test',
   modes: ['x402'],
@@ -119,7 +119,8 @@ console.log('✓ Nulth ZK vault SDK integration PASSED')
   await assert.rejects(
     () => prepareNulthSigner(vault, manifest, 'x402', 'mainnet', 100_000),
     (err: unknown) =>
-      err instanceof KikisAppManifestError &&
+      err instanceof KikisAppVaultConfigError &&
+      (err as KikisAppVaultConfigError).code === 'VAULT_CONFIG' &&
       /mock prover/i.test(err.message),
   )
   console.log('✓ mainnet guard rejects mock prover')
@@ -145,7 +146,8 @@ console.log('✓ Nulth ZK vault SDK integration PASSED')
           100_000,
         ),
       (err: unknown) =>
-        err instanceof KikisAppManifestError &&
+        err instanceof KikisAppVaultConfigError &&
+        (err as KikisAppVaultConfigError).code === 'VAULT_CONFIG' &&
         /network must be 'testnet'/.test(err.message),
       `prepareNulthSigner must reject network=${String(network)}`,
     )

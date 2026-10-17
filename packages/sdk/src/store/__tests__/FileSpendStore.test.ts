@@ -4,7 +4,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import { FileSpendStore } from '../FileSpendStore.js'
-import type { DailySpend } from '../SpendStore.js'
+import type { DailySpend, PendingReserve } from '../SpendStore.js'
 
 let tmpDir: string
 
@@ -118,6 +118,7 @@ describe('FileSpendStore', () => {
       date: '2026-06-26',
       totalMicros: '1000000',
       endpoints: { 'https://api.example.com': '500000' },
+      pendingReserves: [],
     }
     await store.write(state)
 
@@ -131,5 +132,64 @@ describe('FileSpendStore', () => {
     // The target file must contain valid JSON matching the written state.
     const read = await store.read()
     assert.deepEqual(read, state)
+  })
+
+  it('round-trips pendingReserves in DailySpend', async () => {
+    const filePath = path.join(tmpDir, 'pending.json')
+    const store = new FileSpendStore(filePath)
+    const reserve: PendingReserve = {
+      reserveId: 'reserve-123',
+      amountMicros: '500000',
+      endpointKey: 'https://api.example.com',
+      timestamp: '2026-06-26T10:00:00.000Z',
+    }
+    const state: DailySpend = {
+      date: '2026-06-26',
+      totalMicros: '1000000',
+      endpoints: {},
+      pendingReserves: [reserve],
+    }
+    await store.write(state)
+    const read = await store.read()
+    assert.deepEqual(read, state)
+    assert.equal(read?.pendingReserves?.length, 1)
+    assert.equal(read?.pendingReserves?.[0]?.reserveId, 'reserve-123')
+  })
+
+  it('simulates crash recovery: pending reserves survive store restart', async () => {
+    const filePath = path.join(tmpDir, 'crash.json')
+    const store1 = new FileSpendStore(filePath)
+    const state: DailySpend = {
+      date: '2026-06-26',
+      totalMicros: '5000000',
+      endpoints: { 'https://api.example.com': '2000000' },
+      pendingReserves: [
+        {
+          reserveId: 'stale-reserve',
+          amountMicros: '500000',
+          endpointKey: 'https://api.example.com',
+          timestamp: new Date(Date.now() - 200_000).toISOString(), // > 2 min ago
+        },
+        {
+          reserveId: 'fresh-reserve',
+          amountMicros: '100000',
+          endpointKey: 'https://api.example.com',
+          timestamp: new Date().toISOString(), // just now
+        },
+      ],
+    }
+    await store1.write(state)
+
+    // Simulate a new store instance (process restart) reading the same file
+    const store2 = new FileSpendStore(filePath)
+    const recovered = await store2.read()
+    assert.deepEqual(recovered, state)
+    assert.equal(recovered?.pendingReserves?.length, 2)
+    // One stale (>2min), one fresh (<2min)
+    const stale = (recovered?.pendingReserves ?? []).filter(
+      (r) => Date.now() - Date.parse(r.timestamp) > 120_000,
+    )
+    assert.equal(stale.length, 1)
+    assert.equal(stale[0]?.reserveId, 'stale-reserve')
   })
 })

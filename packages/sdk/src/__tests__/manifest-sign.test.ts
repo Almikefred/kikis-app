@@ -16,7 +16,7 @@ const keypair = Keypair.random()
 const otherKeypair = Keypair.random()
 
 const baseManifest: KikisAppManifest = {
-  kikis-app: '1.0',
+  'kikis-app': '1.0',
   name: 'Test Provider',
   description: 'Unit test provider',
   modes: ['x402'],
