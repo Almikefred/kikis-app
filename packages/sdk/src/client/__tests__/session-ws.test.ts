@@ -16,7 +16,7 @@ import { beforeEach, describe, it, mock } from 'node:test'
 import { Keypair } from '@stellar/stellar-sdk'
 import { Challenge } from 'mppx'
 import type { KikisAppManifest } from '../../types.js'
-import type { WebSocketFactory } from '../MppSessionClient.js'
+import type { WebSocketFactory, WebSocketLike } from '../MppSessionClient.js'
 import {
   KikisAppManifestError,
   KikisAppChannelStateError,

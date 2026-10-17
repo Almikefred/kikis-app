@@ -30,7 +30,7 @@ export function prepareHttpRequestInit(
       requestOptions.body instanceof Uint8Array ||
       (typeof Buffer !== 'undefined' && Buffer.isBuffer(requestOptions.body))
     ) {
-      body = requestOptions.body
+      body = requestOptions.body as unknown as BodyInit
     } else if (typeof requestOptions.body === 'object') {
       body = JSON.stringify(requestOptions.body)
       const hasContentType = Object.keys(headers).some(

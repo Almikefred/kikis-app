@@ -152,8 +152,8 @@ describe('FileSpendStore', () => {
     await store.write(state)
     const read = await store.read()
     assert.deepEqual(read, state)
-    assert.equal(read?.pendingReserves.length, 1)
-    assert.equal(read?.pendingReserves[0]?.reserveId, 'reserve-123')
+    assert.equal(read?.pendingReserves?.length, 1)
+    assert.equal(read?.pendingReserves?.[0]?.reserveId, 'reserve-123')
   })
 
   it('simulates crash recovery: pending reserves survive store restart', async () => {
@@ -184,9 +184,9 @@ describe('FileSpendStore', () => {
     const store2 = new FileSpendStore(filePath)
     const recovered = await store2.read()
     assert.deepEqual(recovered, state)
-    assert.equal(recovered?.pendingReserves.length, 2)
+    assert.equal(recovered?.pendingReserves?.length, 2)
     // One stale (>2min), one fresh (<2min)
-    const stale = recovered!.pendingReserves.filter(
+    const stale = (recovered?.pendingReserves ?? []).filter(
       (r) => Date.now() - Date.parse(r.timestamp) > 120_000,
     )
     assert.equal(stale.length, 1)

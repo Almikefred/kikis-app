@@ -117,7 +117,12 @@ describe('prepareHttpRequestInit', () => {
 
 describe('client.pay() HTTP methods, headers, and request bodies', () => {
   const originalFetch = globalThis.fetch
-  let capturedRequests: Array<{ url: string; method?: string; headers?: Record<string, string>; body?: unknown }> = []
+  let capturedRequests: Array<{
+    url: string
+    method?: string | undefined
+    headers?: Record<string, string> | undefined
+    body?: unknown
+  }> = []
   let originalCreatePaymentPayload: any
 
   beforeEach(() => {
@@ -221,7 +226,7 @@ describe('client.pay() HTTP methods, headers, and request bodies', () => {
         status: 200,
         headers: {
           'Content-Type': 'application/json',
-          'X-Payment-Response': encodePaymentResponseHeader(receipt),
+          'X-Payment-Response': encodePaymentResponseHeader(receipt as any),
         },
       })
     }) as typeof fetch
@@ -288,7 +293,7 @@ describe('client.pay() HTTP methods, headers, and request bodies', () => {
         status: 200,
         headers: {
           'Content-Type': 'application/json',
-          'X-Payment-Response': encodePaymentResponseHeader(receipt),
+          'X-Payment-Response': encodePaymentResponseHeader(receipt as any),
         },
       })
     }) as typeof fetch
@@ -342,7 +347,7 @@ describe('client.pay() HTTP methods, headers, and request bodies', () => {
         status: 200,
         headers: {
           'Content-Type': 'application/json',
-          'X-Payment-Response': encodePaymentResponseHeader(receipt),
+          'X-Payment-Response': encodePaymentResponseHeader(receipt as any),
         },
       })
     }) as typeof fetch

@@ -19,6 +19,26 @@ import { checkChargeChallenge, type Caip2Network } from './challenge.js'
 import type { ModeSelectOptions } from './ModeRouter.js'
 
 /**
+ * Normalize `ModeSelectOptions.headers` (any HeadersInit form) into a plain
+ * record. A custom `Authorization` header never overrides the charge
+ * credential: the credential is spread after these, so it wins.
+ */
+function normalizeHeaders(headers: ModeSelectOptions['headers']): Record<string, string> {
+  if (!headers) return {}
+  if (headers instanceof Headers) {
+    const record: Record<string, string> = {}
+    headers.forEach((value, key) => {
+      record[key] = value
+    })
+    return record
+  }
+  if (Array.isArray(headers)) {
+    return Object.fromEntries(headers)
+  }
+  return { ...headers }
+}
+
+/**
  * Estimate network base fee in stroops from Horizon /fee_stats.
  */
 export async function estimateBaseFee(
@@ -52,11 +72,11 @@ export async function estimateBaseFee(
 }
 
 export class MppChargeClient {
-  private readonly retryPolicy?: RetryPolicy
-  private readonly options?: MppChargeClientOptions
+  private readonly retryPolicy?: RetryPolicy | undefined
+  private readonly options?: MppChargeClientOptions | undefined
 
   constructor(
-    private readonly keypairOrSigner: Keypair | ClientStellarSigner,
+    private readonly keypair: Keypair | ClientStellarSigner,
     private readonly network: 'testnet' | 'mainnet',
     retryPolicyOrOptions?: RetryPolicy | MppChargeClientOptions,
     options?: MppChargeClientOptions,
@@ -76,13 +96,14 @@ export class MppChargeClient {
     }
   }
 
-  /** Replace the signer (e.g. swap to a Nulth ZK account payer before pay). */
-  withSigner(signer: ClientStellarSigner): MppChargeClient {
-    return new MppChargeClient(signer, this.network, this.retryPolicy, this.options)
-  }
-
-  private get isKeypair(): boolean {
-    return this.keypairOrSigner instanceof Keypair
+  /** Replace signer (e.g. swap to Nulth ZK account payer before pay) */
+  withSigner(signer: ClientStellarSigner | Keypair): MppChargeClient {
+    return new MppChargeClient(
+      signer,
+      this.network,
+      ...(this.retryPolicy !== undefined ? [this.retryPolicy] : []),
+      ...(this.options !== undefined ? [this.options] : []),
+    )
   }
 
   async pay(
@@ -142,13 +163,34 @@ export class MppChargeClient {
     // cached settlement instead of charging a second time.
     let credential: string | undefined
 
+    const signer = this.keypair as ClientStellarSigner | { publicKey?: () => string }
+    const hasPublicKey = (s: unknown): s is { publicKey: () => string } =>
+      typeof s === 'object' &&
+      s !== null &&
+      'publicKey' in s &&
+      typeof (s as { publicKey?: unknown }).publicKey === 'function'
+    const hasAddress = (s: unknown): s is { address: string } =>
+      typeof s === 'object' &&
+      s !== null &&
+      'address' in s &&
+      typeof (s as { address?: unknown }).address === 'string'
+    const effectiveKeypair =
+      this.keypair instanceof Keypair
+        ? this.keypair
+        : {
+            publicKey: () => {
+              if (hasPublicKey(signer)) return signer.publicKey()
+              if (hasAddress(signer)) return signer.address
+              throw new Error('MppChargeClient: signer has no address or publicKey')
+            },
+            ...this.keypair,
+          } as unknown as Keypair
+
     const mppx = Mppx.create({
       polyfill: false,
       methods: [
         (stellar.charge as (opts: Record<string, unknown>) => any)({
-          ...(this.isKeypair
-            ? { keypair: this.keypairOrSigner as Keypair }
-            : { keypair: this.keypairOrSigner as unknown as Keypair }),
+          keypair: effectiveKeypair,
           mode: 'pull',
           // Custom Soroban RPC endpoint (#5): route all charge simulation /
           // submission to the configured RPC instead of the public default.
@@ -187,6 +229,11 @@ export class MppChargeClient {
 
     return withRetry(async (): Promise<PaymentResult> => {
       let response: Response
+      const customHeaders = normalizeHeaders(options?.headers)
+      const fetchInit: RequestInit = {
+        ...(options?.method ? { method: options.method } : {}),
+        ...(options?.body !== undefined ? { body: options.body } : {}),
+      }
       try {
         response = credential
           ? await mppx.rawFetch(url, {

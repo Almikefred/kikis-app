@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it, mock, afterEach } from 'node:test'
 import { Asset, Horizon, Keypair, Networks, StrKey } from '@stellar/stellar-sdk'
 import { KikisAppClient } from '../KikisAppClient.js'
-import { KikisAppTrustlineError } from '../../errors.js'
+import { KikisAppTrustlineError, KikisAppNetworkError } from '../../errors.js'
 import { signManifest } from '../../manifest/sign.js'
 import type { KikisAppManifest } from '../../types.js'
 
@@ -34,7 +34,7 @@ function makeUsdcManifest(payeeKeypair: Keypair): KikisAppManifest {
 function makeEurcManifest(payeeKeypair: Keypair): KikisAppManifest {
   return signManifest(
     {
-      kikis-app: '1.0',
+      'kikis-app': '1.0',
       name: 'EURC Service',
       description: 'Trustline EURC test',
       modes: ['x402'],
@@ -225,5 +225,110 @@ describe('KikisAppClient — Trustline issuer enforcement', () => {
         return true
       },
     )
+  })
+
+  it('directs trustline Horizon queries to custom horizonRpcUrl and caches with custom endpoint key', async () => {
+    const payeeKeypair = Keypair.random()
+    const payerKeypair = Keypair.random()
+    const manifest = makeUsdcManifest(payeeKeypair)
+    const customUrl = 'https://custom-horizon.internal.net'
+
+    let capturedServerUrl: string | undefined
+    mock.method(Horizon.Server.prototype, 'loadAccount', async function (this: Horizon.Server) {
+      capturedServerUrl = this.serverURL.toString().replace(/\/$/, '')
+      return {
+        balances: [
+          {
+            asset_type: 'credit_alphanum4',
+            asset_code: 'USDC',
+            asset_issuer: TESTNET_USDC_ISSUER,
+            balance: '100.0000000',
+          },
+        ],
+      }
+    })
+
+    const client = new KikisAppClient({
+      network: 'testnet',
+      wallet: payerKeypair,
+      horizonRpcUrl: customUrl,
+    })
+
+    const cacheKey = `testnet:${customUrl}:${payerKeypair.publicKey()}:USDC`
+    const cache = (KikisAppClient as unknown as { _trustlineCache: Map<string, { exists: boolean }> })._trustlineCache
+    assert.equal(cache.has(cacheKey), false)
+
+    const result = await client.preflight(manifest)
+    assert.equal(result.hasTrustline, true)
+    assert.equal(capturedServerUrl, customUrl)
+    assert.equal(cache.has(cacheKey), true)
+  })
+
+  it('triggers a retryable KikisAppNetworkError when Horizon query exceeds rpcTimeoutMs', async () => {
+    const payeeKeypair = Keypair.random()
+    const payerKeypair = Keypair.random()
+    const manifest = makeUsdcManifest(payeeKeypair)
+    const customUrl = 'https://slow-horizon.internal.net'
+
+    mock.method(Horizon.Server.prototype, 'loadAccount', async () => {
+      // Simulate slow Horizon response
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      return {
+        balances: [
+          {
+            asset_type: 'credit_alphanum4',
+            asset_code: 'USDC',
+            asset_issuer: TESTNET_USDC_ISSUER,
+            balance: '100.0000000',
+          },
+        ],
+      }
+    })
+
+    const client = new KikisAppClient({
+      network: 'testnet',
+      wallet: payerKeypair,
+      horizonRpcUrl: customUrl,
+      rpcTimeoutMs: 50,
+    })
+
+    await assert.rejects(
+      async () => client.preflight(manifest),
+      (err: unknown) => {
+        assert.ok(err instanceof KikisAppNetworkError)
+        assert.equal(err.retryable, true)
+        assert.match(err.message, /timed out after 50ms/)
+        return true
+      },
+    )
+  })
+
+  it('falls back to default public Horizon endpoints when horizonRpcUrl is unconfigured', async () => {
+    const payeeKeypair = Keypair.random()
+    const payerKeypair = Keypair.random()
+    const manifest = makeUsdcManifest(payeeKeypair)
+
+    let capturedServerUrl: string | undefined
+    mock.method(Horizon.Server.prototype, 'loadAccount', async function (this: Horizon.Server) {
+      capturedServerUrl = this.serverURL.toString().replace(/\/$/, '')
+      return {
+        balances: [
+          {
+            asset_type: 'credit_alphanum4',
+            asset_code: 'USDC',
+            asset_issuer: TESTNET_USDC_ISSUER,
+            balance: '100.0000000',
+          },
+        ],
+      }
+    })
+
+    const client = new KikisAppClient({
+      network: 'testnet',
+      wallet: payerKeypair,
+    })
+
+    await client.preflight(manifest)
+    assert.equal(capturedServerUrl, 'https://horizon-testnet.stellar.org')
   })
 })
