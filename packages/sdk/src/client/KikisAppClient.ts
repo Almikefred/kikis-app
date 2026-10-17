@@ -4,8 +4,8 @@ import { X402Client } from './x402Client.js'
 import { MppChargeClient } from './MppChargeClient.js'
 import { MppSessionClient } from './MppSessionClient.js'
 import { prepareNulthSigner, NulthPolicyError, type NulthVaultConfig } from './NulthVault.js'
-import type { PaymentResult, SessionHandle, SessionOptions, KikisAppManifest, PaymentMode, EstimateCostResult, PreflightResult } from '../types.js'
-import { KikisAppManifestError, KikisAppPolicyRejectError, KikisAppTrustlineError, KikisAppNetworkError } from '../errors.js'
+import type { PaymentResult, SessionHandle, SessionOptions, KikisAppManifest, PaymentMode, EstimateCostResult, PreflightResult, HttpRequestOptions } from '../types.js'
+import { KikisAppManifestError, KikisAppPolicyRejectError, KikisAppTrustlineError } from '../errors.js'
 import type { RetryPolicy } from '../internal/retry.js'
 import { ASSET_ISSUERS, getAssetIssuer, usdcToStroops, amountToStroops } from '../internal/usdc.js'
 import { InMemorySpendStore, type DailySpend, type SpendStore } from '../store/SpendStore.js'
@@ -430,11 +430,19 @@ export class KikisAppClient {
    * 200 with no challenge). Concurrent pay() calls are serialized through a
    * per-instance mutex to prevent spend-cap overrun.
    */
-  async pay(url: string, options?: ModeSelectOptions): Promise<PaymentResult> {
+  async pay(
+    url: string,
+    options?: ModeSelectOptions,
+    request?: HttpRequestOptions,
+  ): Promise<PaymentResult> {
+    const opts: ModeSelectOptions = {
+      ...options,
+      ...(request ? { request } : {}),
+    }
     const baseUrl = new URL(url).origin
     const manifest = await fetchManifest(baseUrl, this.retryPolicy, this.manifestTimeoutMs, this.expectedPayee)
     assertEndpointActive(manifest, url, this.logger)
-    const mode = selectMode(manifest, { ...options, ...(this.logger && { logger: this.logger }) })
+    const mode = selectMode(manifest, { ...opts, ...(this.logger && { logger: this.logger }) })
 
     const selectedAsset = selectAsset(manifest, mode, url).asset
 
@@ -469,14 +477,14 @@ export class KikisAppClient {
       if (this.vault?.mode === 'nulth') {
         // Mode/prover validation errors thrown here must also release the
         // reservation, which is why the call sits inside this try block.
-        result = await this._payWithNulthVault(url, manifest, mode, options)
+        result = await this._payWithNulthVault(url, manifest, mode, opts)
       } else {
         switch (mode) {
           case 'x402':
-            result = await this.x402.pay(url, manifest, options)
+            result = await this.x402.pay(url, manifest, opts)
             break
           case 'mpp-charge':
-            result = await this.charge.pay(url, manifest, options)
+            result = await this.charge.pay(url, manifest, opts)
             break
           default:
             throw new KikisAppManifestError(`Unknown payment mode: ${mode as string}`)

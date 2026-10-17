@@ -1,5 +1,5 @@
 import { Validator, type Schema } from '@cfworker/json-schema'
-import type { KikisAppManifest, PaymentMode } from '../types.js'
+import type { KikisAppManifest, PaymentMode, HttpRequestOptions } from '../types.js'
 import {
   KikisAppError,
   KikisAppManifestError,
@@ -206,6 +206,9 @@ class LruCache<K, V> {
 /** In-memory manifest cache keyed by base URL, bounded to avoid unbounded heap growth. */
 const manifestCache = new LruCache<string, CacheEntry>(DEFAULT_MANIFEST_CACHE_MAX_SIZE)
 
+/** In-flight fetch promises keyed by base URL to coalesce concurrent requests. */
+const inFlightFetches = new Map<string, Promise<KikisAppManifest>>()
+
 /**
  * Override the manifest cache's max size (default 512). Affects the shared,
  * process-wide cache used by all KikisAppClient instances.
@@ -230,6 +233,7 @@ export function configureManifestCache(maxSize: number): void {
  */
 export function invalidateManifest(baseUrl: string): void {
   manifestCache.delete(baseUrl)
+  inFlightFetches.delete(baseUrl)
 }
 
 /**
@@ -299,12 +303,11 @@ export interface ModeSelectOptions {
    * regardless of the Content-Type header.
    */
   responseType?: 'json' | 'text' | 'arrayBuffer' | 'blob' | 'auto'
-  /** HTTP method to use for the paid request. Defaults to 'GET'. */
-  method?: string
-  /** Additional HTTP headers to include with the request. */
-  headers?: HeadersInit
-  /** Request body to send with the paid request (e.g. for POST endpoints). */
-  body?: BodyInit | null
+  /**
+   * Optional HTTP request options (method, headers, body) to send with the
+   * payment request. Preserved across probes and settlement.
+   */
+  request?: HttpRequestOptions
 }
 
 /**
@@ -335,60 +338,82 @@ export async function fetchManifest(
     return cached.manifest
   }
 
-  const url = baseUrl.replace(/\/$/, '') + '/.well-known/kikis-app.json'
-
-  return withRetry(async () => {
-    let raw: unknown
-    let resp: Response
-    let expiresAt = 0
-    try {
-      resp = await fetch(url, { signal: AbortSignal.timeout(manifestTimeoutMs) })
-      if (!resp.ok) {
-        if (resp.status >= 500 || resp.status === 429 || resp.status === 503) {
-          throw httpStatusToError(
-            `Manifest fetch failed: HTTP ${resp.status} from ${url}`,
-            resp.status,
-            resp,
-          )
-        }
-        throw new KikisAppManifestError(
-          `Manifest fetch failed: HTTP ${resp.status} from ${url}`,
-        )
-      }
-    } catch (err) {
-      if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
-        throw new KikisAppManifestTimeoutError(
-          `Manifest fetch timed out after ${manifestTimeoutMs}ms from ${url}`,
-          { cause: err },
-        )
-      }
-      if (err instanceof KikisAppError) throw err
-      throw wrapFetchError(err, `Manifest fetch error from ${url}`)
-    }
-
-    const now = Date.now()
-    expiresAt = now + ttlFromHeaders(resp.headers, now)
-
-    try {
-      raw = await resp.json()
-    } catch (err) {
-      throw new KikisAppManifestError(`Manifest at ${url} is not valid JSON`, { cause: err })
-    }
-
-    const result = validator.validate(raw)
-    if (!result.valid) {
-      const msgs = result.errors.map(err => err.error).join('; ')
-      throw new KikisAppManifestError(`Invalid manifest at ${url}: ${msgs}`)
-    }
-
-    const manifest = raw as unknown as KikisAppManifest
-    assertManifestValid(manifest, baseUrl)
+  const existingInFlight = inFlightFetches.get(baseUrl)
+  if (existingInFlight) {
+    const manifest = await existingInFlight
     verifyManifestSignature(manifest, expectedPayee)
     assertClientVersionSupported(manifest, baseUrl)
+    assertManifestValid(manifest, baseUrl)
     assertManifestActive(manifest, baseUrl)
-    manifestCache.set(baseUrl, { manifest, fetchedAt: Date.now(), expiresAt })
     return manifest
-  }, retryPolicy)
+  }
+
+  const url = baseUrl.replace(/\/$/, '') + '/.well-known/kikis-app.json'
+
+  const fetchPromise = (async () => {
+    try {
+      return await withRetry(async () => {
+        let raw: unknown
+        let resp: Response
+        let expiresAt = 0
+        try {
+          resp = await fetch(url, { signal: AbortSignal.timeout(manifestTimeoutMs) })
+          if (!resp.ok) {
+            if (resp.status >= 500 || resp.status === 429 || resp.status === 503) {
+              throw httpStatusToError(
+                `Manifest fetch failed: HTTP ${resp.status} from ${url}`,
+                resp.status,
+                resp,
+              )
+            }
+            throw new KikisAppManifestError(
+              `Manifest fetch failed: HTTP ${resp.status} from ${url}`,
+            )
+          }
+        } catch (err) {
+          if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+            throw new KikisAppManifestTimeoutError(
+              `Manifest fetch timed out after ${manifestTimeoutMs}ms from ${url}`,
+              { cause: err },
+            )
+          }
+          if (err instanceof KikisAppError) throw err
+          throw wrapFetchError(err, `Manifest fetch error from ${url}`)
+        }
+
+        const now = Date.now()
+        expiresAt = now + ttlFromHeaders(resp.headers, now)
+
+        try {
+          raw = await resp.json()
+        } catch (err) {
+          throw new KikisAppManifestError(`Manifest at ${url} is not valid JSON`, { cause: err })
+        }
+
+        const result = validator.validate(raw)
+        if (!result.valid) {
+          const msgs = result.errors.map(err => err.error).join('; ')
+          throw new KikisAppManifestError(`Invalid manifest at ${url}: ${msgs}`)
+        }
+
+        const parsedManifest = raw as unknown as KikisAppManifest
+        assertManifestValid(parsedManifest, baseUrl)
+        verifyManifestSignature(parsedManifest)
+        assertClientVersionSupported(parsedManifest, baseUrl)
+        assertManifestActive(parsedManifest, baseUrl)
+        manifestCache.set(baseUrl, { manifest: parsedManifest, fetchedAt: Date.now(), expiresAt })
+        return parsedManifest
+      }, retryPolicy)
+    } finally {
+      inFlightFetches.delete(baseUrl)
+    }
+  })()
+
+  inFlightFetches.set(baseUrl, fetchPromise)
+
+  const manifest = await fetchPromise
+  verifyManifestSignature(manifest, expectedPayee)
+  return manifest
 }
 
 interface ModeSelection {

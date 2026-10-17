@@ -300,4 +300,83 @@ function startManifestServer(
   console.log('✓ Evicting a never-fetched URL is a no-op (no throw)')
 }
 
+// ── In-flight request coalescing prevents thundering herd (#4) ───────────────
+
+{
+  let delayedHits = 0
+  const delayServer = http.createServer((_req, res) => {
+    delayedHits += 1
+    setTimeout(() => {
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'max-age=3600',
+      })
+      res.end(JSON.stringify(signedManifest))
+    }, 50)
+  })
+
+  await new Promise<void>((resolve) => delayServer.listen(0, '127.0.0.1', () => resolve()))
+  const address = delayServer.address() as { port: number }
+  const baseUrl = `http://127.0.0.1:${address.port}`
+
+  try {
+    // 1. 20 concurrent calls on a cold cache result in exactly 1 HTTP network fetch
+    const concurrentFetches = Array.from({ length: 20 }, () => fetchManifest(baseUrl))
+    const results = await Promise.all(concurrentFetches)
+
+    assert.equal(delayedHits, 1, '20 concurrent calls on cold cache must produce exactly 1 HTTP network fetch')
+    for (let i = 1; i < results.length; i++) {
+      assert.equal(results[i], results[0], 'all concurrent calls must receive the same manifest instance')
+    }
+
+    // 2. Subsequent calls after resolution read from manifestCache
+    const subsequent = await fetchManifest(baseUrl)
+    assert.equal(subsequent, results[0], 'subsequent call must read from manifestCache')
+    assert.equal(delayedHits, 1, 'subsequent call must not issue another network fetch')
+  } finally {
+    await new Promise<void>((done) => delayServer.close(() => done()))
+  }
+}
+
+// ── In-flight error propagation and immediate removal on rejection (#4) ─────
+
+{
+  let failureHits = 0
+  const errorServer = http.createServer((_req, res) => {
+    failureHits += 1
+    setTimeout(() => {
+      res.writeHead(500, { 'Content-Type': 'text/plain' })
+      res.end('Internal Server Error')
+    }, 30)
+  })
+
+  await new Promise<void>((resolve) => errorServer.listen(0, '127.0.0.1', () => resolve()))
+  const address = errorServer.address() as { port: number }
+  const baseUrl = `http://127.0.0.1:${address.port}`
+
+  try {
+    const concurrentFetches = Array.from({ length: 5 }, () =>
+      fetchManifest(baseUrl, { maxAttempts: 1 }),
+    )
+    const outcomes = await Promise.allSettled(concurrentFetches)
+
+    assert.equal(failureHits, 1, 'concurrent calls produce only 1 network fetch on error')
+    for (const outcome of outcomes) {
+      assert.equal(outcome.status, 'rejected', 'error must propagate to all concurrent callers')
+    }
+
+    // After failure, in-flight promise must be removed immediately so retry is dispatched
+    let retried = false
+    try {
+      await fetchManifest(baseUrl, { maxAttempts: 1 })
+    } catch {
+      retried = true
+    }
+    assert.equal(retried, true)
+    assert.equal(failureHits, 2, 'subsequent call after failure dispatches new fetch (in-flight removed)')
+  } finally {
+    await new Promise<void>((done) => errorServer.close(() => done()))
+  }
+}
+
 console.log('All manifest cache invalidation tests passed.')

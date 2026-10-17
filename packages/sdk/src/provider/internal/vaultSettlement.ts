@@ -18,11 +18,16 @@ export interface VaultSettlementAddresses {
  * knowingly attributing the provider as both sides of the settlement.
  */
 export function resolveVaultSettlementAddresses(
-  payer: string | null,
+  vault: string | null,
   payee: string,
 ): VaultSettlementAddresses | null {
-  if (!payer) return null
-  return { payer, payee }
+  // The vault is the governed payer account: every settlement is attributed
+  // to this vault instance regardless of which agent or payee originally
+  // opened the channel. The SDK must never pass a third-party payer to the
+  // vault, so a missing vault address falls back to null instead of silently
+  // attributing the settlement elsewhere (#16).
+  if (!vault) return null
+  return { payer: vault, payee }
 }
 
 /**

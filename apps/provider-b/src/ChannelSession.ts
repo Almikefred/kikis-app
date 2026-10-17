@@ -194,8 +194,17 @@ export class ChannelSession extends DurableObject<Env> {
         }
 
         return {
-          onMessage: (_evt, ws) => {
+          onMessage: (evt, ws) => {
             socket = ws
+            try {
+              const raw = typeof evt.data === 'string' ? evt.data : ''
+              const parsed = JSON.parse(raw)
+              if (parsed?.type === 'init') {
+                // Client initiation handshake received
+              }
+            } catch {
+              // Non-JSON or binary frame - ignore and proceed
+            }
             // First message kicks off a periodic snapshot push. Cloudflare's
             // WebSocketPair has no onOpen, so a client message is the natural
             // trigger for the stream.

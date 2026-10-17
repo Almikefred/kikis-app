@@ -149,7 +149,7 @@ import { kikisApp } from '@kikis-app/kikis-app/provider'
 
 const app = express()
 
-app.use('/price', kikis-app({
+app.use('/price', kikisApp({
   modes: ['x402', 'mpp-charge'],
   pricing: { x402: '0.001', 'mpp-charge': '0.0008' },
   asset: 'USDC',
