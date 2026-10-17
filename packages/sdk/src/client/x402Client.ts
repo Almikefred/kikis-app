@@ -14,6 +14,7 @@ import {
 } from '../errors.js'
 import { stroopsToUsdc } from '../internal/usdc.js'
 import { withRetry, type RetryPolicy } from '../internal/retry.js'
+import { prepareHttpRequestInit } from '../internal/http.js'
 import { checkX402Accept, filterX402Accepts, type Caip2Network } from './challenge.js'
 import type { ModeSelectOptions } from './ModeRouter.js'
 
@@ -28,6 +29,26 @@ const CAIP2: Record<Network, Caip2Network> = {
 type ProbeOutcome =
   | { kind: 'free'; data: unknown }
   | { kind: 'payment-required'; init: Response }
+
+/**
+ * Normalize `ModeSelectOptions.headers` (any HeadersInit form) into a plain
+ * record. Custom headers never override the `X-PAYMENT` signature header:
+ * payment headers are spread after these, so a colliding custom key loses.
+ */
+function normalizeHeaders(headers: ModeSelectOptions['headers']): Record<string, string> {
+  if (!headers) return {}
+  if (headers instanceof Headers) {
+    const record: Record<string, string> = {}
+    headers.forEach((value, key) => {
+      record[key] = value
+    })
+    return record
+  }
+  if (Array.isArray(headers)) {
+    return Object.fromEntries(headers)
+  }
+  return { ...headers }
+}
 
 export interface FacilitatorReceipt {
   txHash?: string
@@ -81,8 +102,13 @@ export class X402Client {
     // Phase 1: unpaid probe. This can retry freely — no payment exists yet.
     const probe = await withRetry(async (): Promise<ProbeOutcome> => {
       let init: Response
+      const probeHeaders: Record<string, string> = {
+        'X-Preferred-Mode': 'x402',
+        ...normalizeHeaders(options?.headers),
+      }
       try {
-        init = await fetch(url, { headers: { 'X-Preferred-Mode': 'x402' } })
+        const probeInit = prepareHttpRequestInit(options?.request, { 'X-Preferred-Mode': 'x402' })
+        init = await fetch(url, probeInit)
       } catch (err) {
         throw wrapFetchError(err, 'x402 initial request')
       }
@@ -178,8 +204,13 @@ export class X402Client {
     // than charging a second time.
     const settled = await withRetry(async (): Promise<Response> => {
       let response: Response
+      const finalHeaders: Record<string, string> = {
+        ...normalizeHeaders(options?.headers),
+        ...paymentHeaders,
+      }
       try {
-        response = await fetch(url, { headers: paymentHeaders })
+        const settleInit = prepareHttpRequestInit(options?.request, paymentHeaders)
+        response = await fetch(url, settleInit)
       } catch (err) {
         throw wrapFetchError(err, 'x402 settlement request')
       }

@@ -156,7 +156,12 @@ async function main(): Promise<void> {
 
         // Pay the specialist using x402. The orchestrator handles the full
         // 402 → sign → retry cycle automatically.
-        const result = await orchestrator.pay(specialistUrl, { forceMode: 'x402' })
+        const result = await orchestrator.pay(specialistUrl, {
+            forceMode: 'x402',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: chunk }),
+        })
         const data = result.data as { summary?: string; chars?: number }
 
         console.log(`     ${data.summary}`)

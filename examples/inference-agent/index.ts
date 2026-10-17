@@ -152,7 +152,12 @@ async function main(): Promise<void> {
 
         // client.pay() handles the full 402 → sign → retry cycle.
         // mpp-charge is the preferred mode for the mock manifest, so no forceMode needed.
-        const result = await client.pay(inferUrl, { forceMode: 'mpp-charge' })
+        const result = await client.pay(inferUrl, {
+            forceMode: 'mpp-charge',
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt }),
+        })
         const data = result.data as { response?: string; model?: string }
 
         console.log(`     response="${data.response}"`)

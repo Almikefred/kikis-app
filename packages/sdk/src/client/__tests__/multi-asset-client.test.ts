@@ -6,6 +6,9 @@ import { KikisAppTrustlineError, KikisAppManifestError, KikisAppPolicyRejectErro
 import { checkX402Accept, checkChargeChallenge } from '../challenge.js'
 import { signManifest } from '../../manifest/sign.js'
 import type { KikisAppManifest } from '../../types.js'
+import { MppChargeClient } from '../MppChargeClient.js'
+import { resolveAssetContract, selectAsset } from '../../internal/assetUtils.js'
+import { stroopsToAmount } from '../../internal/usdc.js'
 
 const TESTNET_USDC_ISSUER = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5'
 
@@ -235,7 +238,7 @@ describe('Multi-asset challenge validation — checkX402Accept & checkChargeChal
   it('x402 challenges for non-root assets declared in manifest.assets pass validation successfully', () => {
     const accept = {
       scheme: 'exact',
-      network: 'stellar:testnet',
+      network: 'stellar:testnet' as const,
       asset: EURC_CONTRACT,
       amount: '1000',
       payTo: payeeKeypair.publicKey(),
@@ -260,7 +263,7 @@ describe('Multi-asset challenge validation — checkX402Accept & checkChargeChal
   it('x402 and mpp-charge challenges referencing unlisted contracts are rejected with challenge_asset_mismatch', () => {
     const x402Accept = {
       scheme: 'exact',
-      network: 'stellar:testnet',
+      network: 'stellar:testnet' as const,
       asset: UNLISTED_CONTRACT,
       amount: '1000',
       payTo: payeeKeypair.publicKey(),
@@ -280,5 +283,67 @@ describe('Multi-asset challenge validation — checkX402Accept & checkChargeChal
     const chargeRejection = checkChargeChallenge(chargeRequest, manifest, 'stellar:testnet', '0.0008')
     assert.ok(chargeRejection instanceof KikisAppPolicyRejectError)
     assert.equal(chargeRejection.reason, 'challenge_asset_mismatch')
+  })
+})
+
+describe('MppChargeClient — multi-asset SAC and precision resolution', () => {
+  const payeeKeypair = Keypair.random()
+  const manifest = makeMultiAssetManifest(payeeKeypair)
+  const XLM_CONTRACT = 'CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC'
+
+  it('resolves the XLM SAC contract address when paying for an endpoint configured with XLM', () => {
+    const resolvedContract = resolveAssetContract(manifest, 'mpp-charge', '/lookup')
+    assert.equal(resolvedContract, XLM_CONTRACT)
+
+    const asset = selectAsset(manifest, 'mpp-charge', '/lookup')
+    assert.equal(asset.asset, 'XLM')
+    assert.equal(asset.asset_contract, XLM_CONTRACT)
+  })
+
+  it('throws KikisAppManifestError when no asset is eligible for mpp-charge on that endpoint', async () => {
+    const payerKeypair = Keypair.random()
+    const chargeClient = new MppChargeClient(payerKeypair, 'testnet')
+    await assert.rejects(
+      () => chargeClient.pay('https://provider.test/infer', manifest),
+      (err: unknown) => {
+        assert.ok(err instanceof KikisAppManifestError)
+        assert.match((err as Error).message, /No eligible assets found for mode 'mpp-charge'/)
+        return true
+      },
+    )
+  })
+
+  it('formats amount according to asset decimal precision scale', () => {
+    // 7 decimals (standard SAC like XLM/USDC): 800 stroops -> "0.00008"
+    assert.equal(stroopsToAmount(800n, 7), '0.00008')
+
+    // 2 decimals (e.g., custom fiat token): 150 units -> "1.5"
+    assert.equal(stroopsToAmount(150n, 2), '1.5')
+
+    // 0 decimals (e.g., integer credit token): 100 units -> "100"
+    assert.equal(stroopsToAmount(100n, 0), '100')
+
+    // 6 decimals: 1000000 units -> "1"
+    assert.equal(stroopsToAmount(1000000n, 6), '1')
+  })
+
+  it('executes pay for multi-asset XLM endpoint successfully when response is 200', async () => {
+    const payerKeypair = Keypair.random()
+    const chargeClient = new MppChargeClient(payerKeypair, 'testnet')
+    const originalFetch = globalThis.fetch
+    try {
+      globalThis.fetch = async () =>
+        new Response(JSON.stringify({ result: 'data' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+
+      const res = await chargeClient.pay('https://provider.test/lookup', manifest)
+      assert.equal(res.mode, 'mpp-charge')
+      assert.deepEqual(res.data, { result: 'data' })
+      assert.equal(res.amount, '0.0008')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 })

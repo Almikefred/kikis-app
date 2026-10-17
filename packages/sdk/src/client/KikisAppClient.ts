@@ -4,7 +4,7 @@ import { X402Client } from './x402Client.js'
 import { MppChargeClient } from './MppChargeClient.js'
 import { MppSessionClient } from './MppSessionClient.js'
 import { prepareNulthSigner, NulthPolicyError, type NulthVaultConfig } from './NulthVault.js'
-import type { PaymentResult, SessionHandle, SessionOptions, KikisAppManifest, PaymentMode, EstimateCostResult, PreflightResult } from '../types.js'
+import type { PaymentResult, SessionHandle, SessionOptions, KikisAppManifest, PaymentMode, EstimateCostResult, PreflightResult, HttpRequestOptions } from '../types.js'
 import { KikisAppManifestError, KikisAppPolicyRejectError, KikisAppTrustlineError } from '../errors.js'
 import type { RetryPolicy } from '../internal/retry.js'
 import { ASSET_ISSUERS, getAssetIssuer, usdcToStroops, amountToStroops } from '../internal/usdc.js'
@@ -22,8 +22,9 @@ export interface SpendCap {
   daily: string
   /** Asset ticker for this spend cap (e.g. "USDC", "EURC") */
   asset: string
-  /** Decimal precision of the asset (e.g. 7 for USDC/EURC, 18 for XLM-like tokens) */
-  decimals: number
+  /** Decimal precision of the asset (e.g. 7 for USDC/EURC, 18 for XLM-like tokens).
+   * Optional for backwards compatibility — defaults to 7 (USDC-compatible) when omitted. */
+  decimals?: number | undefined
   /**
    * Optional per-endpoint daily spend caps, keyed by endpoint origin URL
    * (e.g. "https://api.openai.com"). Checked before the global `daily` cap.
@@ -39,7 +40,7 @@ export interface SpendCap {
    * valid URL, that includes a path/query/hash, or that normalizes to the
    * same origin as another key throws at construction time.
    */
-  endpointCaps?: Record<string, string>
+  endpointCaps?: Record<string, string> | undefined
 }
 
 /**
@@ -88,7 +89,7 @@ function normalizeSpendCap(spendCap: SpendCap): SpendCap {
     ...spendCap,
     // Default to USDC-compatible 7 decimals if not specified
     decimals: spendCap.decimals ?? 7,
-    endpointCaps,
+    ...(endpointCaps !== undefined ? { endpointCaps } : {}),
   }
 }
 
@@ -155,6 +156,18 @@ export interface KikisAppClientConfig {
    * with off-chain ZK proofs attached as auth signatures.
    */
   vault?: VaultConfig
+
+  /**
+   * Custom Horizon RPC URL used for trustline preflight lookups.
+   * Defaults to public Horizon endpoints for `network`.
+   */
+  horizonRpcUrl?: string
+
+  /**
+   * Timeout in milliseconds for Horizon RPC requests (e.g. trustline checks).
+   * Defaults to 10,000 ms (10s).
+   */
+  rpcTimeoutMs?: number
 }
 
 /**
@@ -220,7 +233,10 @@ export class KikisAppClient {
     timestamp: number
   }>()
 
+  private readonly config: KikisAppClientConfig
+
   constructor(config: KikisAppClientConfig) {
+    this.config = config
     this.keypair =
       typeof config.wallet === 'string' ? Keypair.fromSecret(config.wallet) : config.wallet
     this.network = config.network
@@ -326,18 +342,40 @@ export class KikisAppClient {
     manifest: KikisAppManifest,
     targetAsset: string = manifest.asset,
   ): Promise<void> {
-    const cacheKey = `${this.network}:${this.keypair.publicKey()}:${targetAsset}`
+    const horizonUrl =
+      this.config.horizonRpcUrl ??
+      (this.network === 'testnet'
+        ? 'https://horizon-testnet.stellar.org'
+        : 'https://horizon.stellar.org')
+
+    const cacheKey = this.config.horizonRpcUrl
+      ? `${this.network}:${this.config.horizonRpcUrl}:${this.keypair.publicKey()}:${targetAsset}`
+      : `${this.network}:${this.keypair.publicKey()}:${targetAsset}`
     const cached = KikisAppClient._trustlineCache.get(cacheKey)
     if (cached && Date.now() < cached.expiresAt) return
 
-    const horizonUrl =
-      this.network === 'testnet'
-        ? 'https://horizon-testnet.stellar.org'
-        : 'https://horizon.stellar.org'
+    const timeoutMs = this.config.rpcTimeoutMs ?? 10_000
 
-    const server = new Horizon.Server(horizonUrl)
+    const server = new Horizon.Server(horizonUrl, {
+      allowHttp: horizonUrl.startsWith('http://'),
+    })
     try {
-      const account = await server.loadAccount(this.keypair.publicKey())
+      const account = await Promise.race([
+        server.loadAccount(this.keypair.publicKey()),
+        new Promise<never>((_, reject) => {
+          const timer = setTimeout(() => {
+            reject(
+              new KikisAppNetworkError(
+                `Horizon request to ${horizonUrl} timed out after ${timeoutMs}ms`,
+              ),
+            )
+          }, timeoutMs)
+          // Node <15 lacks AbortSignal in some typings; guard so unref never throws.
+          const maybeTimer = timer as unknown as { unref?: () => void }
+          maybeTimer.unref?.()
+        }),
+      ])
+
       const balances = account.balances as unknown[]
       const expectedIssuer = getAssetIssuer(targetAsset, this.network)
       if (!expectedIssuer) {
@@ -367,6 +405,15 @@ export class KikisAppClient {
       })
     } catch (err) {
       if (err instanceof KikisAppTrustlineError) throw err
+      if (err instanceof KikisAppNetworkError) throw err
+      if (
+        (typeof err === 'object' && err !== null && (err as { name?: string }).name === 'AbortError')
+      ) {
+        throw new KikisAppNetworkError(
+          `Horizon request to ${horizonUrl} timed out after ${timeoutMs}ms`,
+          { cause: err },
+        )
+      }
       this.logger?.(
         'warn',
         `[KikisApp] Trustline preflight: could not verify trustline for ${targetAsset} — continuing`,
@@ -383,11 +430,19 @@ export class KikisAppClient {
    * 200 with no challenge). Concurrent pay() calls are serialized through a
    * per-instance mutex to prevent spend-cap overrun.
    */
-  async pay(url: string, options?: ModeSelectOptions): Promise<PaymentResult> {
+  async pay(
+    url: string,
+    options?: ModeSelectOptions,
+    request?: HttpRequestOptions,
+  ): Promise<PaymentResult> {
+    const opts: ModeSelectOptions = {
+      ...options,
+      ...(request ? { request } : {}),
+    }
     const baseUrl = new URL(url).origin
     const manifest = await fetchManifest(baseUrl, this.retryPolicy, this.manifestTimeoutMs, this.expectedPayee)
     assertEndpointActive(manifest, url, this.logger)
-    const mode = selectMode(manifest, { ...options, ...(this.logger && { logger: this.logger }) })
+    const mode = selectMode(manifest, { ...opts, ...(this.logger && { logger: this.logger }) })
 
     const selectedAsset = selectAsset(manifest, mode, url).asset
 
@@ -422,14 +477,14 @@ export class KikisAppClient {
       if (this.vault?.mode === 'nulth') {
         // Mode/prover validation errors thrown here must also release the
         // reservation, which is why the call sits inside this try block.
-        result = await this._payWithNulthVault(url, manifest, mode)
+        result = await this._payWithNulthVault(url, manifest, mode, opts)
       } else {
         switch (mode) {
           case 'x402':
-            result = await this.x402.pay(url, manifest, options)
+            result = await this.x402.pay(url, manifest, opts)
             break
           case 'mpp-charge':
-            result = await this.charge.pay(url, manifest, options)
+            result = await this.charge.pay(url, manifest, opts)
             break
           default:
             throw new KikisAppManifestError(`Unknown payment mode: ${mode as string}`)
@@ -460,21 +515,26 @@ export class KikisAppClient {
     url: string,
     manifest: import('../types.js').KikisAppManifest,
     mode: import('../types.js').PaymentMode,
+    options?: ModeSelectOptions,
   ): Promise<PaymentResult> {
-    const prover = this.vault?.prover ?? 'mock';
+    const prover = this.vault?.prover ?? 'mock'
     if (this.network === 'mainnet' && prover === 'mock') {
-      throw new KikisAppManifestError('nulth vault uses a MOCK Groth16 prover and cannot be used on mainnet');
+      throw new KikisAppManifestError('nulth vault uses a MOCK Groth16 prover and cannot be used on mainnet')
     }
-    if (mode !== 'x402') {
+    if (mode !== 'x402' && mode !== 'mpp-charge') {
       throw new KikisAppManifestError(
-        'nulth vault currently supports x402 mode — force x402 via { forceMode: "x402" }',
+        'nulth vault currently supports x402 and mpp-charge modes — force mode via { forceMode: "x402" } or { forceMode: "mpp-charge" }',
       )
     }
 
     try {
       const { signer } = await prepareNulthSigner(this.vault!, manifest, mode, this.network)
+      if (mode === 'mpp-charge') {
+        const charge = this.charge.withSigner(signer)
+        return await charge.pay(url, manifest, options)
+      }
       const x402 = this.x402.withSigner(signer)
-      const result = await x402.pay(url, manifest)
+      const result = await x402.pay(url, manifest, options)
       return result
     } catch (err) {
       if (err instanceof NulthPolicyError) {
@@ -659,7 +719,7 @@ export class KikisAppClient {
       this._pendingReserves.set(reserveId, { endpointKey, amountMicros, timestamp: now })
 
       // Journal the pending reservation durably
-      current.pendingReserves.push({
+      ;(current.pendingReserves ??= []).push({
         reserveId,
         amountMicros: amountMicros.toString(),
         endpointKey,
@@ -690,7 +750,7 @@ export class KikisAppClient {
       const today = new Date().toISOString().slice(0, 10)
       const persisted = await this.spendStore.read()
       if (!persisted || persisted.date !== today) return
-      persisted.pendingReserves = persisted.pendingReserves.filter(
+      persisted.pendingReserves = (persisted.pendingReserves ?? []).filter(
         (r) => r.reserveId !== reserveId,
       )
       await this.spendStore.write(persisted)
@@ -719,8 +779,9 @@ export class KikisAppClient {
       const currentTotal = BigInt(persisted.totalMicros)
       persisted.totalMicros = (currentTotal - amountMicros).toString()
 
-      if (persisted.endpoints[endpointKey]) {
-        const endpointTotal = BigInt(persisted.endpoints[endpointKey])
+      const endpointBalance = persisted.endpoints[endpointKey]
+      if (endpointBalance !== undefined) {
+        const endpointTotal = BigInt(endpointBalance)
         const newEndpointTotal = endpointTotal - amountMicros
         if (newEndpointTotal <= 0n) {
           delete persisted.endpoints[endpointKey]
@@ -729,7 +790,7 @@ export class KikisAppClient {
         }
       }
 
-      persisted.pendingReserves = persisted.pendingReserves.filter(
+      persisted.pendingReserves = (persisted.pendingReserves ?? []).filter(
         (r) => r.reserveId !== reserveId,
       )
 
@@ -751,25 +812,29 @@ export class KikisAppClient {
     if (!persisted || persisted.date !== today) return
 
     const now = Date.now()
-    const stale = persisted.pendingReserves.filter(
+    const persistedReserves = persisted.pendingReserves ?? []
+    const stale = persistedReserves.filter(
       (r) => now - Date.parse(r.timestamp) > PENDING_RESERVE_TTL_MS,
     )
 
     if (stale.length === 0) return
 
-    let updated = { ...persisted }
+    let updated = { ...persisted, pendingReserves: persistedReserves }
     for (const reserve of stale) {
       const amountMicros = BigInt(reserve.amountMicros)
       const currentTotal = BigInt(updated.totalMicros)
       updated.totalMicros = (currentTotal - amountMicros).toString()
 
-      if (reserve.endpointKey && updated.endpoints[reserve.endpointKey]) {
-        const endpointTotal = BigInt(updated.endpoints[reserve.endpointKey])
-        const newEndpointTotal = endpointTotal - amountMicros
-        if (newEndpointTotal <= 0n) {
-          delete updated.endpoints[reserve.endpointKey]
-        } else {
-          updated.endpoints[reserve.endpointKey] = newEndpointTotal.toString()
+      if (reserve.endpointKey) {
+        const endpointBalance = updated.endpoints[reserve.endpointKey]
+        if (endpointBalance !== undefined) {
+          const endpointTotal = BigInt(endpointBalance)
+          const newEndpointTotal = endpointTotal - amountMicros
+          if (newEndpointTotal <= 0n) {
+            delete updated.endpoints[reserve.endpointKey]
+          } else {
+            updated.endpoints[reserve.endpointKey] = newEndpointTotal.toString()
+          }
         }
       }
 
@@ -777,7 +842,7 @@ export class KikisAppClient {
       this._pendingReserves.delete(reserve.reserveId)
     }
 
-    updated.pendingReserves = persisted.pendingReserves.filter(
+    updated.pendingReserves = persistedReserves.filter(
       (r) => !stale.some((s) => s.reserveId === r.reserveId),
     )
 

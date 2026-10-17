@@ -3,7 +3,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { Address, Networks, hash, nativeToScVal, xdr } from '@stellar/stellar-sdk'
+import { Address, Networks, hash, nativeToScVal, xdr, Keypair } from '@stellar/stellar-sdk'
 import {
   assertNulthVaultManifest,
   prepareNulthSigner,
@@ -11,9 +11,11 @@ import {
   paymentContextFromManifest,
 } from '../NulthVault.js'
 import type { KikisAppManifest } from '../../types.js'
-import { KikisAppManifestError, KikisAppVaultConfigError } from '../../errors.js'
+import { KikisAppManifestError, KikisAppVaultConfigError, KikisAppPolicyRejectError } from '../../errors.js'
 import { decodeAuthSignature, NulthPolicyError } from '../NulthVault.js'
 import { resolvePayee } from '../../internal/payee.js'
+import { KikisAppClient } from '../KikisAppClient.js'
+import { InMemorySpendStore } from '../../store/SpendStore.js'
 
 const NULTH = 'CAX5IDLC2XHGQSEA2YN3LPLZ7EXLMRXYX3HFJGKFXS6B7OQXBKWO44LT'
 const PAYEE = 'GDHLJWBM6Z2Y4KF6Z4JAFIUUO2KAXAJ6MAIUK2XMGBQ7ZUUZ7HFPW2BK'
@@ -455,4 +457,178 @@ console.log('✓ prepareNulthSigner rejects negative price')
     }
   }
   console.log('✓ paymentContextFromManifest matches resolvePayee for both modes')
+}
+
+// ── mpp-charge payment mode with Nulth vault (#34) ──
+
+{
+  // Self-signed payee keypair so the local manifest server serves a verifiable
+  // document. Nulth allowlists authorize PAYEE, so keep the manifest payee on
+  // that value via a deterministic keypair derived from it.
+  const { Keypair: StellarKeypair } = await import('@stellar/stellar-sdk')
+  const { signManifest } = await import('../../manifest/sign.js')
+  const payeeKp = StellarKeypair.random()
+  const mppChargeManifest = signManifest(
+    {
+      ...baseManifest,
+      payee: payeeKp.publicKey(),
+      modes: ['mpp-charge'],
+      pricing: {
+        'mpp-charge': {
+          amount: '0.0005',
+          per: 'request',
+        },
+      },
+    },
+    payeeKp.secret(),
+  )
+  const allowedPayee = payeeKp.publicKey()
+
+  // 1. prepareNulthSigner builds valid Soroban auth context for mpp-charge
+  const vaultForMppCharge = { ...vault, allowedPayees: [allowedPayee] }
+  const { signer, config } = await prepareNulthSigner(
+    vaultForMppCharge,
+    mppChargeManifest,
+    'mpp-charge',
+    'testnet',
+    100_000,
+  )
+  assert.equal(signer.address, NULTH)
+  assert.equal(config.paymentContext?.amountStroops, 5_000n)
+  const signed = await signer.signAuthEntry(
+    transferPreimage(USDC, NULTH, allowedPayee, 5_000n),
+  )
+  const decoded = decodeAuthSignature(signed.signedAuthEntry)
+  assert.equal(decoded.proof.publicInputs.amountStroops, '5000')
+  console.log('✓ prepareNulthSigner supports mpp-charge mode')
+
+  // 2. KikisAppClient.pay executes mpp-charge with Nulth vault and commits spend cap.
+  // Serve the manifest from a local HTTP server: `_resolveManifest` is a
+  // TS-private method so it cannot be stubbed per-instance from a test.
+  const { createServer } = await import('node:http')
+  const manifestServer = createServer((req, res) => {
+    if (req.url === '/.well-known/kikis-app.json') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify(mppChargeManifest))
+    } else {
+      res.writeHead(404)
+      res.end()
+    }
+  })
+  await new Promise<void>((resolve) => manifestServer.listen(0, '127.0.0.1', resolve))
+  const manifestPort = (manifestServer.address() as { port: number }).port
+  const providerUrl = `http://127.0.0.1:${manifestPort}/infer`
+
+  try {
+    const spendStore = new InMemorySpendStore({ warn: false })
+    const payerKp = Keypair.random()
+    const client = new KikisAppClient({
+      wallet: payerKp,
+      network: 'testnet',
+      spendCap: { daily: '0.01', asset: 'USDC', decimals: 7 },
+      spendStore,
+      vault: {
+        mode: 'nulth',
+        nulthAccount: NULTH,
+        witnessSecret: 'witness',
+        allowedPayees: [allowedPayee],
+        dailyCapUsdc: '1.00',
+      },
+    })
+
+    // Seed trustline cache so Horizon isn't queried
+    ;(KikisAppClient as unknown as { _trustlineCache: Map<string, unknown> })._trustlineCache.set(
+      `testnet:${payerKp.publicKey()}:USDC`,
+      { exists: true, expiresAt: Date.now() + 300_000 },
+    )
+
+    type ChargeStub = {
+      withSigner: (s: unknown) => {
+        pay: (
+          url: string,
+          manifest: KikisAppManifest,
+          options?: { forceMode?: 'mpp-charge' },
+        ) => Promise<{
+          data: { result: string }
+          txHash: string
+          mode: 'mpp-charge'
+          amount: string
+          timestamp: number
+        }>
+      }
+    }
+    let capturedSigner: unknown = null
+    let chargePayCalls = 0
+    ;(client as unknown as { charge: ChargeStub }).charge = {
+      withSigner: (s: unknown) => {
+        capturedSigner = s
+        return {
+          pay: async () => {
+            chargePayCalls++
+            return {
+              data: { result: 'canned-response' },
+              txHash: '0x123abc',
+              mode: 'mpp-charge' as const,
+              amount: '0.0005',
+              timestamp: Date.now(),
+            }
+          },
+        }
+      },
+    }
+
+    const result = await client.pay(providerUrl, { forceMode: 'mpp-charge' })
+    assert.equal(result.mode, 'mpp-charge')
+    assert.equal(result.amount, '0.0005')
+    assert.equal(chargePayCalls, 1)
+    assert.ok(capturedSigner && (capturedSigner as { address: string }).address === NULTH)
+
+    const spendAfterSuccess = await spendStore.read()
+    assert.ok(spendAfterSuccess)
+    assert.equal(spendAfterSuccess.totalMicros, '5000', 'spend cap must commit 0.0005 USDC (5000 micros)')
+    console.log('✓ client.pay mpp-charge succeeds with Nulth vault and commits spend cap')
+
+    // 3. Nulth policy rejection properly rolls back and releases spend reservation.
+    // The allowlist is enforced when the charge sub-client signs (not during
+    // prepare), so trigger the rejection through a failing charge stub with an
+    // isolated spend store.
+    const rejectStore = new InMemorySpendStore({ warn: false })
+    const clientReject = new KikisAppClient({
+      wallet: payerKp,
+      network: 'testnet',
+      spendCap: { daily: '0.01', asset: 'USDC', decimals: 7 },
+      spendStore: rejectStore,
+      vault: {
+        mode: 'nulth',
+        nulthAccount: NULTH,
+        witnessSecret: 'witness',
+        allowedPayees: [allowedPayee],
+        dailyCapUsdc: '1.00',
+      },
+    })
+    // Seed trustline cache so Horizon isn't queried
+    ;(KikisAppClient as unknown as { _trustlineCache: Map<string, unknown> })._trustlineCache.set(
+      `testnet:${payerKp.publicKey()}:USDC`,
+      { exists: true, expiresAt: Date.now() + 300_000 },
+    )
+    ;(clientReject as unknown as { charge: ChargeStub }).charge = {
+      withSigner: () => ({
+        pay: async () => {
+          throw new KikisAppPolicyRejectError('payee_not_allowlisted')
+        },
+      }),
+    }
+
+    await assert.rejects(
+      () => clientReject.pay(providerUrl, { forceMode: 'mpp-charge' }),
+      (err: unknown) => err instanceof KikisAppPolicyRejectError && err.code === 'POLICY_REJECT',
+    )
+
+    const spendAfterRejection = await rejectStore.read()
+    assert.ok(spendAfterRejection)
+    assert.equal(spendAfterRejection.totalMicros, '0', 'rejected payment must roll back spend reservation')
+    console.log('✓ Nulth policy rejection releases spend reservation')
+  } finally {
+    await new Promise<void>((resolve) => manifestServer.close(() => resolve()))
+  }
 }
