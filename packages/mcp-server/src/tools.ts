@@ -15,6 +15,14 @@ import type { Tool } from '@modelcontextprotocol/sdk/types.js'
  */
 export const MAX_STREAM_MESSAGES = 50
 
+/**
+ * Pagination bounds for list_providers. The registry can scale to hundreds of
+ * providers, so results are paged to keep tool responses within LLM context
+ * limits and to bound tool call latency.
+ */
+export const DEFAULT_LIST_PROVIDERS_LIMIT = 20
+export const MAX_LIST_PROVIDERS_LIMIT = 100
+
 export const TOOLS: Tool[] = [
   {
     name: 'pay_for_data',
@@ -120,7 +128,7 @@ export const TOOLS: Tool[] = [
   {
     name: 'list_providers',
     description:
-      'List available KikisApp providers from the registry. Can filter by capability tags (returns providers matching any of the given tags) and by network.',
+      'List available KikisApp providers from the registry. Can filter by capability tags (returns providers matching any of the given tags) and by network. Results are paginated: use limit (default 20, max 100) and offset to page through large registries.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -132,6 +140,17 @@ export const TOOLS: Tool[] = [
           type: 'string',
           enum: ['testnet', 'mainnet'],
           description: 'Filter by Stellar network',
+        },
+        limit: {
+          type: 'integer',
+          minimum: 1,
+          maximum: MAX_LIST_PROVIDERS_LIMIT,
+          description: `Maximum number of providers to return (1 to ${MAX_LIST_PROVIDERS_LIMIT}, default ${DEFAULT_LIST_PROVIDERS_LIMIT})`,
+        },
+        offset: {
+          type: 'integer',
+          minimum: 0,
+          description: 'Number of providers to skip before returning results (default 0)',
         },
       },
       required: [],
