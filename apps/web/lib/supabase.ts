@@ -39,6 +39,38 @@ export function getSupabaseServerClient() {
   return createClient(url, anonKey)
 }
 
+// ── Realtime helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Subscribe to `INSERT` events on `public.tx_log` via Supabase Realtime.
+ *
+ * Returns an unsubscribe function that removes the channel; callers should
+ * invoke it on unmount to avoid leaking WebSocket subscriptions. The channel
+ * name is suffixed so multiple components can each hold their own subscription
+ * without colliding on the same topic.
+ */
+export function subscribeToTxLogInserts(
+  onInsert: (entry: TxLogEntry) => void,
+  channelName = 'tx_log_feed',
+): () => void {
+  const client = getSupabaseBrowserClient()
+  const channel = client
+    .channel(channelName)
+    .on(
+      // @ts-expect-error — supabase-js types the postgres_changes payload loosely
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'tx_log' },
+      (payload: { new: TxLogEntry }) => {
+        if (payload?.new) onInsert(payload.new)
+      },
+    )
+    .subscribe()
+
+  return () => {
+    void client.removeChannel(channel)
+  }
+}
+
 // ── Database types from Section 8 schema ──────────────────────────────────────
 
 /**

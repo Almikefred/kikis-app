@@ -10,6 +10,7 @@ import { TxHashLink } from '@/components/shared/TxHashLink'
 
 const MAX_ENTRIES = 20
 const FALLBACK_POLL_MS = 10_000
+const CONNECTED_POLL_MS = 60_000
 
 const TX_TYPE_LABEL: Record<TxLogEntry['tx_type'], string> = {
   x402_settle: 'settled',
@@ -65,10 +66,11 @@ export function TxFeed({ initialEntries = [] }: TxFeedProps) {
       setEntries((prev) => mergeTxEntries(prev, rows, MAX_ENTRIES))
     }
 
-    // Only one fallback interval at a time.
-    function startPolling() {
+    // Only one fallback interval at a time. When the realtime socket is live we
+    // still poll, but at a much lower frequency to reconcile any dropped events.
+    function startPolling(intervalMs: number) {
       if (pollTimer !== null) return
-      pollTimer = setInterval(() => void refresh(), FALLBACK_POLL_MS)
+      pollTimer = setInterval(() => void refresh(), intervalMs)
     }
 
     const channel = supabase
@@ -92,13 +94,16 @@ export function TxFeed({ initialEntries = [] }: TxFeedProps) {
           // snapshot and the channel going live, plus anything missed while the
           // socket was down.
           void refresh()
+          // Reduced-frequency safety net while the WebSocket is connected.
+          startPolling(CONNECTED_POLL_MS)
           return
         }
 
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
           console.warn('[tx-feed] realtime channel', status, err?.message ?? '')
           setPaused(true)
-          startPolling()
+          stopPolling()
+          startPolling(FALLBACK_POLL_MS)
         }
       })
 
